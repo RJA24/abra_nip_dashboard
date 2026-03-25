@@ -8,18 +8,16 @@ import pytz
 import time
 import hashlib
 from supabase import create_client, Client
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
 st.set_page_config(page_title="CAR SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
 
-# --- UI/UX UPGRADE: DARK MODE COMPATIBLE CSS ---
 st.markdown("""
     <style>
     footer {visibility: hidden;}
-    
-    /* Dynamic Metric Cards that adapt to Light/Dark mode */
     [data-testid="stMetric"] {
         background-color: var(--secondary-background-color);
         border: 1px solid rgba(128, 128, 128, 0.2);
@@ -32,8 +30,6 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0,0,0,0.2);
     }
-    
-    /* Dynamic Tabs that adapt to Light/Dark mode */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
@@ -50,7 +46,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. SUPABASE INITIALIZATION & SECRETS
+# 2. SUPABASE INITIALIZATION
 # ==========================================
 @st.cache_resource
 def init_supabase():
@@ -66,16 +62,46 @@ except Exception as e:
 
 sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
 
-# ==========================================
-# 3. SECURITY & SESSION STATE
-# ==========================================
 def make_hashes(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
 def check_hashes(password, hashed_text):
     return make_hashes(password) == hashed_text
 
-if 'logged_in' not in st.session_state:
+# ==========================================
+# 3. COOKIES & INACTIVITY TIMEOUT LOGIC
+# ==========================================
+# Initialize Cookie Manager
+cookies = EncryptedCookieManager(prefix="carsia", password=st.secrets["COOKIE_PASSWORD"])
+if not cookies.ready():
+    # Wait for cookies to be ready on first load
+    st.stop()
+
+TIMEOUT_MINUTES = 30
+TIMEOUT_SECONDS = TIMEOUT_MINUTES * 60
+current_time = time.time()
+
+# Check Cookie Session State
+if cookies.get("logged_in") == "True":
+    last_activity = float(cookies.get("last_activity", 0))
+    
+    if current_time - last_activity > TIMEOUT_SECONDS:
+        # Timeout breached: Clear cookies and log them out
+        cookies["logged_in"] = "False"
+        cookies["user_name"] = ""
+        cookies["user_role"] = ""
+        cookies["last_activity"] = "0"
+        cookies.save()
+        st.session_state['logged_in'] = False
+        st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
+    else:
+        # Active session: Reset the timer and restore variables
+        cookies["last_activity"] = str(current_time)
+        cookies.save()
+        st.session_state['logged_in'] = True
+        st.session_state['user_name'] = cookies.get("user_name")
+        st.session_state['user_role'] = cookies.get("user_role")
+else:
     st.session_state['logged_in'] = False
     st.session_state['user_name'] = ""
     st.session_state['user_role'] = ""
@@ -125,8 +151,15 @@ if not st.session_state['logged_in']:
                                         db_role = user_data['role']
                                         
                                         manila_tz = pytz.timezone('Asia/Manila')
-                                        current_time = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-                                        supabase.table('access_logs').insert({'timestamp': current_time, 'name': db_name, 'role': db_role}).execute()
+                                        current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
+                                        supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
+                                        
+                                        # --- NEW COOKIE CREATION ---
+                                        cookies["logged_in"] = "True"
+                                        cookies["user_name"] = db_name
+                                        cookies["user_role"] = db_role
+                                        cookies["last_activity"] = str(time.time())
+                                        cookies.save()
                                         
                                         st.session_state['logged_in'] = True
                                         st.session_state['user_name'] = db_name
@@ -158,7 +191,7 @@ if not st.session_state['logged_in']:
             with st.form("signup_form"):
                 st.info("Submitted requests are reviewed by a System Admin before access is granted.")
                 new_name = st.text_input("Full Name")
-                new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+                new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
                 new_password = st.text_input("Create Password", type="password")
@@ -230,6 +263,12 @@ with st.sidebar:
     st.info(f"👤 **{st.session_state['user_name']}**\n\n*({st.session_state['user_role']})*")
     
     if st.button("🚪 Logout", use_container_width=True):
+        # --- DESTROY COOKIES ON MANUAL LOGOUT ---
+        cookies["logged_in"] = "False"
+        cookies["user_name"] = ""
+        cookies["user_role"] = ""
+        cookies["last_activity"] = "0"
+        cookies.save()
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
@@ -273,13 +312,14 @@ def clean_and_process_car_data(df, col_names):
     df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
     df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
     
-    # 1. Forward-fill the parents down the list
+    # --- FIXED PARENT/CHILD LOGIC ---
     df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
     
-    # 2. THE FIX: Erase the spillover for higher-level rows
+    # Erase spillover for higher levels
     df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
     df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
+    # --------------------------------
     
     return df
 
