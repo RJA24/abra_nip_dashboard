@@ -313,9 +313,35 @@ try:
             
             users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
             
+            # --- THE FIX: Force the column to be text so Streamlit doesn't crash ---
+            if 'Contact_Info' not in users_admin_df.columns:
+                users_admin_df['Contact_Info'] = ""
+            users_admin_df['Contact_Info'] = users_admin_df['Contact_Info'].fillna("").astype(str)
+            # ------------------------------------------------------------------------
+            
             edited_users = st.data_editor(
                 users_admin_df,
                 column_config={
+# ... (the rest of your column config stays exactly the same) ...# ==========================================
+    # SECRET ADMIN PANEL
+    # ==========================================
+    if is_admin:
+        with tab_admin:
+            st.markdown("### 🔐 User Account Management")
+            st.write("Approve or deny pending access and password reset requests. Use the Contact Info to verify user identities out-of-band.")
+            
+            users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+            
+            # --- THE FIX: Force the column to be text so Streamlit doesn't crash ---
+            if 'Contact_Info' not in users_admin_df.columns:
+                users_admin_df['Contact_Info'] = ""
+            users_admin_df['Contact_Info'] = users_admin_df['Contact_Info'].fillna("").astype(str)
+            # ------------------------------------------------------------------------
+            
+            edited_users = st.data_editor(
+                users_admin_df,
+                column_config={
+# ... (the rest of your column config stays exactly the same) ...
                     "Account_Status": st.column_config.SelectboxColumn(
                         "Account Status",
                         help="Select the approval status",
