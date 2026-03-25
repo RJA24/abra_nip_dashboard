@@ -20,7 +20,7 @@ try:
     
     # Read the data (replace 'Sheet1' with your actual tab name)
     # ttl="10m" caches the data for 10 minutes to save API calls
-    df = conn.read(worksheet="Sheet1", ttl="10m")
+    df = conn.read(worksheet="Target(Barangay)", ttl="10m")
     
     st.success("✅ Successfully connected to VaccTrack Sheets Database!")
     
