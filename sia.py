@@ -53,16 +53,32 @@ if not st.session_state['logged_in']:
                         users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
                         users_df['Username'] = users_df['Username'].astype(str).str.strip()
                         
-                        user_record = users_df[users_df['Username'] == input_username.strip()]
+                        # Ensure Failed_Attempts column exists and handles blanks safely
+                        if 'Failed_Attempts' not in users_df.columns:
+                            users_df['Failed_Attempts'] = 0
+                        users_df['Failed_Attempts'] = pd.to_numeric(users_df['Failed_Attempts'], errors='coerce').fillna(0).astype(int)
                         
-                        if not user_record.empty:
-                            stored_hash = str(user_record.iloc[0]['Password_Hash']).strip()
-                            account_status = str(user_record.iloc[0].get('Account_Status', 'Pending')).strip()
+                        user_idx = users_df.index[users_df['Username'] == input_username.strip()].tolist()
+                        
+                        if user_idx:
+                            idx = user_idx[0]
+                            stored_hash = str(users_df.at[idx, 'Password_Hash']).strip()
+                            account_status = str(users_df.at[idx, 'Account_Status']).strip()
+                            failed_attempts = int(users_df.at[idx, 'Failed_Attempts'])
                             
-                            if check_hashes(input_password, stored_hash):
-                                if account_status == "Approved":
-                                    db_name = user_record.iloc[0]['Name']
-                                    db_role = user_record.iloc[0]['Role']
+                            MAX_ATTEMPTS = 3
+                            
+                            if account_status == "Locked":
+                                st.error("🚨 Your account is locked due to too many failed login attempts. Please contact a System Admin to unlock it.")
+                            elif account_status == "Approved":
+                                if check_hashes(input_password, stored_hash):
+                                    # SUCCESS: Reset failed attempts counter to 0
+                                    if failed_attempts > 0:
+                                        users_df.at[idx, 'Failed_Attempts'] = 0
+                                        conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=users_df)
+                                    
+                                    db_name = users_df.at[idx, 'Name']
+                                    db_role = users_df.at[idx, 'Role']
                                     
                                     existing_logs = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
                                     manila_tz = pytz.timezone('Asia/Manila')
@@ -77,15 +93,25 @@ if not st.session_state['logged_in']:
                                     st.success("Authentication Successful! Loading...")
                                     time.sleep(1)
                                     st.rerun()
-                                    
-                                elif account_status == "Pending":
-                                    st.warning("⏳ Your account request is still pending admin approval.")
-                                elif account_status == "Pending Reset":
-                                    st.warning("🔄 Your password reset request is pending admin approval.")
                                 else:
-                                    st.error("🚫 Your account access has been denied or revoked.")
+                                    # FAILED: Increment the strike counter
+                                    failed_attempts += 1
+                                    users_df.at[idx, 'Failed_Attempts'] = failed_attempts
+                                    
+                                    if failed_attempts >= MAX_ATTEMPTS:
+                                        users_df.at[idx, 'Account_Status'] = "Locked"
+                                        conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=users_df)
+                                        st.error("🚨 Maximum login attempts reached. Your account is now locked.")
+                                    else:
+                                        conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=users_df)
+                                        st.error(f"❌ Incorrect Password. Attempt {failed_attempts} of {MAX_ATTEMPTS}.")
+                            
+                            elif account_status == "Pending":
+                                st.warning("⏳ Your account request is still pending admin approval.")
+                            elif account_status == "Pending Reset":
+                                st.warning("🔄 Your password reset request is pending admin approval.")
                             else:
-                                st.error("❌ Incorrect Password.")
+                                st.error("🚫 Your account access has been denied or revoked.")
                         else:
                             st.error("❌ Username not found.")
                     except Exception as e:
@@ -126,7 +152,8 @@ if not st.session_state['logged_in']:
                                 "Name": new_name.strip(),
                                 "Role": new_role,
                                 "Account_Status": "Pending",
-                                "Contact_Info": new_contact.strip()
+                                "Contact_Info": new_contact.strip(),
+                                "Failed_Attempts": 0 # Initialize with 0 strikes
                             }])
                             
                             updated_users = pd.concat([users_df, new_account], ignore_index=True)
@@ -164,6 +191,7 @@ if not st.session_state['logged_in']:
                             idx = user_idx[0]
                             users_df.at[idx, 'Password_Hash'] = make_hashes(reset_new_password)
                             users_df.at[idx, 'Account_Status'] = "Pending Reset"
+                            users_df.at[idx, 'Failed_Attempts'] = 0 # Clear strikes if they reset
                             
                             conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=users_df)
                             st.success("✅ Reset request sent! Your account is temporarily locked until Admin approval.")
@@ -309,50 +337,31 @@ try:
     if is_admin:
         with tab_admin:
             st.markdown("### 🔐 User Account Management")
-            st.write("Approve or deny pending access and password reset requests. Use the Contact Info to verify user identities out-of-band.")
+            st.write("Approve or deny pending access and password reset requests. To unlock an account, change its status back to 'Approved'.")
             
             users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
             
-            # --- THE FIX: Force the column to be text so Streamlit doesn't crash ---
             if 'Contact_Info' not in users_admin_df.columns:
                 users_admin_df['Contact_Info'] = ""
             users_admin_df['Contact_Info'] = users_admin_df['Contact_Info'].fillna("").astype(str)
-            # ------------------------------------------------------------------------
             
+            if 'Failed_Attempts' not in users_admin_df.columns:
+                users_admin_df['Failed_Attempts'] = 0
+            
+            # The Data Editor
             edited_users = st.data_editor(
                 users_admin_df,
                 column_config={
-                }
-            )
-# ... (the rest of your column config stays exactly the same) ...# ==========================================
-    # SECRET ADMIN PANEL
-    # ==========================================
-    if is_admin:
-        with tab_admin:
-            st.markdown("### 🔐 User Account Management")
-            st.write("Approve or deny pending access and password reset requests. Use the Contact Info to verify user identities out-of-band.")
-            
-            users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
-            
-            # --- THE FIX: Force the column to be text so Streamlit doesn't crash ---
-            if 'Contact_Info' not in users_admin_df.columns:
-                users_admin_df['Contact_Info'] = ""
-            users_admin_df['Contact_Info'] = users_admin_df['Contact_Info'].fillna("").astype(str)
-            # ------------------------------------------------------------------------
-            
-            edited_users = st.data_editor(
-                users_admin_df,
-                column_config={
-# ... (the rest of your column config stays exactly the same) ...
                     "Account_Status": st.column_config.SelectboxColumn(
                         "Account Status",
                         help="Select the approval status",
                         width="medium",
-                        options=["Approved", "Pending", "Pending Reset", "Denied", "Revoked"],
+                        options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"],
                         required=True,
                     ),
-                    "Password_Hash": None, # Hide the hash column
-                    "Contact_Info": st.column_config.TextColumn("Contact Info", width="medium") # Display the new contact column
+                    "Password_Hash": None,
+                    "Contact_Info": st.column_config.TextColumn("Contact Info", width="medium"),
+                    "Failed_Attempts": st.column_config.NumberColumn("Strikes", width="small", disabled=True) # Let admins see strikes, but not edit them directly
                 },
                 use_container_width=True,
                 num_rows="dynamic"
@@ -360,6 +369,9 @@ try:
             
             if st.button("💾 Save User Changes", type="primary"):
                 try:
+                    # When an admin manually changes a status to 'Approved', automatically clear their strikes
+                    edited_users.loc[edited_users['Account_Status'] == 'Approved', 'Failed_Attempts'] = 0
+                    
                     conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=edited_users)
                     st.success("User accounts updated successfully!")
                     st.cache_data.clear()
