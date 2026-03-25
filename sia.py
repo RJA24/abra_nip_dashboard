@@ -58,26 +58,24 @@ tab_target, tab_mr, tab_vita, tab_total = st.tabs([
 
 # 5. Helper Function for CAR Data Cleaning
 def clean_and_process_car_data(df, col_names):
-    # Condense the merged location columns into a single valid 'Location' name
-    df['Location'] = df['Loc3'].fillna(df['Loc2']).fillna(df['Loc1'])
-    
+    # Remove invisible decimals and blanks from Code
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
     df = df[df['Code'] != 'nan']
     df = df[df['Code'] != 'None']
     df = df[df['Code'] != '']
     
-    # Clean numeric columns
-    numeric_cols = col_names[4:] 
+    # Clean numeric columns (now starting at index 2)
+    numeric_cols = col_names[2:] 
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
         
-    # Regional Hierarchy Engine using standard PSGC formats
+    # Regional Hierarchy Engine
     df['Level'] = 'Barangay'
     df.loc[df['Code'].str.endswith('00000000'), 'Level'] = 'Region'
     df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
     df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
 
-    # Forward-fill relationships so every barangay knows its parent municipality and province
+    # Forward-fill relationships
     df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
     
@@ -88,9 +86,9 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
     
-    # Define the new 16-column structure of Target(CAR)
+    # Updated to 14 columns to prevent data shifting
     col_names = [
-        "Code", "Loc1", "Loc2", "Loc3",
+        "Code", "Location", 
         "6-59m_Male", "6-59m_Female", "6-59m_Total",
         "6-12m_Male", "6-12m_Female", "6-12m_Total", 
         "13-23m_Male", "13-23m_Female", "13-23m_Total", 
@@ -103,8 +101,8 @@ try:
     with tab_target:
         st.markdown("### Regional Target Baseline Overview")
         
-        # Read data explicitly from the provided Sheet URL and new Tab
-        df_targets_raw = conn.read(spreadsheet=sheet_url, worksheet="Target(CAR)", usecols=list(range(16)), skiprows=2, names=col_names, ttl="10m")
+        # Notice we changed usecols=list(range(16)) to usecols=list(range(14))
+        df_targets_raw = conn.read(spreadsheet=sheet_url, worksheet="Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl="10m")
         df_targets = clean_and_process_car_data(df_targets_raw, col_names)
         
         # Map the filter selection to the exact column name
