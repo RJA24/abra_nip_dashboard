@@ -32,14 +32,6 @@ sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzi
 if not st.session_state['logged_in']:
     st.title("🔒 CAR SIA 2026 Tracker - Secure Access")
     
-    # --- TEMPORARY ADMIN TOOL: Remove or comment out after setting up users ---
-    with st.expander("🛠️ Admin: Generate Password Hash"):
-        st.info("Type a password here to generate its secure hash. Copy and paste the hash into the 'Password_Hash' column of your User_Accounts sheet.")
-        hash_input = st.text_input("Enter password to hash:", type="password")
-        if hash_input:
-            st.code(make_hashes(hash_input))
-    # ------------------------------------------------------------------------
-
     # Login Form
     with st.form("login_form"):
         st.markdown("### Please Log In")
