@@ -10,28 +10,45 @@ st.set_page_config(
 )
 
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
-st.markdown("### DOH Tracking Dashboard")
+st.markdown("### Target Overview Dashboard")
 st.divider()
 
-# 2. Establish Connection to Google Sheets
-# This looks for the credentials we will set up in Streamlit Secrets
 try:
+    # 2. Establish Connection
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Read the data (replace 'Sheet1' with your actual tab name)
-    # ttl="10m" caches the data for 10 minutes to save API calls
-    df = conn.read(worksheet="Target(Barangay)", ttl="10m")
+    # Read the specific Target tab
+    df_targets = conn.read(worksheet="Target(Barangay)", ttl="10m")
     
-    st.success("✅ Successfully connected to VaccTrack Sheets Database!")
+    # Basic Cleaning: Google Sheets often loads empty rows, this drops them
+    df_targets = df_targets.dropna(how="all")
     
-    # 3. Basic Data Display
-    if st.checkbox("View Raw Data"):
-        st.dataframe(df, use_container_width=True)
+    # 3. Top-Level Metrics
+    # Check if the expected columns exist to prevent crash errors
+    if 'Barangay' in df_targets.columns and 'Target' in df_targets.columns:
         
-    # Placeholder for your upcoming visualizations
-    st.subheader("Immunization Coverage Metrics")
-    st.info("Visualizations (Plotly/Altair) will be placed here once data is cleaned.")
+        # Calculate the total target sum
+        total_target = df_targets['Target'].sum()
+        
+        # Display a prominent metric card
+        st.metric(label="Total Provincial SIA Target", value=f"{total_target:,.0f}")
+        st.divider()
+        
+        # 4. Visualization
+        st.subheader("Target Distribution per Barangay")
+        
+        # Sort the data from highest target to lowest for a cleaner chart
+        df_sorted = df_targets.sort_values('Target', ascending=False)
+        
+        # Display the bar chart
+        st.bar_chart(data=df_sorted, x='Barangay', y='Target', use_container_width=True)
+        
+    else:
+        st.info("💡 To see the charts, ensure your columns in the sheet are named exactly 'Barangay' and 'Target', or update the Python code to match your actual column names.")
+
+    # 5. Raw Data Preview (hidden inside an expander to keep the UI clean)
+    with st.expander("View Raw Target Database"):
+        st.dataframe(df_targets, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Connection Error: {e}")
-    st.warning("Ensure your Streamlit Cloud secrets are configured and the Sheet is shared with your Service Account email.")
+    st.error(f"Error loading data: {e}")
