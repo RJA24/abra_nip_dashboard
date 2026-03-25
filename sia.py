@@ -323,6 +323,7 @@ try:
                 users_admin_df,
                 column_config={
                 }
+            )
 # ... (the rest of your column config stays exactly the same) ...# ==========================================
     # SECRET ADMIN PANEL
     # ==========================================
