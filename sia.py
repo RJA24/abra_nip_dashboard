@@ -272,8 +272,15 @@ def clean_and_process_car_data(df, col_names):
     df.loc[df['Code'].str.endswith('00000000'), 'Level'] = 'Region'
     df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
     df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
+    
+    # 1. Forward-fill the parents down the list
     df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
+    
+    # 2. THE FIX: Erase the spillover for higher-level rows
+    df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
+    df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
+    
     return df
 
 @st.cache_data(ttl="15s")
