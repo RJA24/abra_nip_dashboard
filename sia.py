@@ -404,6 +404,10 @@ try:
                         df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
                         df_supabase.columns = ['code', 'location', 'level', 'parent_province', 'parent_municipality', 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m']
                         
+                        # --- THE FIX: Convert pandas NaN to JSON-compliant None ---
+                        df_supabase = df_supabase.replace({np.nan: None})
+                        # ----------------------------------------------------------
+                        
                         # Upsert to Supabase
                         data_to_push = df_supabase.to_dict(orient='records')
                         supabase.table('targets').upsert(data_to_push).execute()
