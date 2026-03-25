@@ -14,31 +14,36 @@ from supabase import create_client, Client
 # ==========================================
 st.set_page_config(page_title="CAR SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
 
+# --- UI/UX UPGRADE: DARK MODE COMPATIBLE CSS ---
 st.markdown("""
     <style>
     footer {visibility: hidden;}
+    
+    /* Dynamic Metric Cards that adapt to Light/Dark mode */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+        background-color: var(--secondary-background-color);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 8px;
         padding: 15px 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         transition: transform 0.2s ease-in-out;
     }
     [data-testid="stMetric"]:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.2);
     }
+    
+    /* Dynamic Tabs that adapt to Light/Dark mode */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        background-color: #f1f3f4;
+        background-color: var(--secondary-background-color);
         border-radius: 4px 4px 0px 0px;
         padding: 10px 20px;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #ffffff;
-        border-bottom: 2px solid #1E88E5;
+        background-color: var(--background-color);
+        border-bottom: 2px solid var(--primary-color);
         font-weight: bold;
     }
     </style>
@@ -47,7 +52,6 @@ st.markdown("""
 # ==========================================
 # 2. SUPABASE INITIALIZATION & SECRETS
 # ==========================================
-# Initialize Supabase client using Streamlit secrets
 @st.cache_resource
 def init_supabase():
     url = st.secrets["SUPABASE_URL"]
@@ -60,7 +64,6 @@ except Exception as e:
     st.error("⚠️ Supabase Connection Error: Please ensure SUPABASE_URL and SUPABASE_KEY are set in Streamlit Secrets.")
     st.stop()
 
-# Keep Google Sheets URL for the Sync feature
 sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
 
 # ==========================================
@@ -90,7 +93,6 @@ if not st.session_state['logged_in']:
         
         tab_login, tab_signup, tab_forgot = st.tabs(["🔑 Log In", "📝 Request Account", "❓ Forgot Password"])
         
-        # --- LOGIN TAB ---
         with tab_login:
             with st.form("login_form"):
                 input_username = st.text_input("Username").strip()
@@ -102,7 +104,6 @@ if not st.session_state['logged_in']:
                         st.warning("Please enter both username and password.")
                     else:
                         try:
-                            # Fetch user from Supabase
                             res = supabase.table('user_accounts').select('*').eq('username', input_username).execute()
                             user_records = res.data
                             
@@ -114,22 +115,18 @@ if not st.session_state['logged_in']:
                                 MAX_ATTEMPTS = 3
                                 
                                 if account_status == "Locked":
-                                    st.error("🚨 Your account is locked due to too many failed login attempts. Please contact a System Admin to unlock it.")
+                                    st.error("🚨 Your account is locked. Please contact a System Admin to unlock it.")
                                 elif account_status == "Approved":
                                     if check_hashes(input_password, stored_hash):
-                                        # SUCCESS
                                         if failed_attempts > 0:
                                             supabase.table('user_accounts').update({'failed_attempts': 0}).eq('username', input_username).execute()
                                         
                                         db_name = user_data['name']
                                         db_role = user_data['role']
                                         
-                                        # Log Access to Supabase
                                         manila_tz = pytz.timezone('Asia/Manila')
                                         current_time = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-                                        supabase.table('access_logs').insert({
-                                            'timestamp': current_time, 'name': db_name, 'role': db_role
-                                        }).execute()
+                                        supabase.table('access_logs').insert({'timestamp': current_time, 'name': db_name, 'role': db_role}).execute()
                                         
                                         st.session_state['logged_in'] = True
                                         st.session_state['user_name'] = db_name
@@ -139,7 +136,6 @@ if not st.session_state['logged_in']:
                                         time.sleep(1)
                                         st.rerun()
                                     else:
-                                        # FAILED PASSWORD
                                         failed_attempts += 1
                                         if failed_attempts >= MAX_ATTEMPTS:
                                             supabase.table('user_accounts').update({'failed_attempts': failed_attempts, 'account_status': 'Locked'}).eq('username', input_username).execute()
@@ -147,7 +143,6 @@ if not st.session_state['logged_in']:
                                         else:
                                             supabase.table('user_accounts').update({'failed_attempts': failed_attempts}).eq('username', input_username).execute()
                                             st.error(f"❌ Incorrect Password. Attempt {failed_attempts} of {MAX_ATTEMPTS}.")
-                                
                                 elif account_status == "Pending":
                                     st.warning("⏳ Your account request is still pending admin approval.")
                                 elif account_status == "Pending Reset":
@@ -159,12 +154,11 @@ if not st.session_state['logged_in']:
                         except Exception as e:
                             st.error(f"System Error: {e}")
 
-        # --- SIGN UP TAB ---
         with tab_signup:
             with st.form("signup_form"):
                 st.info("Submitted requests are reviewed by a System Admin before access is granted.")
                 new_name = st.text_input("Full Name")
-                new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer", "System Admin"])
+                new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
                 new_password = st.text_input("Create Password", type="password")
@@ -185,19 +179,13 @@ if not st.session_state['logged_in']:
                             else:
                                 hashed_pw = make_hashes(new_password)
                                 supabase.table('user_accounts').insert({
-                                    "username": new_username,
-                                    "password_hash": hashed_pw,
-                                    "name": new_name.strip(),
-                                    "role": new_role,
-                                    "account_status": "Pending",
-                                    "contact_info": new_contact.strip(),
-                                    "failed_attempts": 0 
+                                    "username": new_username, "password_hash": hashed_pw, "name": new_name.strip(),
+                                    "role": new_role, "account_status": "Pending", "contact_info": new_contact.strip(), "failed_attempts": 0 
                                 }).execute()
                                 st.success("✅ Request submitted! Please wait for admin approval.")
                         except Exception as e:
                             st.error(f"Registration Error: {e}")
 
-        # --- FORGOT PASSWORD TAB ---
         with tab_forgot:
             with st.form("forgot_password_form"):
                 st.info("An Admin must approve this reset before you can log in.")
@@ -216,11 +204,7 @@ if not st.session_state['logged_in']:
                         try:
                             res = supabase.table('user_accounts').select('username').eq('username', reset_username).execute()
                             if res.data:
-                                supabase.table('user_accounts').update({
-                                    'password_hash': make_hashes(reset_new_password),
-                                    'account_status': 'Pending Reset',
-                                    'failed_attempts': 0
-                                }).eq('username', reset_username).execute()
+                                supabase.table('user_accounts').update({'password_hash': make_hashes(reset_new_password), 'account_status': 'Pending Reset', 'failed_attempts': 0}).eq('username', reset_username).execute()
                                 st.success("✅ Reset request sent! Your account is locked until Admin approval.")
                             else:
                                 st.error("⚠️ Username not found.")
@@ -233,7 +217,7 @@ if not st.session_state['logged_in']:
 # ==========================================
 st.title("Cordillera Administrative Region (CAR) SIA 2026")
 
-@st.cache_data(ttl="15s") # Faster load times
+@st.cache_data(ttl="15s")
 def get_last_updated_time():
     tz = pytz.timezone('Asia/Manila')
     return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
@@ -276,7 +260,6 @@ tab_target, tab_mr, tab_vita, tab_total = tabs[0], tabs[1], tabs[2], tabs[3]
 if is_admin:
     tab_admin = tabs[4]
 
-# Function to clean raw Sheets data before pushing to Supabase
 def clean_and_process_car_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
     df = df[df['Code'] != 'nan']
@@ -293,14 +276,12 @@ def clean_and_process_car_data(df, col_names):
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
     return df
 
-# Fetch fast data from Supabase Database
 @st.cache_data(ttl="15s")
 def fetch_targets_from_supabase():
     res = supabase.table('targets').select('*').execute()
     if not res.data:
         return pd.DataFrame()
     df = pd.DataFrame(res.data)
-    # Map back to UI friendly column names
     col_mapping = {
         'code': 'Code', 'location': 'Location', 'level': 'Level',
         'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
@@ -322,7 +303,7 @@ try:
 
             df_view = pd.DataFrame()
             chart_title = ""
-            selected_prov = "CAR_Region" # Default export name
+            selected_prov = "CAR_Region" 
             selected_muni = ""
             
             if view_mode == "Region-wide (Compare Provinces)":
@@ -389,7 +370,6 @@ try:
     # ==========================================
     if is_admin:
         with tab_admin:
-            # --- THE NEW SUPABASE DATA BRIDGE ---
             st.markdown("### 🔄 Master Database Sync")
             st.write("Pull the latest targets directly from the DOH Google Sheet into the high-speed Supabase Engine.")
             
@@ -404,11 +384,8 @@ try:
                         df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
                         df_supabase.columns = ['code', 'location', 'level', 'parent_province', 'parent_municipality', 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m']
                         
-                        # --- THE FIX: Convert pandas NaN to JSON-compliant None ---
                         df_supabase = df_supabase.replace({np.nan: None})
-                        # ----------------------------------------------------------
                         
-                        # Upsert to Supabase
                         data_to_push = df_supabase.to_dict(orient='records')
                         supabase.table('targets').upsert(data_to_push).execute()
                         
@@ -419,15 +396,12 @@ try:
             
             st.divider()
             
-            # User Management (Supabase logic)
             st.markdown("### 🔐 User Account Management")
-            
             res_users = supabase.table('user_accounts').select('*').execute()
             if res_users.data:
                 users_admin_df = pd.DataFrame(res_users.data)
                 users_admin_df['contact_info'] = users_admin_df['contact_info'].fillna("").astype(str)
                 
-                # Order columns logically
                 cols = ['username', 'name', 'role', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
                 users_admin_df = users_admin_df[cols]
                 
@@ -435,7 +409,7 @@ try:
                     users_admin_df,
                     column_config={
                         "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
-                        "password_hash": None, # Hide Hash
+                        "password_hash": None, 
                         "username": st.column_config.TextColumn("Username", disabled=True),
                         "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
                         "failed_attempts": st.column_config.NumberColumn("Strikes", width="small", disabled=True) 
@@ -456,7 +430,6 @@ try:
             
             st.divider()
 
-            # Access Logs (Supabase logic)
             st.markdown("### 📋 System Access Logs")
             try:
                 res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
