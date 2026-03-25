@@ -97,7 +97,7 @@ if not st.session_state['logged_in']:
                     else:
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
-                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=15)
                             users_df['Username'] = users_df['Username'].astype(str).str.strip()
                             
                             if 'Failed_Attempts' not in users_df.columns:
@@ -125,7 +125,7 @@ if not st.session_state['logged_in']:
                                         db_name = users_df.at[idx, 'Name']
                                         db_role = users_df.at[idx, 'Role']
                                         
-                                        existing_logs = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
+                                        existing_logs = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=15)
                                         manila_tz = pytz.timezone('Asia/Manila')
                                         current_time = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
                                         new_log = pd.DataFrame([{"Timestamp": current_time, "Name": db_name, "Role": db_role}])
@@ -184,7 +184,7 @@ if not st.session_state['logged_in']:
                     else:
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
-                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=15)
                             
                             if new_username.strip() in users_df['Username'].astype(str).str.strip().values:
                                 st.error("⚠️ That username is already taken. Please choose another.")
@@ -224,7 +224,7 @@ if not st.session_state['logged_in']:
                     else:
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
-                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+                            users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=15)
                             users_df['Username'] = users_df['Username'].astype(str).str.strip()
                             
                             user_idx = users_df.index[users_df['Username'] == reset_username.strip()].tolist()
@@ -404,7 +404,7 @@ try:
             st.markdown("### 🔐 User Account Management")
             st.write("Approve or deny pending access and password reset requests. To unlock an account, change its status back to 'Approved'.")
             
-            users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+            users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=15)
             
             if 'Contact_Info' not in users_admin_df.columns:
                 users_admin_df['Contact_Info'] = ""
@@ -439,7 +439,7 @@ try:
             st.markdown("### 📋 System Access Logs")
             
             try:
-                logs_df = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
+                logs_df = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=15)
                 if not logs_df.empty:
                     logs_df = logs_df.sort_values(by="Timestamp", ascending=False).reset_index(drop=True)
                     st.dataframe(logs_df, use_container_width=True)
