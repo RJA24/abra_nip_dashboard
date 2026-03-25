@@ -17,38 +17,53 @@ try:
     # 2. Establish Connection
     conn = st.connection("gsheets", type=GSheetsConnection)
     
-    # Read the specific Target tab
-    df_targets = conn.read(worksheet="Target(Barangay)", ttl="10m")
+    # 3. Intelligent Data Extraction
+    # We explicitly define the 11 columns from A to K so Pandas doesn't get confused by merged cells
+    col_names = [
+        "Code", "Location", 
+        "6-12m_Male", "6-12m_Female", "6-12m_Total", 
+        "13-23m_Male", "13-23m_Female", "13-23m_Total", 
+        "24-59m_Male", "24-59m_Female", "24-59m_Total"
+    ]
     
-    # Basic Cleaning: Google Sheets often loads empty rows, this drops them
-    df_targets = df_targets.dropna(how="all")
+    # Read the sheet, skipping the first 2 messy header rows
+    df_raw = conn.read(worksheet="Target(Barangay)", usecols=list(range(11)), skiprows=2, names=col_names, ttl="10m")
     
-    # 3. Top-Level Metrics
-    # Check if the expected columns exist to prevent crash errors
-    if 'Barangay' in df_targets.columns and 'Target' in df_targets.columns:
+    # Drop rows where there is no location data
+    df_raw = df_raw.dropna(subset=['Code'])
+    
+    # Clean the numbers (remove commas and convert from text to integers)
+    numeric_cols = col_names[2:] # All columns from index 2 onwards
+    for col in numeric_cols:
+        df_raw[col] = pd.to_numeric(df_raw[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
         
-        # Calculate the total target sum
-        total_target = df_targets['Target'].sum()
-        
-        # Display a prominent metric card
-        st.metric(label="Total Provincial SIA Target", value=f"{total_target:,.0f}")
-        st.divider()
-        
-        # 4. Visualization
-        st.subheader("Target Distribution per Barangay")
-        
-        # Sort the data from highest target to lowest for a cleaner chart
-        df_sorted = df_targets.sort_values('Target', ascending=False)
-        
-        # Display the bar chart
-        st.bar_chart(data=df_sorted, x='Barangay', y='Target', use_container_width=True)
-        
-    else:
-        st.info("💡 To see the charts, ensure your columns in the sheet are named exactly 'Barangay' and 'Target', or update the Python code to match your actual column names.")
+    # 4. Intelligent Filtering
+    # Filter OUT the province/municipality total rows (Abra, Bangued) 
+    # We know it's a summary row if the Code ends with '000'
+    df_barangays = df_raw[~df_raw['Code'].astype(str).str.endswith('000')].copy()
+    
+    # Calculate the Grand Total for each Barangay across all age groups
+    df_barangays['Grand_Total'] = df_barangays['6-12m_Total'] + df_barangays['13-23m_Total'] + df_barangays['24-59m_Total']
+    
+    # Calculate the overall provincial target for the top metric
+    total_target = df_barangays['Grand_Total'].sum()
+    
+    # 5. Dashboard UI
+    st.metric(label="Total Provincial SIA Target", value=f"{total_target:,.0f}")
+    st.divider()
+    
+    st.subheader("Target Distribution per Barangay")
+    
+    # Sort from highest to lowest target
+    df_sorted = df_barangays.sort_values('Grand_Total', ascending=False)
+    
+    # Display the clean bar chart
+    st.bar_chart(data=df_sorted, x='Location', y='Grand_Total', use_container_width=True)
 
-    # 5. Raw Data Preview (hidden inside an expander to keep the UI clean)
-    with st.expander("View Raw Target Database"):
-        st.dataframe(df_targets, use_container_width=True)
+    # 6. Raw Data Expander
+    with st.expander("View Cleaned Target Database"):
+        # We show the cleaned dataframe so you can verify the formatting worked
+        st.dataframe(df_barangays, use_container_width=True)
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
