@@ -2,8 +2,9 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import numpy as np
+import plotly.express as px
 
-# 1. Page Configuration
+# 1. Page Configuration (Keep it Wide)
 st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout="wide")
 
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
@@ -69,10 +70,10 @@ try:
     ]
     
     # ==========================================
-    # TAB 1: TARGET OVERVIEW
+    # TAB 1: TARGET OVERVIEW (Visually Upgraded)
     # ==========================================
     with tab_target:
-        st.markdown("### Target Baseline")
+        st.markdown("### Target Baseline Overview")
         
         df_targets_raw = conn.read(worksheet="Target(Barangay)", usecols=list(range(11)), skiprows=2, names=col_names, ttl="10m")
         df_targets = clean_and_process_data(df_targets_raw, col_names)
@@ -88,7 +89,7 @@ try:
         selected_muni = None
         if view_mode == "Province-wide (Municipalities)":
             df_view = df_targets[df_targets['Level'] == 'Municipality']
-            display_title = f"**Provincial Target Overview: {age_filter}**"
+            chart_title = f"Provincial Targets: {age_filter}"
         else:
             municipality_list = df_targets[df_targets['Level'] == 'Municipality']['Location'].unique().tolist()
             default_idx = municipality_list.index("Manabo") if "Manabo" in municipality_list else 0
@@ -97,9 +98,10 @@ try:
                 selected_muni = st.selectbox("Select Municipality:", municipality_list, index=default_idx)
                 
             df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-            display_title = f"**Barangay Breakdown for {selected_muni}: {age_filter}**"
+            chart_title = f"Barangay Targets for {selected_muni}: {age_filter}"
 
-        st.markdown("##### 📊 Target Population Breakdown")
+        # 1. The KPI Metric Row
+        st.markdown("##### 👥 Target Population Breakdown")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric("Grand Total (All Ages)", f"{df_view['Grand_Total'].sum():,.0f}")
         kpi2.metric("6 - 12 months", f"{df_view['6-12m_Total'].sum():,.0f}")
@@ -107,42 +109,84 @@ try:
         kpi4.metric("24 - 59 months", f"{df_view['24-59m_Total'].sum():,.0f}")
         st.divider()
 
-        st.markdown(display_title)
+        # 2. Interactive Plotly Charts
         if not df_view.empty:
-            df_sorted = df_view.sort_values(target_col, ascending=False)
-            st.bar_chart(data=df_sorted, x='Location', y=target_col, use_container_width=True)
+            # Create two columns for the charts: 70% width for the bar chart, 30% for the donut chart
+            col_chart1, col_chart2 = st.columns([7, 3])
+            
+            with col_chart1:
+                # Sort ascending so the largest bar appears at the top of the horizontal chart
+                df_sorted = df_view.sort_values(target_col, ascending=True) 
+                
+                fig_bar = px.bar(
+                    df_sorted, 
+                    x=target_col, 
+                    y='Location', 
+                    orientation='h',
+                    title=chart_title,
+                    text_auto='.0f', # Shows the exact number on the bar
+                    color_discrete_sequence=['#1E88E5'] # Professional Blue
+                )
+                fig_bar.update_layout(
+                    xaxis_title="Number of Eligible Children", 
+                    yaxis_title="",
+                    plot_bgcolor='rgba(0,0,0,0)', # Transparent background
+                    height=500
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+                
+            with col_chart2:
+                # Create the Age Group Donut Chart based on the current view
+                age_data = pd.DataFrame({
+                    'Age Group': ['6-12 months', '13-23 months', '24-59 months'],
+                    'Target': [
+                        df_view['6-12m_Total'].sum(), 
+                        df_view['13-23m_Total'].sum(), 
+                        df_view['24-59m_Total'].sum()
+                    ]
+                })
+                
+                fig_donut = px.pie(
+                    age_data, 
+                    names='Age Group', 
+                    values='Target', 
+                    hole=0.4,
+                    title="Age Distribution",
+                    color_discrete_sequence=['#43A047', '#FFB300', '#E53935'] # Green, Amber, Red
+                )
+                fig_donut.update_layout(
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                    height=500
+                )
+                st.plotly_chart(fig_donut, use_container_width=True)
+                
         else:
             st.warning("No data available for this selection.")
 
-        with st.expander("View Cleaned Target Database"):
-            st.dataframe(df_targets[['Code', 'Location', 'Level', 'Parent_Municipality', 'Grand_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']], use_container_width=True)
+        # 3. Clean Data Expander
+        with st.expander("View Target Database Table"):
+            st.dataframe(df_targets[['Code', 'Location', 'Level', 'Parent_Municipality', 'Grand_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']], use_container_width=True, hide_index=True)
 
     # ==========================================
-    # TAB 2: MR ACCOMPLISHMENT
+    # TAB 2: MR ACCOMPLISHMENT (Standby)
     # ==========================================
     with tab_mr:
         st.markdown("### Measles-Rubella (MR) Coverage")
-        st.info("🚧 Awaiting MR data from VaccTrack. Once linked, this tab will display the specific MR coverage percentages and remaining unvaccinated targets.")
+        st.info("🚧 Dashboard framework ready. Awaiting structural verification of the VaccTrack MR export file.")
 
     # ==========================================
-    # TAB 3: VITAMIN A ACCOMPLISHMENT
+    # TAB 3: VITAMIN A ACCOMPLISHMENT (Standby)
     # ==========================================
     with tab_vita:
         st.markdown("### Vitamin A Supplementation Coverage")
-        st.info("🚧 Awaiting Vitamin A data from VaccTrack. Once linked, this tab will display the specific Vitamin A coverage percentages and remaining unprotected targets.")
+        st.info("🚧 Dashboard framework ready. Awaiting structural verification of the VaccTrack Vitamin A export file.")
 
     # ==========================================
-    # TAB 4: TOTAL ACCOMPLISHMENT
+    # TAB 4: TOTAL ACCOMPLISHMENT (Standby)
     # ==========================================
     with tab_total:
-        st.markdown("### Executive Summary: Overall Campaign Performance")
-        st.info("🚧 This summary dashboard will automatically calculate and compare the combined performance of both the MR and Vitamin A campaigns once the individual data is loaded.")
-        
-        # A preview of the layout for the executive summary
-        st.markdown("##### Anticipated Metrics")
-        col1, col2 = st.columns(2)
-        col1.metric("Overall MR Coverage", "-- %", "Awaiting Data")
-        col2.metric("Overall Vit A Coverage", "-- %", "Awaiting Data")
+        st.markdown("### Executive Summary: Campaign Performance")
+        st.info("🚧 This view will automatically populate once the individual MR and Vitamin A streams are connected.")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
