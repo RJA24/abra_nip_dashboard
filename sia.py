@@ -29,13 +29,13 @@ if 'logged_in' not in st.session_state:
 sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
 
 # ==========================================
-# 4. THE GATEWAY (Login & Registration)
+# 4. THE GATEWAY (Login, Registration & Recovery)
 # ==========================================
 if not st.session_state['logged_in']:
     st.title("🔒 CAR SIA 2026 Tracker - Secure Access")
     
-    # Create two tabs for Login and Sign Up
-    tab_login, tab_signup = st.tabs(["🔑 Log In", "📝 Request Account"])
+    # Create three tabs for the Gateway
+    tab_login, tab_signup, tab_forgot = st.tabs(["🔑 Log In", "📝 Request Account", "❓ Forgot Password"])
     
     # --- LOGIN TAB ---
     with tab_login:
@@ -61,7 +61,6 @@ if not st.session_state['logged_in']:
                             account_status = str(user_record.iloc[0].get('Account_Status', 'Pending')).strip()
                             
                             if check_hashes(input_password, stored_hash):
-                                # Check if Admin has approved the account
                                 if account_status == "Approved":
                                     db_name = user_record.iloc[0]['Name']
                                     db_role = user_record.iloc[0]['Role']
@@ -83,6 +82,8 @@ if not st.session_state['logged_in']:
                                     
                                 elif account_status == "Pending":
                                     st.warning("⏳ Your account request is still pending admin approval.")
+                                elif account_status == "Pending Reset":
+                                    st.warning("🔄 Your password reset request is pending admin approval.")
                                 else:
                                     st.error("🚫 Your account access has been denied or revoked.")
                             else:
@@ -91,7 +92,6 @@ if not st.session_state['logged_in']:
                             st.error("❌ Username not found.")
                     except Exception as e:
                         st.error(f"System Error: {e}")
-                        st.info("Ensure the 'User_Accounts' tab has columns: Username, Password_Hash, Name, Role, Account_Status.")
 
     # --- SIGN UP TAB ---
     with tab_signup:
@@ -117,11 +117,9 @@ if not st.session_state['logged_in']:
                         conn = st.connection("gsheets", type=GSheetsConnection)
                         users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
                         
-                        # Check if username already exists to prevent duplicates
                         if new_username.strip() in users_df['Username'].astype(str).str.strip().values:
                             st.error("⚠️ That username is already taken. Please choose another.")
                         else:
-                            # Hash the password and set status to Pending
                             hashed_pw = make_hashes(new_password)
                             new_account = pd.DataFrame([{
                                 "Username": new_username.strip(),
@@ -133,10 +131,48 @@ if not st.session_state['logged_in']:
                             
                             updated_users = pd.concat([users_df, new_account], ignore_index=True)
                             conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=updated_users)
-                            
                             st.success("✅ Request submitted successfully! Please wait for admin approval.")
                     except Exception as e:
                         st.error(f"Registration Error: {e}")
+
+    # --- FORGOT PASSWORD TAB ---
+    with tab_forgot:
+        with st.form("forgot_password_form"):
+            st.markdown("### Password Reset Request")
+            st.info("Submit your username and a new password. An Admin must approve this reset before you can log in.")
+            
+            reset_username = st.text_input("Your Username")
+            reset_new_password = st.text_input("New Password", type="password")
+            reset_confirm_password = st.text_input("Confirm New Password", type="password")
+            
+            submit_reset = st.form_submit_button("Request Password Reset")
+            
+            if submit_reset:
+                if not all([reset_username, reset_new_password, reset_confirm_password]):
+                    st.warning("Please fill out all fields.")
+                elif reset_new_password != reset_confirm_password:
+                    st.error("Passwords do not match!")
+                else:
+                    try:
+                        conn = st.connection("gsheets", type=GSheetsConnection)
+                        users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
+                        users_df['Username'] = users_df['Username'].astype(str).str.strip()
+                        
+                        # Find the row index for the requested username
+                        user_idx = users_df.index[users_df['Username'] == reset_username.strip()].tolist()
+                        
+                        if user_idx:
+                            idx = user_idx[0]
+                            # Hash the new password and flag the account for admin review
+                            users_df.at[idx, 'Password_Hash'] = make_hashes(reset_new_password)
+                            users_df.at[idx, 'Account_Status'] = "Pending Reset"
+                            
+                            conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=users_df)
+                            st.success("✅ Reset request sent! Your account is temporarily locked until Admin approval.")
+                        else:
+                            st.error("⚠️ Username not found.")
+                    except Exception as e:
+                        st.error(f"Reset Error: {e}")
 
     st.stop()
 
@@ -175,7 +211,7 @@ with st.sidebar:
     view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
     age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
-# Dynamic Tab Creation (Admins get an extra tab)
+# Dynamic Tab Creation
 tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📊 Total Accomplishment"]
 is_admin = st.session_state['user_role'] == "System Admin"
 
@@ -261,6 +297,9 @@ try:
         else:
             st.warning("No data available.")
 
+        with st.expander("View Cleaned Regional Target Database"):
+            st.dataframe(df_targets[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']], use_container_width=True, hide_index=True)
+
     with tab_mr:
         st.info("🚧 Dashboard framework ready. Awaiting VaccTrack MR export file.")
     with tab_vita:
@@ -273,13 +312,12 @@ try:
     # ==========================================
     if is_admin:
         with tab_admin:
+            # 1. User Management Section
             st.markdown("### 🔐 User Account Management")
-            st.write("Approve or deny pending access requests below. Changes are saved directly to the database.")
+            st.write("Approve or deny pending access and password reset requests.")
             
-            # Fetch fresh user data for the admin panel
             users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
             
-            # Interactive Data Editor
             edited_users = st.data_editor(
                 users_admin_df,
                 column_config={
@@ -287,22 +325,39 @@ try:
                         "Account Status",
                         help="Select the approval status",
                         width="medium",
-                        options=["Approved", "Pending", "Denied", "Revoked"],
+                        options=["Approved", "Pending", "Pending Reset", "Denied", "Revoked"],
                         required=True,
                     ),
-                    "Password_Hash": None # Hide the password hash column for a cleaner view
+                    "Password_Hash": None # Hide the hash column
                 },
                 use_container_width=True,
                 num_rows="dynamic"
             )
             
-            if st.button("💾 Save Changes to Database", type="primary"):
+            if st.button("💾 Save User Changes", type="primary"):
                 try:
                     conn.update(spreadsheet=sheet_url, worksheet="User_Accounts", data=edited_users)
                     st.success("User accounts updated successfully!")
-                    st.cache_data.clear() # Clear cache to refresh
+                    st.cache_data.clear()
                 except Exception as e:
                     st.error(f"Failed to update database: {e}")
+
+            st.divider()
+
+            # 2. Access Logs Section
+            st.markdown("### 📋 System Access Logs")
+            st.write("Real-time audit trail of all successful logins.")
+            
+            try:
+                logs_df = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
+                if not logs_df.empty:
+                    # Sort by Timestamp descending so the newest logs are at the top
+                    logs_df = logs_df.sort_values(by="Timestamp", ascending=False).reset_index(drop=True)
+                    st.dataframe(logs_df, use_container_width=True)
+                else:
+                    st.info("No access logs found yet.")
+            except Exception as e:
+                st.warning(f"Could not load Access Logs: {e}")
 
 except Exception as e:
     st.error(f"Error loading data: {e}")
