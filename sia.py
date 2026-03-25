@@ -323,16 +323,23 @@ try:
 
         # 3. Clean Data Expander & Export
         with st.expander("📂 View & Download Target Database"):
-            # Display the dataframe
             display_df = df_targets[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
             
-            # Add a Download Button
+            # --- THE FIX: Create a dynamic file name based on the current view ---
+            if view_mode == "Region-wide (Compare Provinces)":
+                export_location = "CAR_Region"
+            elif view_mode == "Province-wide (Compare Municipalities)":
+                export_location = selected_prov
+            else:
+                export_location = selected_muni
+            # ---------------------------------------------------------------------
+            
             csv = display_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Data as CSV",
                 data=csv,
-                file_name=f"SIA_Targets_{selected_prov}_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"SIA_Targets_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
                 type="secondary"
             )
