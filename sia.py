@@ -8,7 +8,6 @@ import pytz
 import time
 import hashlib
 from supabase import create_client, Client
-from streamlit_cookies_manager import EncryptedCookieManager
 
 # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
@@ -69,42 +68,31 @@ def check_hashes(password, hashed_text):
     return make_hashes(password) == hashed_text
 
 # ==========================================
-# 3. COOKIES & INACTIVITY TIMEOUT LOGIC
+# 3. SECURITY, SESSION STATE & TIMEOUT
 # ==========================================
-# Initialize Cookie Manager
-cookies = EncryptedCookieManager(prefix="carsia", password=st.secrets["COOKIE_PASSWORD"])
-if not cookies.ready():
-    # Wait for cookies to be ready on first load
-    st.stop()
-
-TIMEOUT_MINUTES = 30
-TIMEOUT_SECONDS = TIMEOUT_MINUTES * 60
-current_time = time.time()
-
-# Check Cookie Session State
-if cookies.get("logged_in") == "True":
-    last_activity = float(cookies.get("last_activity", 0))
-    
-    if current_time - last_activity > TIMEOUT_SECONDS:
-        # Timeout breached: Clear cookies and log them out
-        cookies["logged_in"] = "False"
-        cookies["user_name"] = ""
-        cookies["user_role"] = ""
-        cookies["last_activity"] = "0"
-        cookies.save()
-        st.session_state['logged_in'] = False
-        st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
-    else:
-        # Active session: Reset the timer and restore variables
-        cookies["last_activity"] = str(current_time)
-        cookies.save()
-        st.session_state['logged_in'] = True
-        st.session_state['user_name'] = cookies.get("user_name")
-        st.session_state['user_role'] = cookies.get("user_role")
-else:
+if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['user_name'] = ""
     st.session_state['user_role'] = ""
+    st.session_state['last_active'] = time.time()
+
+# --- THE 30-MINUTE INACTIVITY TIMER ---
+if st.session_state['logged_in']:
+    current_time = time.time()
+    timeout_seconds = 30 * 60 # 30 minutes
+    
+    if current_time - st.session_state['last_active'] > timeout_seconds:
+        # User has been inactive too long. Wipe the session.
+        st.session_state['logged_in'] = False
+        st.session_state['user_name'] = ""
+        st.session_state['user_role'] = ""
+        st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
+        time.sleep(2)
+        st.rerun()
+    else:
+        # User is active. Reset the stopwatch.
+        st.session_state['last_active'] = current_time
+# --------------------------------------
 
 # ==========================================
 # 4. THE GATEWAY (Login, Registration & Recovery)
@@ -154,16 +142,10 @@ if not st.session_state['logged_in']:
                                         current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
                                         supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
                                         
-                                        # --- NEW COOKIE CREATION ---
-                                        cookies["logged_in"] = "True"
-                                        cookies["user_name"] = db_name
-                                        cookies["user_role"] = db_role
-                                        cookies["last_activity"] = str(time.time())
-                                        cookies.save()
-                                        
                                         st.session_state['logged_in'] = True
                                         st.session_state['user_name'] = db_name
                                         st.session_state['user_role'] = db_role
+                                        st.session_state['last_active'] = time.time()
                                         
                                         st.toast(f"Welcome back, {db_name}!", icon="👋")
                                         time.sleep(1)
@@ -191,7 +173,7 @@ if not st.session_state['logged_in']:
             with st.form("signup_form"):
                 st.info("Submitted requests are reviewed by a System Admin before access is granted.")
                 new_name = st.text_input("Full Name")
-                new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+                new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
                 new_password = st.text_input("Create Password", type="password")
@@ -263,12 +245,6 @@ with st.sidebar:
     st.info(f"👤 **{st.session_state['user_name']}**\n\n*({st.session_state['user_role']})*")
     
     if st.button("🚪 Logout", use_container_width=True):
-        # --- DESTROY COOKIES ON MANUAL LOGOUT ---
-        cookies["logged_in"] = "False"
-        cookies["user_name"] = ""
-        cookies["user_role"] = ""
-        cookies["last_activity"] = "0"
-        cookies.save()
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
@@ -316,7 +292,7 @@ def clean_and_process_car_data(df, col_names):
     df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
     
-    # Erase spillover for higher levels
+    # Erase the spillover for higher levels so Province rows show 'None'
     df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
     df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
     # --------------------------------
