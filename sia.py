@@ -8,6 +8,12 @@ st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout=
 
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
 st.markdown("### Target Overview Dashboard")
+
+# Add a refresh button to bypass the 10-minute cache
+if st.sidebar.button("🔄 Refresh Data (Clear Cache)"):
+    st.cache_data.clear()
+    st.rerun()
+
 st.divider()
 
 try:
@@ -21,21 +27,25 @@ try:
     ]
     
     df_raw = conn.read(worksheet="Target(Barangay)", usecols=list(range(11)), skiprows=2, names=col_names, ttl="10m")
-    df_raw = df_raw.dropna(subset=['Code'])
+    
+    # --- THE FIX ---
+    # Convert Code to string, split by '.' to remove '.0', and drop any empty 'nan' rows
+    df_raw['Code'] = df_raw['Code'].astype(str).str.split('.').str[0]
+    df_raw = df_raw[df_raw['Code'] != 'nan']
+    df_raw = df_raw[df_raw['Code'] != 'None']
+    df_raw = df_raw[df_raw['Code'] != '']
     
     # Clean the numbers
     numeric_cols = col_names[2:] 
     for col in numeric_cols:
         df_raw[col] = pd.to_numeric(df_raw[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
 
-    # 3. Hierarchy Logic: Identify Province, Municipality, and Barangay
+    # 3. Hierarchy Logic
     df_raw['Level'] = 'Barangay'
-    # Province ends in 00000
-    df_raw.loc[df_raw['Code'].astype(str).str.endswith('00000'), 'Level'] = 'Province'
-    # Municipality ends in 000 (but is not the province)
-    df_raw.loc[(df_raw['Code'].astype(str).str.endswith('000')) & (~df_raw['Code'].astype(str).str.endswith('00000')), 'Level'] = 'Municipality'
+    df_raw.loc[df_raw['Code'].str.endswith('00000'), 'Level'] = 'Province'
+    df_raw.loc[(df_raw['Code'].str.endswith('000')) & (~df_raw['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
 
-    # Assign Parent Municipality to each Barangay using forward fill
+    # Assign Parent Municipality
     df_raw['Parent_Municipality'] = df_raw.apply(
         lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1
     )
@@ -44,9 +54,8 @@ try:
     # Calculate Grand Total
     df_raw['Grand_Total'] = df_raw['6-12m_Total'] + df_raw['13-23m_Total'] + df_raw['24-59m_Total']
 
-    # Top Metric (Total for the whole province)
+    # Top Metric
     total_provincial_target = df_raw[df_raw['Level'] == 'Province']['Grand_Total'].sum()
-    # Fallback just in case the province row is missing
     if total_provincial_target == 0: 
         total_provincial_target = df_raw[df_raw['Level'] == 'Municipality']['Grand_Total'].sum()
         
@@ -56,7 +65,6 @@ try:
     # 4. Interactive Dashboard Controls
     st.subheader("Target Distribution")
     
-    # Create two columns for layout
     col1, col2 = st.columns([1, 2])
     
     with col1:
@@ -68,7 +76,6 @@ try:
     # 5. Dynamic Visualizations
     with col2:
         if view_mode == "By Municipality (Province-wide)":
-            # Filter for Municipalities only
             df_view = df_raw[df_raw['Level'] == 'Municipality']
             df_sorted = df_view.sort_values('Grand_Total', ascending=False)
             
@@ -76,17 +83,18 @@ try:
             st.bar_chart(data=df_sorted, x='Location', y='Grand_Total', use_container_width=True)
 
         else:
-            # Filter for Barangays, let user pick the Municipality
             municipality_list = df_raw[df_raw['Level'] == 'Municipality']['Location'].unique()
             
-            # Default to the first municipality in the list, or set a specific default if needed
-            selected_muni = st.selectbox("Select Municipality to view its Barangays:", municipality_list)
-            
-            df_view = df_raw[(df_raw['Level'] == 'Barangay') & (df_raw['Parent_Municipality'] == selected_muni)]
-            df_sorted = df_view.sort_values('Grand_Total', ascending=False)
-            
-            st.markdown(f"**Barangay Breakdown for {selected_muni}**")
-            st.bar_chart(data=df_sorted, x='Location', y='Grand_Total', use_container_width=True)
+            if len(municipality_list) > 0:
+                selected_muni = st.selectbox("Select Municipality to view its Barangays:", municipality_list)
+                
+                df_view = df_raw[(df_raw['Level'] == 'Barangay') & (df_raw['Parent_Municipality'] == selected_muni)]
+                df_sorted = df_view.sort_values('Grand_Total', ascending=False)
+                
+                st.markdown(f"**Barangay Breakdown for {selected_muni}**")
+                st.bar_chart(data=df_sorted, x='Location', y='Grand_Total', use_container_width=True)
+            else:
+                st.warning("No municipalities found. Please check raw data.")
 
     # 6. Raw Data Expander
     with st.expander("View Cleaned Target Database"):
