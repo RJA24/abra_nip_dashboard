@@ -9,8 +9,6 @@ import time
 import hashlib
 from supabase import create_client, Client
 
-st.error(f"I currently see these secrets: {list(st.secrets.keys())}")
-
 # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
