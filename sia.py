@@ -3,17 +3,31 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from datetime import datetime
+import pytz
 
-# 1. Page Configuration (Keep it Wide)
+# 1. Page Configuration
 st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout="wide")
 
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
 
-# 2. Sidebar Command Center
+# 2. Timestamp Function (Tied to the 10-minute cache)
+@st.cache_data(ttl="10m")
+def get_last_updated_time():
+    tz = pytz.timezone('Asia/Manila')
+    return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
+
+last_updated = get_last_updated_time()
+
+# 3. Sidebar Command Center
 with st.sidebar:
     st.header("⚙️ Dashboard Controls")
     
-    if st.button("🔄 Refresh Data (Clear Cache)", use_container_width=True):
+    # Display the timestamp
+    st.caption(f"**Last Data Sync:**")
+    st.caption(f"🕒 {last_updated}")
+    
+    if st.button("🔄 Force Refresh Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
         
@@ -29,7 +43,7 @@ with st.sidebar:
         ["All Ages (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"]
     )
 
-# 3. Create the 4 Tabs
+# 4. Create the 4 Tabs
 tab_target, tab_mr, tab_vita, tab_total = st.tabs([
     "🎯 Target Overview", 
     "💉 MR Accomplishment", 
@@ -37,7 +51,7 @@ tab_target, tab_mr, tab_vita, tab_total = st.tabs([
     "📊 Total Accomplishment"
 ])
 
-# 4. Helper Function for Data Cleaning
+# 5. Helper Function for Data Cleaning
 def clean_and_process_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
     df = df[df['Code'] != 'nan']
@@ -70,7 +84,7 @@ try:
     ]
     
     # ==========================================
-    # TAB 1: TARGET OVERVIEW (Visually Upgraded)
+    # TAB 1: TARGET OVERVIEW
     # ==========================================
     with tab_target:
         st.markdown("### Target Baseline Overview")
@@ -111,11 +125,9 @@ try:
 
         # 2. Interactive Plotly Charts
         if not df_view.empty:
-            # Create two columns for the charts: 70% width for the bar chart, 30% for the donut chart
             col_chart1, col_chart2 = st.columns([7, 3])
             
             with col_chart1:
-                # Sort ascending so the largest bar appears at the top of the horizontal chart
                 df_sorted = df_view.sort_values(target_col, ascending=True) 
                 
                 fig_bar = px.bar(
@@ -124,19 +136,18 @@ try:
                     y='Location', 
                     orientation='h',
                     title=chart_title,
-                    text_auto='.0f', # Shows the exact number on the bar
-                    color_discrete_sequence=['#1E88E5'] # Professional Blue
+                    text_auto='.0f', 
+                    color_discrete_sequence=['#1E88E5'] 
                 )
                 fig_bar.update_layout(
                     xaxis_title="Number of Eligible Children", 
                     yaxis_title="",
-                    plot_bgcolor='rgba(0,0,0,0)', # Transparent background
+                    plot_bgcolor='rgba(0,0,0,0)', 
                     height=500
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
                 
             with col_chart2:
-                # Create the Age Group Donut Chart based on the current view
                 age_data = pd.DataFrame({
                     'Age Group': ['6-12 months', '13-23 months', '24-59 months'],
                     'Target': [
@@ -152,7 +163,7 @@ try:
                     values='Target', 
                     hole=0.4,
                     title="Age Distribution",
-                    color_discrete_sequence=['#43A047', '#FFB300', '#E53935'] # Green, Amber, Red
+                    color_discrete_sequence=['#43A047', '#FFB300', '#E53935'] 
                 )
                 fig_donut.update_layout(
                     legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
