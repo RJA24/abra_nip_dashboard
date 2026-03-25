@@ -34,7 +34,6 @@ sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzi
 if not st.session_state['logged_in']:
     st.title("🔒 CAR SIA 2026 Tracker - Secure Access")
     
-    # Create three tabs for the Gateway
     tab_login, tab_signup, tab_forgot = st.tabs(["🔑 Log In", "📝 Request Account", "❓ Forgot Password"])
     
     # --- LOGIN TAB ---
@@ -65,7 +64,6 @@ if not st.session_state['logged_in']:
                                     db_name = user_record.iloc[0]['Name']
                                     db_role = user_record.iloc[0]['Role']
                                     
-                                    # Log the access
                                     existing_logs = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
                                     manila_tz = pytz.timezone('Asia/Manila')
                                     current_time = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -101,6 +99,7 @@ if not st.session_state['logged_in']:
             
             new_name = st.text_input("Full Name")
             new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+            new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
             new_username = st.text_input("Desired Username")
             new_password = st.text_input("Create Password", type="password")
             confirm_password = st.text_input("Confirm Password", type="password")
@@ -108,7 +107,7 @@ if not st.session_state['logged_in']:
             submit_signup = st.form_submit_button("Submit Request", type="primary")
             
             if submit_signup:
-                if not all([new_name, new_role, new_username, new_password, confirm_password]):
+                if not all([new_name, new_role, new_contact, new_username, new_password, confirm_password]):
                     st.warning("Please fill out all fields.")
                 elif new_password != confirm_password:
                     st.error("Passwords do not match!")
@@ -126,7 +125,8 @@ if not st.session_state['logged_in']:
                                 "Password_Hash": hashed_pw,
                                 "Name": new_name.strip(),
                                 "Role": new_role,
-                                "Account_Status": "Pending"
+                                "Account_Status": "Pending",
+                                "Contact_Info": new_contact.strip()
                             }])
                             
                             updated_users = pd.concat([users_df, new_account], ignore_index=True)
@@ -158,12 +158,10 @@ if not st.session_state['logged_in']:
                         users_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
                         users_df['Username'] = users_df['Username'].astype(str).str.strip()
                         
-                        # Find the row index for the requested username
                         user_idx = users_df.index[users_df['Username'] == reset_username.strip()].tolist()
                         
                         if user_idx:
                             idx = user_idx[0]
-                            # Hash the new password and flag the account for admin review
                             users_df.at[idx, 'Password_Hash'] = make_hashes(reset_new_password)
                             users_df.at[idx, 'Account_Status'] = "Pending Reset"
                             
@@ -189,7 +187,6 @@ def get_last_updated_time():
 
 last_updated = get_last_updated_time()
 
-# Sidebar Command Center
 with st.sidebar:
     st.header("⚙️ Dashboard Controls")
     st.success(f"👤 **{st.session_state['user_name']}**\n\n*({st.session_state['user_role']})*")
@@ -211,7 +208,6 @@ with st.sidebar:
     view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
     age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
-# Dynamic Tab Creation
 tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📊 Total Accomplishment"]
 is_admin = st.session_state['user_role'] == "System Admin"
 
@@ -312,9 +308,8 @@ try:
     # ==========================================
     if is_admin:
         with tab_admin:
-            # 1. User Management Section
             st.markdown("### 🔐 User Account Management")
-            st.write("Approve or deny pending access and password reset requests.")
+            st.write("Approve or deny pending access and password reset requests. Use the Contact Info to verify user identities out-of-band.")
             
             users_admin_df = conn.read(spreadsheet=sheet_url, worksheet="User_Accounts", ttl=0)
             
@@ -328,7 +323,8 @@ try:
                         options=["Approved", "Pending", "Pending Reset", "Denied", "Revoked"],
                         required=True,
                     ),
-                    "Password_Hash": None # Hide the hash column
+                    "Password_Hash": None, # Hide the hash column
+                    "Contact_Info": st.column_config.TextColumn("Contact Info", width="medium") # Display the new contact column
                 },
                 use_container_width=True,
                 num_rows="dynamic"
@@ -344,14 +340,12 @@ try:
 
             st.divider()
 
-            # 2. Access Logs Section
             st.markdown("### 📋 System Access Logs")
             st.write("Real-time audit trail of all successful logins.")
             
             try:
                 logs_df = conn.read(spreadsheet=sheet_url, worksheet="Access_Logs", ttl=0)
                 if not logs_df.empty:
-                    # Sort by Timestamp descending so the newest logs are at the top
                     logs_df = logs_df.sort_values(by="Timestamp", ascending=False).reset_index(drop=True)
                     st.dataframe(logs_df, use_container_width=True)
                 else:
