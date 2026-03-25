@@ -100,7 +100,7 @@ if not st.session_state['logged_in']:
             st.info("Submitted requests will be reviewed by a System Admin before access is granted.")
             
             new_name = st.text_input("Full Name")
-            new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Officer", "Data Encoder", "Guest / Viewer"])
+            new_role = st.selectbox("Designation / Role", ["DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
             new_username = st.text_input("Desired Username")
             new_password = st.text_input("Create Password", type="password")
             confirm_password = st.text_input("Confirm Password", type="password")
