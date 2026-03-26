@@ -76,13 +76,11 @@ if 'logged_in' not in st.session_state:
     st.session_state['user_role'] = ""
     st.session_state['last_active'] = time.time()
 
-# --- THE 30-MINUTE INACTIVITY TIMER ---
 if st.session_state['logged_in']:
     current_time = time.time()
-    timeout_seconds = 30 * 60 # 30 minutes
+    timeout_seconds = 30 * 60 
     
     if current_time - st.session_state['last_active'] > timeout_seconds:
-        # User has been inactive too long. Wipe the session.
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
@@ -90,9 +88,7 @@ if st.session_state['logged_in']:
         time.sleep(2)
         st.rerun()
     else:
-        # User is active. Reset the stopwatch.
         st.session_state['last_active'] = current_time
-# --------------------------------------
 
 # ==========================================
 # 4. THE GATEWAY (Login, Registration & Recovery)
@@ -264,16 +260,17 @@ with st.sidebar:
     view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
     age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
-tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📊 Total Accomplishment"]
+# --- NEW TAB STRUCTURE ---
+tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals", "📊 Executive Summary"]
 is_admin = st.session_state['user_role'] == "System Admin"
 
 if is_admin:
     tab_names.append("🛡️ Admin Panel")
 
 tabs = st.tabs(tab_names)
-tab_target, tab_mr, tab_vita, tab_total = tabs[0], tabs[1], tabs[2], tabs[3]
+tab_target, tab_mr, tab_vita, tab_wastage, tab_total = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
 if is_admin:
-    tab_admin = tabs[4]
+    tab_admin = tabs[5]
 
 def clean_and_process_car_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
@@ -288,15 +285,10 @@ def clean_and_process_car_data(df, col_names):
     df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
     df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
     
-    # --- FIXED PARENT/CHILD LOGIC ---
     df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
     df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
-    
-    # Erase the spillover for higher levels so Province rows show 'None'
     df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
     df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
-    # --------------------------------
-    
     return df
 
 @st.cache_data(ttl="15s")
@@ -377,14 +369,41 @@ try:
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
                 
                 export_location = "CAR_Region" if view_mode == "Region-wide (Compare Provinces)" else selected_prov if view_mode == "Province-wide (Compare Municipalities)" else selected_muni
-                
                 csv = display_df.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Data as CSV", data=csv, file_name=f"SIA_Targets_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary")
 
     with tab_mr:
-        st.info("🚧 Dashboard framework ready. Awaiting VaccTrack MR export file.")
+        st.markdown("### 💉 Measles-Rubella Accomplishment")
+        # Layout placeholder for Accomplishment KPIs
+        col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
+        col_mr1.metric("Coverage Target", "0%")
+        col_mr2.metric("Total Doses Administered", "0")
+        col_mr3.metric("⚠️ Total Deferrals", "0")
+        col_mr4.metric("🚨 Total Refusals", "0")
+        st.info("🚧 MR analytical engine ready. Awaiting VaccTrack Sync.")
+
     with tab_vita:
-        st.info("🚧 Dashboard framework ready. Awaiting VaccTrack Vitamin A export file.")
+        st.markdown("### 💊 Vitamin A Accomplishment")
+        col_va1, col_va2, col_va3, col_va4 = st.columns(4)
+        col_va1.metric("Coverage Target", "0%")
+        col_va2.metric("Total Doses Administered", "0")
+        col_va3.metric("⚠️ Total Deferrals", "0")
+        col_va4.metric("🚨 Total Refusals", "0")
+        st.info("🚧 Vitamin A analytical engine ready. Awaiting VaccTrack Sync.")
+        
+    with tab_wastage:
+        st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
+        st.write("Deep dive into vaccine utilization and specific reasons for missed targets.")
+        
+        col_waste1, col_waste2 = st.columns(2)
+        with col_waste1:
+            st.markdown("#### 🧪 Vaccine Utilization (MR & Vit A)")
+            st.info("🚧 Wastage Rate Chart Placeholder (Opened vs. Administered)")
+            
+        with col_waste2:
+            st.markdown("#### 📋 Top 5 Reasons for Non-Vaccination")
+            st.info("🚧 C1-C23 Pareto Chart Placeholder")
+
     with tab_total:
         st.info("🚧 Executive Summary will populate once data streams are connected.")
 
@@ -393,11 +412,11 @@ try:
     # ==========================================
     if is_admin:
         with tab_admin:
-            st.markdown("### 🔄 Master Database Sync")
-            st.write("Pull the latest targets directly from the DOH Google Sheet into the high-speed Supabase Engine.")
+            st.markdown("### 🔄 Phase 1: Target Database Sync")
+            st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
             
-            if st.button("Sync Targets Database", type="primary", use_container_width=True):
-                with st.spinner("Downloading from Google Sheets and writing to Supabase..."):
+            if st.button("Sync Target Database", type="secondary", use_container_width=True):
+                with st.spinner("Downloading targets..."):
                     try:
                         conn = st.connection("gsheets", type=GSheetsConnection)
                         col_names = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
@@ -415,7 +434,17 @@ try:
                         st.success("✅ Target Database Successfully Synced!")
                         st.cache_data.clear()
                     except Exception as e:
-                        st.error(f"Sync Failed: {e}")
+                        st.error(f"Target Sync Failed: {e}")
+            
+            st.divider()
+
+            # --- NEW: PHASE 2 VACCTRACK SYNC ---
+            st.markdown("### 📥 Phase 2: VaccTrack Raw Data Sync")
+            st.write("Upload the daily export from the `VaccTrack_Raw` Google Sheet into the Accomplishment Database. This powers the MR, Vit A, and Wastage tabs.")
+            
+            if st.button("Sync Daily VaccTrack Accomplishments", type="primary", use_container_width=True):
+                 st.info("Pipeline ready! We will connect this mapping engine once the Vit A target format is confirmed and you have pasted your first batch of export data.")
+            # -----------------------------------
             
             st.divider()
             
