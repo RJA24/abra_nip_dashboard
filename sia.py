@@ -514,25 +514,31 @@ try:
                         
                     if res_rhu.data:
                         df_rhu = pd.DataFrame(res_rhu.data)
-                        df_rhu['date'] = pd.to_datetime(df_rhu['date']).dt.date
+                        
+                        # --- THE FIX: Keep as Pandas Datetime for the math ---
+                        df_rhu['date'] = pd.to_datetime(df_rhu['date'])
                         df_rhu = df_rhu.sort_values('date', ascending=False)
                         
                         # Reorder columns for a cleaner table layout
                         col_order = ['id', 'date', 'municipality', 'barangay', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f', 'vita_6_11m_m', 'vita_11_6m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'encoder_name']
                         df_rhu = df_rhu[[c for c in col_order if c in df_rhu.columns]]
                         
-                        today = datetime.today().date()
+                        # Use strictly Pandas Timestamp for the "today" calculation
+                        today = pd.Timestamp.today().normalize()
                         
                         # Apply the 7-Day Lock Logic
                         if is_admin:
                             st.info("🛡️ System Admin View: You have overriding access to edit all historical records.")
+                            df_rhu['date'] = df_rhu['date'].dt.date # Convert for display AFTER math
                             df_editable = df_rhu.copy()
                             df_locked = pd.DataFrame()
                         else:
                             st.info("You can edit data within 7 days of the vaccination date. Older entries are permanently locked.")
                             df_rhu['is_editable'] = (today - df_rhu['date']).dt.days <= 7
+                            df_rhu['date'] = df_rhu['date'].dt.date # Convert for display AFTER math
                             df_editable = df_rhu[df_rhu['is_editable']].drop(columns=['is_editable'])
                             df_locked = df_rhu[~df_rhu['is_editable']].drop(columns=['is_editable'])
+                        # -----------------------------------------------------
 
                         # Table 1: Editable
                         if not df_editable.empty:
