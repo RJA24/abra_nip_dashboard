@@ -255,15 +255,49 @@ last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
 is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
+# --- DATA HELPER FUNCTIONS ---
+def clean_and_process_car_data(df, col_names):
+    df['Code'] = df['Code'].astype(str).str.split('.').str[0]
+    df = df[df['Code'] != 'nan']
+    df = df[df['Code'] != 'None']
+    df = df[df['Code'] != '']
+    numeric_cols = col_names[2:] 
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+    df['Level'] = 'Barangay'
+    df.loc[df['Code'].str.endswith('00000000'), 'Level'] = 'Region'
+    df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
+    df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
+    
+    df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
+    df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
+    df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
+    df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
+    return df
+
+@st.cache_data(ttl="15s")
+def fetch_targets_from_supabase():
+    res = supabase.table('targets').select('*').execute()
+    if not res.data:
+        return pd.DataFrame()
+    df = pd.DataFrame(res.data)
+    col_mapping = {
+        'code': 'Code', 'location': 'Location', 'level': 'Level',
+        'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
+        'grand_total_6_59m': '6-59m_Total', 'grand_total_6_12m': '6-12m_Total',
+        'grand_total_13_23m': '13-23m_Total', 'grand_total_24_59m': '24-59m_Total'
+    }
+    return df.rename(columns=col_mapping)
+
 # --- PROVINCIAL SEALS DICTIONARY ---
 PROVINCE_LOGOS = {
-    "Abra": "https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png",
-    "Apayao": "https://upload.wikimedia.org/wikipedia/commons/a/ac/Seal_of_Apayao.png",
-    "Benguet": "https://upload.wikimedia.org/wikipedia/commons/c/c3/PH-BEN_Flag.png",
-    "Ifugao": "https://upload.wikimedia.org/wikipedia/commons/d/de/Ifugao_Province_Seal.png",
-    "Kalinga": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Ph_seal_kalinga.png",
-    "Mountain Province": "https://upload.wikimedia.org/wikipedia/commons/0/02/Flag_of_Mountain_Province.png",
-    "Default": "https://upload.wikimedia.org/wikipedia/commons/3/33/Department_of_Health_%28DOH%29_PHL.svg"
+    "Abra": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Provincial_Seal_of_Abra.png",
+    "Apayao": "https://upload.wikimedia.org/wikipedia/commons/2/23/Apayao_provincial_seal.png",
+    "Benguet": "https://upload.wikimedia.org/wikipedia/commons/6/69/Benguet_provincial_seal.png",
+    "Ifugao": "https://upload.wikimedia.org/wikipedia/commons/5/52/Ifugao_provincial_seal.png",
+    "Kalinga": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Kalinga_provincial_seal.png",
+    "Mountain Province": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Mountain_Province_provincial_seal.png",
+    "Default": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
 }
 
 with st.sidebar:
@@ -274,16 +308,20 @@ with st.sidebar:
         logo_url = PROVINCE_LOGOS["Default"]
         
         if user_territory != "None" and user_territory != "":
-            try:
-                # Look up the province of the user's assigned municipality
-                df_targets_logo = fetch_targets_from_supabase()
-                if not df_targets_logo.empty:
-                    match = df_targets_logo[(df_targets_logo['Location'] == user_territory) & (df_targets_logo['Level'] == 'Municipality')]
-                    if not match.empty:
-                        user_prov = match['Parent_Province'].iloc[0]
-                        logo_url = PROVINCE_LOGOS.get(user_prov, PROVINCE_LOGOS["Default"])
-            except:
-                pass
+            # Check if they are assigned directly to a Province (like "Abra")
+            if user_territory in PROVINCE_LOGOS:
+                logo_url = PROVINCE_LOGOS[user_territory]
+            else:
+                # Look up the municipality's parent province
+                try:
+                    df_targets_logo = fetch_targets_from_supabase()
+                    if not df_targets_logo.empty:
+                        match = df_targets_logo[(df_targets_logo['Location'] == user_territory) & (df_targets_logo['Level'] == 'Municipality')]
+                        if not match.empty:
+                            user_prov = match['Parent_Province'].iloc[0]
+                            logo_url = PROVINCE_LOGOS.get(user_prov, PROVINCE_LOGOS["Default"])
+                except:
+                    pass
                 
         st.image(logo_url, use_container_width=True)
         
@@ -328,41 +366,6 @@ with st.sidebar:
         
     st.caption(f"🕒 Last Sync: {last_updated}")
 
-# --- DATA HELPER FUNCTIONS ---
-def clean_and_process_car_data(df, col_names):
-    df['Code'] = df['Code'].astype(str).str.split('.').str[0]
-    df = df[df['Code'] != 'nan']
-    df = df[df['Code'] != 'None']
-    df = df[df['Code'] != '']
-    numeric_cols = col_names[2:] 
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-    df['Level'] = 'Barangay'
-    df.loc[df['Code'].str.endswith('00000000'), 'Level'] = 'Region'
-    df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
-    df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
-    
-    df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
-    df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
-    df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
-    df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
-    return df
-
-@st.cache_data(ttl="15s")
-def fetch_targets_from_supabase():
-    res = supabase.table('targets').select('*').execute()
-    if not res.data:
-        return pd.DataFrame()
-    df = pd.DataFrame(res.data)
-    col_mapping = {
-        'code': 'Code', 'location': 'Location', 'level': 'Level',
-        'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-        'grand_total_6_59m': '6-59m_Total', 'grand_total_6_12m': '6-12m_Total',
-        'grand_total_13_23m': '13-23m_Total', 'grand_total_24_59m': '24-59m_Total'
-    }
-    return df.rename(columns=col_mapping)
-# --------------------------------------------
-
 # ==========================================
 # MODE 1: DATA ENTRY (No tabs, no filters)
 # ==========================================
@@ -382,7 +385,9 @@ if app_mode == "📝 Data Entry Mode":
             
             with col_info2:
                 user_muni = st.session_state.get('assigned_muni', 'None')
-                if is_admin or user_muni == "None" or user_muni == "":
+                
+                # Check if Admin or generic Provincial assignment
+                if is_admin or user_muni == "None" or user_muni == "" or user_muni == "Abra":
                     muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
                     encode_muni = st.selectbox("Municipality", muni_list)
                 else:
@@ -425,7 +430,7 @@ if app_mode == "📝 Data Entry Mode":
                 va_12_59_m = st.number_input("Male", min_value=0, key="va2m")
                 va_12_59_f = st.number_input("Female", min_value=0, key="va2f")
             
-            submit_daily = st.form_submit_button("💾 Save Daily Data to Regional Database", type="primary", use_container_width=True)
+            submit_daily = st.form_submit_button("💾 Save Daily Data", type="primary", use_container_width=True)
             
             if submit_daily:
                 if encode_brgy is None:
@@ -456,7 +461,7 @@ if app_mode == "📝 Data Entry Mode":
         try:
             user_muni = st.session_state.get('assigned_muni', 'None')
             
-            if is_admin or user_muni == "None" or user_muni == "":
+            if is_admin or user_muni == "None" or user_muni == "" or user_muni == "Abra":
                 res_rhu = supabase.table('rhu_disaggregated').select('*').execute()
             else:
                 res_rhu = supabase.table('rhu_disaggregated').select('*').eq('municipality', user_muni).execute()
@@ -492,20 +497,20 @@ if app_mode == "📝 Data Entry Mode":
                     edited_rhu = st.data_editor(
                         df_editable,
                         column_config={
-                            "id": None, # Hides the database ID
+                            "id": None, 
                             "date": st.column_config.DateColumn("Date", disabled=True),
                             "municipality": st.column_config.TextColumn("Municipality", disabled=True),
                             "barangay": st.column_config.TextColumn("Barangay", disabled=True),
                             "encoder_name": st.column_config.TextColumn("Encoder", disabled=True)
                         },
                         use_container_width=True,
-                        num_rows="dynamic", # --- THIS ENABLES ROW DELETION ---
+                        num_rows="dynamic", 
                         key="rhu_data_editor"
                     )
                     
                     if st.button("💾 Save Edits & Deletions", type="secondary"):
                         try:
-                            # 1. Handle Deletions: Find rows that were in df_editable but are missing from edited_rhu
+                            # 1. Handle Deletions
                             original_ids = set(df_editable['id'].tolist())
                             current_ids = set(edited_rhu['id'].dropna().tolist())
                             deleted_ids = list(original_ids - current_ids)
@@ -514,7 +519,7 @@ if app_mode == "📝 Data Entry Mode":
                                 supabase.table('rhu_disaggregated').delete().in_('id', deleted_ids).execute()
                                 
                             # 2. Handle Updates
-                            records_to_update = edited_rhu.dropna(subset=['id']).copy() # Ignore any mistakenly "added" empty rows
+                            records_to_update = edited_rhu.dropna(subset=['id']).copy() 
                             if not records_to_update.empty:
                                 records_to_update['date'] = records_to_update['date'].astype(str)
                                 updates = records_to_update.to_dict(orient='records')
@@ -547,7 +552,6 @@ if app_mode == "📝 Data Entry Mode":
             
     else:
          st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
-
 
 # ==========================================
 # MODE 2: THE DASHBOARD (Tabs and Filters)
@@ -721,7 +725,7 @@ elif app_mode == "📊 Dashboard View":
                         users_admin_df,
                         column_config={
                             "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
-                            "assigned_municipality": st.column_config.SelectboxColumn("Assigned MHO", width="medium", options=["None"] + abra_munis),
+                            "assigned_municipality": st.column_config.SelectboxColumn("Assigned Territory", width="medium", options=["None", "Abra"] + abra_munis),
                             "password_hash": None, 
                             "username": st.column_config.TextColumn("Username", disabled=True),
                             "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
