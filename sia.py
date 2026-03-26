@@ -398,9 +398,12 @@ try:
                     with col_info1:
                         encode_date = st.date_input("Vaccination Date", max_value=datetime.today())
                     with col_info2:
-                        muni_list = sorted(df_targets_for_form[df_targets_for_form['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
+                        # --- THE ABRA LOCK: Only pull municipalities where Parent_Province is Abra ---
+                        df_abra = df_targets_for_form[df_targets_for_form['Parent_Province'] == 'Abra']
+                        muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
                         encode_muni = st.selectbox("Municipality", muni_list)
                     with col_info3:
+                        # Pull barangays based on the selected Abra municipality
                         brgy_list = sorted(df_targets_for_form[(df_targets_for_form['Parent_Municipality'] == encode_muni) & (df_targets_for_form['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
                         encode_brgy = st.selectbox("Barangay", brgy_list)
                     
