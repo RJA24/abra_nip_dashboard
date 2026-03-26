@@ -70,7 +70,6 @@ def check_hashes(password, hashed_text):
 # ==========================================
 # 3. SECURITY, SESSION STATE & TIMEOUT
 # ==========================================
-# Robust Initialization: Check each variable individually
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'user_name' not in st.session_state:
@@ -100,7 +99,6 @@ if st.session_state['logged_in']:
 # ==========================================
 # 4. THE GATEWAY (Login, Registration & Recovery)
 # ==========================================
-# Hardcoded Abra list for foolproof registration
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
 if not st.session_state['logged_in']:
@@ -179,19 +177,15 @@ if not st.session_state['logged_in']:
 
         with tab_signup:
             st.info("Submitted requests are reviewed by a System Admin before access is granted.")
-            
-            # --- THE TRICK: Move Role outside the form to trigger dynamic updates ---
             new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
             
             with st.form("signup_form"):
                 new_name = st.text_input("Full Name")
                 
-                # --- DYNAMIC UI LOGIC ---
                 if new_role in ["Municipal Health Office", "Data Encoder"]:
                     new_muni = st.selectbox("Assigned Municipality", abra_munis)
                 else:
-                    new_muni = "None" # Silently sets to None for Admins/Regional staff
-                # ------------------------
+                    new_muni = "None"
                     
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
@@ -258,12 +252,12 @@ def get_last_updated_time():
     return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
 
 last_updated = get_last_updated_time()
+is_admin = st.session_state['user_role'] == "System Admin"
+is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/240px-Department_of_Health_%28Philippines%29_Seal.svg.png", width=80)
-    st.header("Dashboard Controls")
     
-    # Display their assigned territory in the sidebar
     muni_display = f"({st.session_state['assigned_muni']})" if st.session_state['assigned_muni'] != "None" else "(Regional Access)"
     st.info(f"👤 **{st.session_state['user_name']}**\n\n*{st.session_state['user_role']}*\n\n{muni_display}")
     
@@ -275,18 +269,29 @@ with st.sidebar:
         st.rerun()
         
     st.divider()
-    st.caption("🕒 **Last Interface Sync:**")
-    st.caption(f"{last_updated}")
     
-    if st.button("🔄 Refresh Interface", use_container_width=True):
-        st.cache_data.clear()
-        st.toast("Dashboard Interface Refreshed!", icon="🔄")
-        time.sleep(0.5)
-        st.rerun()
+    # --- NEW: APP MODE TOGGLE (Hides filters perfectly) ---
+    app_mode = "📊 Dashboard View"
+    if is_encoder:
+        st.header("Workspace Mode")
+        app_mode = st.radio("Select Interface:", ["📊 Dashboard View", "📝 Data Entry Mode"])
+        st.divider()
+    
+    # Only show filters if they are looking at the Dashboard
+    if app_mode == "📊 Dashboard View":
+        st.header("Dashboard Controls")
+        st.caption("🕒 **Last Interface Sync:**")
+        st.caption(f"{last_updated}")
         
-    st.divider()
-    view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
-    age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
+        if st.button("🔄 Refresh Interface", use_container_width=True):
+            st.cache_data.clear()
+            st.toast("Dashboard Interface Refreshed!", icon="🔄")
+            time.sleep(0.5)
+            st.rerun()
+            
+        st.divider()
+        view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
+        age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
 # --- DATA HELPER FUNCTIONS ---
 def clean_and_process_car_data(df, col_names):
@@ -323,393 +328,396 @@ def fetch_targets_from_supabase():
     return df.rename(columns=col_mapping)
 # --------------------------------------------
 
-# --- TAB STRUCTURE & ROLE ACCESS ---
-tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals", "📊 Executive Summary"]
-
-is_admin = st.session_state['user_role'] == "System Admin"
-is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
-
-if is_encoder:
-    tab_names.insert(1, "📝 Encode Daily Data") 
-if is_admin:
-    tab_names.append("🛡️ Admin Panel")
-
-tabs = st.tabs(tab_names)
-
-if is_encoder and is_admin:
-    tab_target, tab_encode, tab_mr, tab_vita, tab_wastage, tab_total, tab_admin = tabs
-elif is_encoder and not is_admin:
-    tab_target, tab_encode, tab_mr, tab_vita, tab_wastage, tab_total = tabs
-elif is_admin and not is_encoder:
-    tab_target, tab_mr, tab_vita, tab_wastage, tab_total, tab_admin = tabs
-else:
-    tab_target, tab_mr, tab_vita, tab_wastage, tab_total = tabs
-# -----------------------------------
-
-try:
-    with tab_target:
-        st.markdown("### Regional Target Baseline Overview")
-        df_targets = fetch_targets_from_supabase()
+# ==========================================
+# MODE 1: DATA ENTRY (No tabs, no filters)
+# ==========================================
+if app_mode == "📝 Data Entry Mode":
+    st.markdown("### 📝 Daily Gender Disaggregation Entry")
+    st.info("Please enter the exact Male/Female breakdown for your daily vaccinations. This data supplements the official VaccTrack totals.")
+    
+    df_targets_for_form = fetch_targets_from_supabase()
+    
+    if not df_targets_for_form.empty:
+        df_abra = df_targets_for_form[df_targets_for_form['Parent_Province'] == 'Abra']
         
-        if df_targets.empty:
-            st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
-        else:
-            col_map = {"6 - 59 months (Grand Total)": "6-59m_Total", "6 - 12 months": "6-12m_Total", "13 - 23 months": "13-23m_Total", "24 - 59 months": "24-59m_Total"}
-            target_col = col_map[age_filter]
-
-            df_view = pd.DataFrame()
-            chart_title = ""
-            selected_prov = "CAR_Region" 
-            selected_muni = ""
+        with st.form("rhu_daily_encoding"):
+            col_info1, col_info2, col_info3 = st.columns(3)
+            with col_info1:
+                encode_date = st.date_input("Vaccination Date", max_value=datetime.today())
             
-            if view_mode == "Region-wide (Compare Provinces)":
-                df_view = df_targets[df_targets['Level'] == 'Province']
-                chart_title = f"CAR Regional Targets: {age_filter}"
-            elif view_mode == "Province-wide (Compare Municipalities)":
-                province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
-                default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                with st.sidebar:
-                    selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
-                df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
-                chart_title = f"Municipal Targets for {selected_prov}: {age_filter}"
-            else: 
-                province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
-                default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                with st.sidebar:
-                    selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
-                    muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
-                    default_muni_idx = muni_list.index("Manabo") if "Manabo" in muni_list else 0
-                    selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
-                df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-                chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {age_filter}"
-
-            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-            kpi1.metric("6 - 59 months", f"{df_view['6-59m_Total'].sum():,.0f}")
-            kpi2.metric("6 - 12 months", f"{df_view['6-12m_Total'].sum():,.0f}")
-            kpi3.metric("13 - 23 months", f"{df_view['13-23m_Total'].sum():,.0f}")
-            kpi4.metric("24 - 59 months", f"{df_view['24-59m_Total'].sum():,.0f}")
-            st.write("") 
-
-            if not df_view.empty:
-                col_chart1, col_chart2 = st.columns([7, 3])
-                with col_chart1:
-                    df_sorted = df_view.sort_values(target_col, ascending=True) 
-                    fig_bar = px.bar(df_sorted, x=target_col, y='Location', orientation='h', title=chart_title, text_auto='.0f', color_discrete_sequence=['#1E88E5'])
-                    fig_bar.update_layout(xaxis_title="Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_bar, use_container_width=True)
-                with col_chart2:
-                    age_data = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Target': [df_view['6-12m_Total'].sum(), df_view['13-23m_Total'].sum(), df_view['24-59m_Total'].sum()]})
-                    fig_donut = px.pie(age_data, names='Age Group', values='Target', hole=0.4, title="Age Distribution", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
-                    fig_donut.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=500, margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_donut, use_container_width=True)
-            else:
-                st.warning("No data available.")
-
-            with st.expander("📂 View & Download Target Database"):
-                display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']]
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-                
-                export_location = "CAR_Region" if view_mode == "Region-wide (Compare Provinces)" else selected_prov if view_mode == "Province-wide (Compare Municipalities)" else selected_muni
-                csv = display_df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Data as CSV", data=csv, file_name=f"SIA_Targets_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary")
-
-    if is_encoder:
-        with tab_encode:
-            st.markdown("### 📝 Daily Gender Disaggregation Entry")
-            st.info("Please enter the exact Male/Female breakdown for your daily vaccinations. This data supplements the official VaccTrack totals.")
-            
-            df_targets_for_form = fetch_targets_from_supabase()
-            
-            if not df_targets_for_form.empty:
-                df_abra = df_targets_for_form[df_targets_for_form['Parent_Province'] == 'Abra']
-                
-                with st.form("rhu_daily_encoding"):
-                    col_info1, col_info2, col_info3 = st.columns(3)
-                    with col_info1:
-                        encode_date = st.date_input("Vaccination Date", max_value=datetime.today())
-                    
-                    with col_info2:
-                        user_muni = st.session_state.get('assigned_muni', 'None')
-                        
-                        # THE ABRA LOCK LOGIC
-                        if is_admin or user_muni == "None" or user_muni == "":
-                            muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
-                            encode_muni = st.selectbox("Municipality", muni_list)
-                        else:
-                            st.text_input("Municipality (Locked to your assignment)", value=user_muni, disabled=True)
-                            encode_muni = user_muni
-                            
-                    with col_info3:
-                        brgy_list = sorted(df_abra[(df_abra['Parent_Municipality'] == encode_muni) & (df_abra['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
-                        if not brgy_list:
-                             st.warning("No barangays found. Please check assigned municipality.")
-                             encode_brgy = None
-                        else:
-                             encode_brgy = st.selectbox("Barangay", brgy_list)
-                    
-                    st.divider()
-                    st.markdown("#### 💉 Measles-Rubella (MR)")
-                    col_mr1, col_mr2, col_mr3 = st.columns(3)
-                    with col_mr1:
-                        st.caption("6 - 12 months")
-                        mr_6_12_m = st.number_input("Male", min_value=0, key="mr1m")
-                        mr_6_12_f = st.number_input("Female", min_value=0, key="mr1f")
-                    with col_mr2:
-                        st.caption("13 - 23 months")
-                        mr_13_23_m = st.number_input("Male", min_value=0, key="mr2m")
-                        mr_13_23_f = st.number_input("Female", min_value=0, key="mr2f")
-                    with col_mr3:
-                        st.caption("24 - 59 months")
-                        mr_24_59_m = st.number_input("Male", min_value=0, key="mr3m")
-                        mr_24_59_f = st.number_input("Female", min_value=0, key="mr3f")
-
-                    st.divider()
-                    st.markdown("#### 💊 Vitamin A")
-                    col_va1, col_va2 = st.columns(2)
-                    with col_va1:
-                        st.caption("6 - 11 months")
-                        va_6_11_m = st.number_input("Male", min_value=0, key="va1m")
-                        va_6_11_f = st.number_input("Female", min_value=0, key="va1f")
-                    with col_va2:
-                        st.caption("12 - 59 months")
-                        va_12_59_m = st.number_input("Male", min_value=0, key="va2m")
-                        va_12_59_f = st.number_input("Female", min_value=0, key="va2f")
-                    
-                    submit_daily = st.form_submit_button("💾 Save Daily Data", type="primary", use_container_width=True)
-                    
-                    if submit_daily:
-                        if encode_brgy is None:
-                             st.error("Cannot save data without a selected Barangay.")
-                        else:
-                            try:
-                                supabase.table('rhu_disaggregated').insert({
-                                    "date": str(encode_date),
-                                    "municipality": encode_muni,
-                                    "barangay": encode_brgy,
-                                    "encoder_name": st.session_state['user_name'],
-                                    "mr_6_12m_m": mr_6_12_m, "mr_6_12m_f": mr_6_12_f,
-                                    "mr_13_23m_m": mr_13_23_m, "mr_13_23m_f": mr_13_23_f,
-                                    "mr_24_59m_m": mr_24_59_m, "mr_24_59m_f": mr_24_59_f,
-                                    "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
-                                    "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
-                                }).execute()
-                                st.success(f"✅ Data for {encode_brgy} successfully saved!")
-                                time.sleep(1)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to save data: {e}")
-
-                # --- NEW FEATURE: THE 7-DAY DATA EDITOR ---
-                st.divider()
-                st.markdown("### 📋 Review & Edit Your Encoded Data")
-                
-                try:
-                    user_muni = st.session_state.get('assigned_muni', 'None')
-                    
-                    # Fetch data: Admins and Regional staff see everything, RHUs see only their town
-                    if is_admin or user_muni == "None" or user_muni == "":
-                        res_rhu = supabase.table('rhu_disaggregated').select('*').execute()
-                    else:
-                        res_rhu = supabase.table('rhu_disaggregated').select('*').eq('municipality', user_muni).execute()
-                        
-                    if res_rhu.data:
-                        df_rhu = pd.DataFrame(res_rhu.data)
-                        
-                        # --- THE FIX: Keep as Pandas Datetime for the math ---
-                        df_rhu['date'] = pd.to_datetime(df_rhu['date'])
-                        df_rhu = df_rhu.sort_values('date', ascending=False)
-                        
-                        # Reorder columns for a cleaner table layout
-                        col_order = ['id', 'date', 'municipality', 'barangay', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f', 'vita_6_11m_m', 'vita_11_6m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'encoder_name']
-                        df_rhu = df_rhu[[c for c in col_order if c in df_rhu.columns]]
-                        
-                        # Use strictly Pandas Timestamp for the "today" calculation
-                        today = pd.Timestamp.today().normalize()
-                        
-                        # Apply the 7-Day Lock Logic
-                        if is_admin:
-                            st.info("🛡️ System Admin View: You have overriding access to edit all historical records.")
-                            df_rhu['date'] = df_rhu['date'].dt.date # Convert for display AFTER math
-                            df_editable = df_rhu.copy()
-                            df_locked = pd.DataFrame()
-                        else:
-                            st.info("You can edit data within 7 days of the vaccination date. Older entries are permanently locked.")
-                            df_rhu['is_editable'] = (today - df_rhu['date']).dt.days <= 7
-                            df_rhu['date'] = df_rhu['date'].dt.date # Convert for display AFTER math
-                            df_editable = df_rhu[df_rhu['is_editable']].drop(columns=['is_editable'])
-                            df_locked = df_rhu[~df_rhu['is_editable']].drop(columns=['is_editable'])
-                        # -----------------------------------------------------
-
-                        # Table 1: Editable
-                        if not df_editable.empty:
-                            st.markdown("#### 🟢 Recent Records (Editable)")
-                            edited_rhu = st.data_editor(
-                                df_editable,
-                                column_config={
-                                    "id": None, # Hides the database ID from the user
-                                    "date": st.column_config.DateColumn("Date", disabled=True),
-                                    "municipality": st.column_config.TextColumn("Municipality", disabled=True),
-                                    "barangay": st.column_config.TextColumn("Barangay", disabled=True),
-                                    "encoder_name": st.column_config.TextColumn("Encoder", disabled=True)
-                                },
-                                use_container_width=True,
-                                num_rows="fixed",
-                                key="rhu_data_editor"
-                            )
-                            
-                            if st.button("💾 Save Edits to Database", type="secondary"):
-                                try:
-                                    records_to_update = edited_rhu.copy()
-                                    records_to_update['date'] = records_to_update['date'].astype(str)
-                                    updates = records_to_update.to_dict(orient='records')
-                                    supabase.table('rhu_disaggregated').upsert(updates).execute()
-                                    st.success("✅ Edits successfully saved!")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Failed to save edits: {e}")
-                        
-                        # Table 2: Locked
-                        if not df_locked.empty:
-                            st.markdown("#### 🔒 Locked Records (Historical)")
-                            st.dataframe(
-                                df_locked,
-                                column_config={
-                                    "id": None, # Hides the database ID
-                                    "date": "Date", "municipality": "Municipality", "barangay": "Barangay", "encoder_name": "Encoder"
-                                },
-                                use_container_width=True
-                            )
-                    else:
-                        st.info("No encoded data found yet.")
-                except Exception as e:
-                    st.error(f"Could not load encoded data: {e}")
-                # --------------------------------------------------
-            else:
-                 st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
-
-    with tab_mr:
-        st.markdown("### 💉 Measles-Rubella Accomplishment")
-        col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
-        col_mr1.metric("Coverage Target", "0%")
-        col_mr2.metric("Total Doses Administered", "0")
-        col_mr3.metric("⚠️ Total Deferrals", "0")
-        col_mr4.metric("🚨 Total Refusals", "0")
-        st.info("🚧 MR analytical engine ready. Awaiting VaccTrack Sync.")
-
-    with tab_vita:
-        st.markdown("### 💊 Vitamin A Accomplishment")
-        col_va1, col_va2, col_va3, col_va4 = st.columns(4)
-        col_va1.metric("Coverage Target", "0%")
-        col_va2.metric("Total Doses Administered", "0")
-        col_va3.metric("⚠️ Total Deferrals", "0")
-        col_va4.metric("🚨 Total Refusals", "0")
-        st.info("🚧 Vitamin A analytical engine ready. Awaiting VaccTrack Sync.")
-        
-    with tab_wastage:
-        st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
-        st.write("Deep dive into vaccine utilization and specific reasons for missed targets.")
-        
-        col_waste1, col_waste2 = st.columns(2)
-        with col_waste1:
-            st.markdown("#### 🧪 Vaccine Utilization (MR & Vit A)")
-            st.info("🚧 Wastage Rate Chart Placeholder (Opened vs. Administered)")
-            
-        with col_waste2:
-            st.markdown("#### 📋 Top 5 Reasons for Non-Vaccination")
-            st.info("🚧 C1-C23 Pareto Chart Placeholder")
-
-    with tab_total:
-        st.info("🚧 Executive Summary will populate once data streams are connected.")
-
-    # ==========================================
-    # SECRET ADMIN PANEL
-    # ==========================================
-    if is_admin:
-        with tab_admin:
-            st.markdown("### 🔄 Phase 1: Target Database Sync")
-            st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
-            
-            if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                with st.spinner("Downloading targets..."):
-                    try:
-                        conn = st.connection("gsheets", type=GSheetsConnection)
-                        col_names = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
-                        df_raw = conn.read(spreadsheet=sheet_url, worksheet="Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl=0)
-                        
-                        df_clean = clean_and_process_car_data(df_raw, col_names)
-                        df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
-                        df_supabase.columns = ['code', 'location', 'level', 'parent_province', 'parent_municipality', 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m']
-                        
-                        df_supabase = df_supabase.replace({np.nan: None})
-                        
-                        data_to_push = df_supabase.to_dict(orient='records')
-                        supabase.table('targets').upsert(data_to_push).execute()
-                        
-                        st.success("✅ Target Database Successfully Synced!")
-                        st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"Target Sync Failed: {e}")
-            
-            st.divider()
-
-            st.markdown("### 📥 Phase 2: VaccTrack Raw Data Sync")
-            st.write("Upload the daily export from the `VaccTrack_Raw` Google Sheet into the Accomplishment Database. This powers the MR, Vit A, and Wastage tabs.")
-            
-            if st.button("Sync Daily VaccTrack Accomplishments", type="primary", use_container_width=True):
-                 st.info("Pipeline ready! We will connect this mapping engine once the Vit A target format is confirmed and you have pasted your first batch of export data.")
-            
-            st.divider()
-            
-            st.markdown("### 🔐 User Account Management")
-            st.write("Edit user roles, approval status, and assign them to specific municipalities to restrict their encoding access.")
-            res_users = supabase.table('user_accounts').select('*').execute()
-            if res_users.data:
-                users_admin_df = pd.DataFrame(res_users.data)
-                users_admin_df['contact_info'] = users_admin_df['contact_info'].fillna("").astype(str)
-                # Ensure the new column is present in the dataframe
-                if 'assigned_municipality' not in users_admin_df.columns:
-                     users_admin_df['assigned_municipality'] = "None"
-                     
-                cols = ['username', 'name', 'role', 'assigned_municipality', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
-                users_admin_df = users_admin_df[cols]
-                
-                edited_users = st.data_editor(
-                    users_admin_df,
-                    column_config={
-                        "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
-                        "assigned_municipality": st.column_config.SelectboxColumn("Assigned MHO", width="medium", options=["None"] + abra_munis),
-                        "password_hash": None, 
-                        "username": st.column_config.TextColumn("Username", disabled=True),
-                        "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
-                        "failed_attempts": st.column_config.NumberColumn("Strikes", width="small", disabled=True) 
-                    },
-                    use_container_width=True,
-                    num_rows="dynamic",
-                    key="user_editor"
-                )
-                
-                if st.button("💾 Save User Changes", type="secondary"):
-                    try:
-                        edited_users.loc[edited_users['account_status'] == 'Approved', 'failed_attempts'] = 0
-                        updated_records = edited_users.to_dict(orient='records')
-                        supabase.table('user_accounts').upsert(updated_records).execute()
-                        st.toast("User accounts updated successfully!", icon="✅")
-                    except Exception as e:
-                        st.error(f"Failed to update users: {e}")
-            
-            st.divider()
-
-            st.markdown("### 📋 System Access Logs")
-            try:
-                res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
-                if res_logs.data:
-                    logs_df = pd.DataFrame(res_logs.data)[['timestamp', 'name', 'role']]
-                    st.dataframe(logs_df, use_container_width=True)
+            with col_info2:
+                user_muni = st.session_state.get('assigned_muni', 'None')
+                if is_admin or user_muni == "None" or user_muni == "":
+                    muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
+                    encode_muni = st.selectbox("Municipality", muni_list)
                 else:
-                    st.info("No access logs found yet.")
-            except Exception as e:
-                st.warning(f"Could not load Access Logs: {e}")
+                    st.text_input("Municipality (Locked to your assignment)", value=user_muni, disabled=True)
+                    encode_muni = user_muni
+                    
+            with col_info3:
+                brgy_list = sorted(df_abra[(df_abra['Parent_Municipality'] == encode_muni) & (df_abra['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
+                if not brgy_list:
+                     st.warning("No barangays found. Please check assigned municipality.")
+                     encode_brgy = None
+                else:
+                     encode_brgy = st.selectbox("Barangay", brgy_list)
+            
+            st.divider()
+            st.markdown("#### 💉 Measles-Rubella (MR)")
+            col_mr1, col_mr2, col_mr3 = st.columns(3)
+            with col_mr1:
+                st.caption("6 - 12 months")
+                mr_6_12_m = st.number_input("Male", min_value=0, key="mr1m")
+                mr_6_12_f = st.number_input("Female", min_value=0, key="mr1f")
+            with col_mr2:
+                st.caption("13 - 23 months")
+                mr_13_23_m = st.number_input("Male", min_value=0, key="mr2m")
+                mr_13_23_f = st.number_input("Female", min_value=0, key="mr2f")
+            with col_mr3:
+                st.caption("24 - 59 months")
+                mr_24_59_m = st.number_input("Male", min_value=0, key="mr3m")
+                mr_24_59_f = st.number_input("Female", min_value=0, key="mr3f")
 
-except Exception as e:
-    st.error(f"Dashboard Error: {e}")
+            st.divider()
+            st.markdown("#### 💊 Vitamin A")
+            col_va1, col_va2 = st.columns(2)
+            with col_va1:
+                st.caption("6 - 11 months")
+                va_6_11_m = st.number_input("Male", min_value=0, key="va1m")
+                va_6_11_f = st.number_input("Female", min_value=0, key="va1f")
+            with col_va2:
+                st.caption("12 - 59 months")
+                va_12_59_m = st.number_input("Male", min_value=0, key="va2m")
+                va_12_59_f = st.number_input("Female", min_value=0, key="va2f")
+            
+            submit_daily = st.form_submit_button("💾 Save Daily Data to Regional Database", type="primary", use_container_width=True)
+            
+            if submit_daily:
+                if encode_brgy is None:
+                     st.error("Cannot save data without a selected Barangay.")
+                else:
+                    try:
+                        supabase.table('rhu_disaggregated').insert({
+                            "date": str(encode_date),
+                            "municipality": encode_muni,
+                            "barangay": encode_brgy,
+                            "encoder_name": st.session_state['user_name'],
+                            "mr_6_12m_m": mr_6_12_m, "mr_6_12m_f": mr_6_12_f,
+                            "mr_13_23m_m": mr_13_23_m, "mr_13_23m_f": mr_13_23_f,
+                            "mr_24_59m_m": mr_24_59_m, "mr_24_59m_f": mr_24_59_f,
+                            "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
+                            "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
+                        }).execute()
+                        st.success(f"✅ Data for {encode_brgy} successfully saved!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to save data: {e}")
+
+        # --- THE ROW DELETION EDITOR ---
+        st.divider()
+        st.markdown("### 📋 Review, Edit & Delete Data")
+        
+        try:
+            user_muni = st.session_state.get('assigned_muni', 'None')
+            
+            if is_admin or user_muni == "None" or user_muni == "":
+                res_rhu = supabase.table('rhu_disaggregated').select('*').execute()
+            else:
+                res_rhu = supabase.table('rhu_disaggregated').select('*').eq('municipality', user_muni).execute()
+                
+            if res_rhu.data:
+                df_rhu = pd.DataFrame(res_rhu.data)
+                df_rhu['date'] = pd.to_datetime(df_rhu['date'], errors='coerce')
+                df_rhu = df_rhu.sort_values('date', ascending=False)
+                
+                col_order = ['id', 'date', 'municipality', 'barangay', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f', 'vita_6_11m_m', 'vita_11_6m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'encoder_name']
+                df_rhu = df_rhu[[c for c in col_order if c in df_rhu.columns]]
+                
+                today = pd.Timestamp.today().normalize()
+                
+                if is_admin:
+                    st.info("🛡️ System Admin View: You have overriding access to edit or delete all records.")
+                    df_editable = df_rhu.copy()
+                    df_locked = pd.DataFrame()
+                else:
+                    st.info("You can edit or delete data within 7 days of the vaccination date. To delete a row, click the row number on the left and press the 'Delete' key.")
+                    df_rhu['is_editable'] = (today - df_rhu['date']).dt.days <= 7
+                    df_editable = df_rhu[df_rhu['is_editable']].drop(columns=['is_editable'])
+                    df_locked = df_rhu[~df_rhu['is_editable']].drop(columns=['is_editable'])
+
+                if not df_editable.empty:
+                    df_editable['date'] = df_editable['date'].dt.date
+                if not df_locked.empty:
+                    df_locked['date'] = df_locked['date'].dt.date
+
+                # Table 1: Editable & Deletable
+                if not df_editable.empty:
+                    st.markdown("#### 🟢 Recent Records (Editable)")
+                    edited_rhu = st.data_editor(
+                        df_editable,
+                        column_config={
+                            "id": None, # Hides the database ID
+                            "date": st.column_config.DateColumn("Date", disabled=True),
+                            "municipality": st.column_config.TextColumn("Municipality", disabled=True),
+                            "barangay": st.column_config.TextColumn("Barangay", disabled=True),
+                            "encoder_name": st.column_config.TextColumn("Encoder", disabled=True)
+                        },
+                        use_container_width=True,
+                        num_rows="dynamic", # --- THIS ENABLES ROW DELETION ---
+                        key="rhu_data_editor"
+                    )
+                    
+                    if st.button("💾 Save Edits & Deletions", type="secondary"):
+                        try:
+                            # 1. Handle Deletions: Find rows that were in df_editable but are missing from edited_rhu
+                            original_ids = set(df_editable['id'].tolist())
+                            current_ids = set(edited_rhu['id'].dropna().tolist())
+                            deleted_ids = list(original_ids - current_ids)
+                            
+                            if deleted_ids:
+                                supabase.table('rhu_disaggregated').delete().in_('id', deleted_ids).execute()
+                                
+                            # 2. Handle Updates
+                            records_to_update = edited_rhu.dropna(subset=['id']).copy() # Ignore any mistakenly "added" empty rows
+                            if not records_to_update.empty:
+                                records_to_update['date'] = records_to_update['date'].astype(str)
+                                updates = records_to_update.to_dict(orient='records')
+                                supabase.table('rhu_disaggregated').upsert(updates).execute()
+                                
+                            st.success("✅ Database successfully updated!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to update database: {e}")
+                
+                # Table 2: Locked
+                if not df_locked.empty:
+                    st.markdown("#### 🔒 Locked Records (Historical)")
+                    st.dataframe(
+                        df_locked,
+                        column_config={
+                            "id": None,
+                            "date": st.column_config.DateColumn("Date"), 
+                            "municipality": "Municipality", 
+                            "barangay": "Barangay", 
+                            "encoder_name": "Encoder"
+                        },
+                        use_container_width=True
+                    )
+            else:
+                st.info("No encoded data found yet.")
+        except Exception as e:
+            st.error(f"Could not load encoded data: {e}")
+            
+    else:
+         st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
+
+
+# ==========================================
+# MODE 2: THE DASHBOARD (Tabs and Filters)
+# ==========================================
+elif app_mode == "📊 Dashboard View":
+
+    tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals", "📊 Executive Summary"]
+    if is_admin:
+        tab_names.append("🛡️ Admin Panel")
+        
+    tabs = st.tabs(tab_names)
+    
+    if is_admin:
+        tab_target, tab_mr, tab_vita, tab_wastage, tab_total, tab_admin = tabs
+    else:
+        tab_target, tab_mr, tab_vita, tab_wastage, tab_total = tabs
+
+    try:
+        with tab_target:
+            st.markdown("### Regional Target Baseline Overview")
+            df_targets = fetch_targets_from_supabase()
+            
+            if df_targets.empty:
+                st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
+            else:
+                col_map = {"6 - 59 months (Grand Total)": "6-59m_Total", "6 - 12 months": "6-12m_Total", "13 - 23 months": "13-23m_Total", "24 - 59 months": "24-59m_Total"}
+                target_col = col_map[age_filter]
+
+                df_view = pd.DataFrame()
+                chart_title = ""
+                selected_prov = "CAR_Region" 
+                selected_muni = ""
+                
+                if view_mode == "Region-wide (Compare Provinces)":
+                    df_view = df_targets[df_targets['Level'] == 'Province']
+                    chart_title = f"CAR Regional Targets: {age_filter}"
+                elif view_mode == "Province-wide (Compare Municipalities)":
+                    province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
+                    default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
+                    with st.sidebar:
+                        selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
+                    df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
+                    chart_title = f"Municipal Targets for {selected_prov}: {age_filter}"
+                else: 
+                    province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
+                    default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
+                    with st.sidebar:
+                        selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
+                        muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
+                        default_muni_idx = muni_list.index("Manabo") if "Manabo" in muni_list else 0
+                        selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
+                    df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
+                    chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {age_filter}"
+
+                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                kpi1.metric("6 - 59 months", f"{df_view['6-59m_Total'].sum():,.0f}")
+                kpi2.metric("6 - 12 months", f"{df_view['6-12m_Total'].sum():,.0f}")
+                kpi3.metric("13 - 23 months", f"{df_view['13-23m_Total'].sum():,.0f}")
+                kpi4.metric("24 - 59 months", f"{df_view['24-59m_Total'].sum():,.0f}")
+                st.write("") 
+
+                if not df_view.empty:
+                    col_chart1, col_chart2 = st.columns([7, 3])
+                    with col_chart1:
+                        df_sorted = df_view.sort_values(target_col, ascending=True) 
+                        fig_bar = px.bar(df_sorted, x=target_col, y='Location', orientation='h', title=chart_title, text_auto='.0f', color_discrete_sequence=['#1E88E5'])
+                        fig_bar.update_layout(xaxis_title="Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    with col_chart2:
+                        age_data = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Target': [df_view['6-12m_Total'].sum(), df_view['13-23m_Total'].sum(), df_view['24-59m_Total'].sum()]})
+                        fig_donut = px.pie(age_data, names='Age Group', values='Target', hole=0.4, title="Age Distribution", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
+                        fig_donut.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=500, margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_donut, use_container_width=True)
+                else:
+                    st.warning("No data available.")
+
+                with st.expander("📂 View & Download Target Database"):
+                    display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']]
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                    
+                    export_location = "CAR_Region" if view_mode == "Region-wide (Compare Provinces)" else selected_prov if view_mode == "Province-wide (Compare Municipalities)" else selected_muni
+                    csv = display_df.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Data as CSV", data=csv, file_name=f"SIA_Targets_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary")
+
+        with tab_mr:
+            st.markdown("### 💉 Measles-Rubella Accomplishment")
+            col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
+            col_mr1.metric("Coverage Target", "0%")
+            col_mr2.metric("Total Doses Administered", "0")
+            col_mr3.metric("⚠️ Total Deferrals", "0")
+            col_mr4.metric("🚨 Total Refusals", "0")
+            st.info("🚧 MR analytical engine ready. Awaiting VaccTrack Sync.")
+
+        with tab_vita:
+            st.markdown("### 💊 Vitamin A Accomplishment")
+            col_va1, col_va2, col_va3, col_va4 = st.columns(4)
+            col_va1.metric("Coverage Target", "0%")
+            col_va2.metric("Total Doses Administered", "0")
+            col_va3.metric("⚠️ Total Deferrals", "0")
+            col_va4.metric("🚨 Total Refusals", "0")
+            st.info("🚧 Vitamin A analytical engine ready. Awaiting VaccTrack Sync.")
+            
+        with tab_wastage:
+            st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
+            st.write("Deep dive into vaccine utilization and specific reasons for missed targets.")
+            
+            col_waste1, col_waste2 = st.columns(2)
+            with col_waste1:
+                st.markdown("#### 🧪 Vaccine Utilization (MR & Vit A)")
+                st.info("🚧 Wastage Rate Chart Placeholder (Opened vs. Administered)")
+                
+            with col_waste2:
+                st.markdown("#### 📋 Top 5 Reasons for Non-Vaccination")
+                st.info("🚧 C1-C23 Pareto Chart Placeholder")
+
+        with tab_total:
+            st.info("🚧 Executive Summary will populate once data streams are connected.")
+
+        # ==========================================
+        # SECRET ADMIN PANEL
+        # ==========================================
+        if is_admin:
+            with tab_admin:
+                st.markdown("### 🔄 Phase 1: Target Database Sync")
+                st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
+                
+                if st.button("Sync Target Database", type="secondary", use_container_width=True):
+                    with st.spinner("Downloading targets..."):
+                        try:
+                            conn = st.connection("gsheets", type=GSheetsConnection)
+                            col_names = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
+                            df_raw = conn.read(spreadsheet=sheet_url, worksheet="Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl=0)
+                            
+                            df_clean = clean_and_process_car_data(df_raw, col_names)
+                            df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
+                            df_supabase.columns = ['code', 'location', 'level', 'parent_province', 'parent_municipality', 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m']
+                            
+                            df_supabase = df_supabase.replace({np.nan: None})
+                            
+                            data_to_push = df_supabase.to_dict(orient='records')
+                            supabase.table('targets').upsert(data_to_push).execute()
+                            
+                            st.success("✅ Target Database Successfully Synced!")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            st.error(f"Target Sync Failed: {e}")
+                
+                st.divider()
+
+                st.markdown("### 📥 Phase 2: VaccTrack Raw Data Sync")
+                st.write("Upload the daily export from the `VaccTrack_Raw` Google Sheet into the Accomplishment Database. This powers the MR, Vit A, and Wastage tabs.")
+                
+                if st.button("Sync Daily VaccTrack Accomplishments", type="primary", use_container_width=True):
+                     st.info("Pipeline ready! We will connect this mapping engine once the Vit A target format is confirmed and you have pasted your first batch of export data.")
+                
+                st.divider()
+                
+                st.markdown("### 🔐 User Account Management")
+                st.write("Edit user roles, approval status, and assign them to specific municipalities to restrict their encoding access.")
+                res_users = supabase.table('user_accounts').select('*').execute()
+                if res_users.data:
+                    users_admin_df = pd.DataFrame(res_users.data)
+                    users_admin_df['contact_info'] = users_admin_df['contact_info'].fillna("").astype(str)
+                    if 'assigned_municipality' not in users_admin_df.columns:
+                         users_admin_df['assigned_municipality'] = "None"
+                         
+                    cols = ['username', 'name', 'role', 'assigned_municipality', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
+                    users_admin_df = users_admin_df[cols]
+                    
+                    edited_users = st.data_editor(
+                        users_admin_df,
+                        column_config={
+                            "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
+                            "assigned_municipality": st.column_config.SelectboxColumn("Assigned MHO", width="medium", options=["None"] + abra_munis),
+                            "password_hash": None, 
+                            "username": st.column_config.TextColumn("Username", disabled=True),
+                            "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
+                            "failed_attempts": st.column_config.NumberColumn("Strikes", width="small", disabled=True) 
+                        },
+                        use_container_width=True,
+                        num_rows="dynamic",
+                        key="user_editor"
+                    )
+                    
+                    if st.button("💾 Save User Changes", type="secondary"):
+                        try:
+                            edited_users.loc[edited_users['account_status'] == 'Approved', 'failed_attempts'] = 0
+                            updated_records = edited_users.to_dict(orient='records')
+                            supabase.table('user_accounts').upsert(updated_records).execute()
+                            st.toast("User accounts updated successfully!", icon="✅")
+                        except Exception as e:
+                            st.error(f"Failed to update users: {e}")
+                
+                st.divider()
+
+                st.markdown("### 📋 System Access Logs")
+                try:
+                    res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
+                    if res_logs.data:
+                        logs_df = pd.DataFrame(res_logs.data)[['timestamp', 'name', 'role']]
+                        st.dataframe(logs_df, use_container_width=True)
+                    else:
+                        st.info("No access logs found yet.")
+                except Exception as e:
+                    st.warning(f"Could not load Access Logs: {e}")
+
+    except Exception as e:
+        st.error(f"Dashboard Error: {e}")
