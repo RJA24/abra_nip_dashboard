@@ -294,7 +294,7 @@ with st.sidebar:
     col1, col2 = st.columns([2, 8])
     with col1:
         # Pointing to the official DOH Seal which represents the Regional Office
-        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
+        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png"
         st.image(car_logo_url, use_container_width=True)
         
     with col2:
