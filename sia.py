@@ -255,6 +255,59 @@ last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
 is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
+with st.sidebar:
+    # 1. Sleek Header & UNIFIED CAR LOGO
+    col1, col2 = st.columns([2, 8])
+    with col1:
+        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
+        st.image(car_logo_url, use_container_width=True)
+        
+    with col2:
+        st.markdown(f"**{st.session_state['user_name']}**")
+        st.caption(f"*{st.session_state['user_role']}*")
+    
+    user_territory = st.session_state.get('assigned_muni', 'None')
+    muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
+    st.info(f"📍 **Territory:** {muni_display}")
+    
+    st.divider()
+    
+    # 2. Workspace Toggle (Only for Encoders/Admins)
+    app_mode = "📊 Dashboard View"
+    if is_encoder:
+        st.markdown("**⚙️ WORKSPACE MODE**")
+        app_mode = st.radio("Workspace Mode", ["📊 Dashboard View", "📝 Data Entry Mode"], label_visibility="collapsed")
+        st.divider()
+    
+    # 3. Dynamic Filters (Only shows if in Dashboard mode)
+    if app_mode == "📊 Dashboard View":
+        st.markdown("**🎛️ DASHBOARD FILTERS**")
+        view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
+        st.write("") 
+        age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
+        
+        # --- PLACEHOLDER FOR DYNAMIC DROPDOWNS ---
+        geo_filters_container = st.container()
+        
+        st.divider()
+    
+    # 4. System Actions Grouped at the Bottom
+    st.markdown("**🛠️ SYSTEM ACTIONS**")
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        st.cache_data.clear()
+        st.toast("Dashboard Interface Refreshed!", icon="🔄")
+        time.sleep(0.5)
+        st.rerun()
+        
+    if st.button("🚪 Logout", type="primary", use_container_width=True):
+        st.session_state['logged_in'] = False
+        st.session_state['user_name'] = ""
+        st.session_state['user_role'] = ""
+        st.session_state['assigned_muni'] = ""
+        st.rerun()
+        
+    st.caption(f"🕒 Last Sync: {last_updated}")
+
 # --- DATA HELPER FUNCTIONS ---
 def clean_and_process_car_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
@@ -289,57 +342,6 @@ def fetch_targets_from_supabase():
     }
     return df.rename(columns=col_mapping)
 
-with st.sidebar:
-    # 1. Sleek Header & UNIFIED CAR LOGO
-    col1, col2 = st.columns([2, 8])
-    with col1:
-        # Pointing to the official DOH Seal which represents the Regional Office
-        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png"
-        st.image(car_logo_url, use_container_width=True)
-        
-    with col2:
-        st.markdown(f"**{st.session_state['user_name']}**")
-        st.caption(f"*{st.session_state['user_role']}*")
-    
-    # Show their territory based on their account assignment
-    user_territory = st.session_state.get('assigned_muni', 'None')
-    muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
-    st.info(f"📍 **Territory:** {muni_display}")
-    
-    st.divider()
-    
-    # 2. Workspace Toggle (Only for Encoders/Admins)
-    app_mode = "📊 Dashboard View"
-    if is_encoder:
-        st.markdown("**⚙️ WORKSPACE MODE**")
-        app_mode = st.radio("Workspace Mode", ["📊 Dashboard View", "📝 Data Entry Mode"], label_visibility="collapsed")
-        st.divider()
-    
-    # 3. Dynamic Filters (Only shows if in Dashboard mode)
-    if app_mode == "📊 Dashboard View":
-        st.markdown("**🎛️ DASHBOARD FILTERS**")
-        view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
-        st.write("") 
-        age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
-        st.divider()
-    
-    # 4. System Actions
-    st.markdown("**🛠️ SYSTEM ACTIONS**")
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.cache_data.clear()
-        st.toast("Data Refreshed!", icon="🔄")
-        time.sleep(0.5)
-        st.rerun()
-        
-    if st.button("🚪 Logout", type="primary", use_container_width=True):
-        st.session_state['logged_in'] = False
-        st.session_state['user_name'] = ""
-        st.session_state['user_role'] = ""
-        st.session_state['assigned_muni'] = ""
-        st.rerun()
-        
-    st.caption(f"🕒 Last Sync: {last_updated}")
-
 # ==========================================
 # MODE 1: DATA ENTRY (No tabs, no filters)
 # ==========================================
@@ -360,7 +362,6 @@ if app_mode == "📝 Data Entry Mode":
             with col_info2:
                 user_muni = st.session_state.get('assigned_muni', 'None')
                 
-                # Check if Admin or generic Provincial assignment
                 if is_admin or user_muni == "None" or user_muni == "" or user_muni == "Abra":
                     muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
                     encode_muni = st.selectbox("Municipality", muni_list)
@@ -565,18 +566,24 @@ elif app_mode == "📊 Dashboard View":
                 elif view_mode == "Province-wide (Compare Municipalities)":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                    with st.sidebar:
+                    
+                    # --- PLACED IN THE SIDEBAR CONTAINER ---
+                    with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
+                        
                     df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
                     chart_title = f"Municipal Targets for {selected_prov}: {age_filter}"
                 else: 
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                    with st.sidebar:
+                    
+                    # --- PLACED IN THE SIDEBAR CONTAINER ---
+                    with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
                         default_muni_idx = muni_list.index("Manabo") if "Manabo" in muni_list else 0
                         selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
+                        
                     df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
                     chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {age_filter}"
 
