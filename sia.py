@@ -255,12 +255,38 @@ last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
 is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
+# --- PROVINCIAL SEALS DICTIONARY ---
+PROVINCE_LOGOS = {
+    "Abra": "https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png",
+    "Apayao": "https://upload.wikimedia.org/wikipedia/commons/a/ac/Seal_of_Apayao.png",
+    "Benguet": "https://upload.wikimedia.org/wikipedia/commons/c/c3/PH-BEN_Flag.png",
+    "Ifugao": "https://upload.wikimedia.org/wikipedia/commons/d/de/Ifugao_Province_Seal.png",
+    "Kalinga": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Ph_seal_kalinga.png",
+    "Mountain Province": "https://upload.wikimedia.org/wikipedia/commons/0/02/Flag_of_Mountain_Province.png",
+    "Default": "https://upload.wikimedia.org/wikipedia/commons/3/33/Department_of_Health_%28DOH%29_PHL.svg"
+}
+
 with st.sidebar:
-    # 1. Sleek Header & Profile Card
+    # 1. Sleek Header & DYNAMIC LOGO
     col1, col2 = st.columns([2, 8])
     with col1:
-        # Using a highly reliable, cached Wikipedia thumbnail to prevent the broken image icon
-        st.image("https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png", use_container_width=True)
+        user_territory = st.session_state.get('assigned_muni', 'None')
+        logo_url = PROVINCE_LOGOS["Default"]
+        
+        if user_territory != "None" and user_territory != "":
+            try:
+                # Look up the province of the user's assigned municipality
+                df_targets_logo = fetch_targets_from_supabase()
+                if not df_targets_logo.empty:
+                    match = df_targets_logo[(df_targets_logo['Location'] == user_territory) & (df_targets_logo['Level'] == 'Municipality')]
+                    if not match.empty:
+                        user_prov = match['Parent_Province'].iloc[0]
+                        logo_url = PROVINCE_LOGOS.get(user_prov, PROVINCE_LOGOS["Default"])
+            except:
+                pass
+                
+        st.image(logo_url, use_container_width=True)
+        
     with col2:
         st.markdown(f"**{st.session_state['user_name']}**")
         st.caption(f"*{st.session_state['user_role']}*")
@@ -281,7 +307,7 @@ with st.sidebar:
     if app_mode == "📊 Dashboard View":
         st.markdown("**🎛️ DASHBOARD FILTERS**")
         view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
-        st.write("") # Small vertical space
+        st.write("") 
         age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
         st.divider()
     
