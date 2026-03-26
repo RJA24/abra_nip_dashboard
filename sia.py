@@ -74,6 +74,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['user_name'] = ""
     st.session_state['user_role'] = ""
+    st.session_state['assigned_muni'] = ""
     st.session_state['last_active'] = time.time()
 
 if st.session_state['logged_in']:
@@ -84,6 +85,7 @@ if st.session_state['logged_in']:
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
+        st.session_state['assigned_muni'] = ""
         st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
         time.sleep(2)
         st.rerun()
@@ -93,6 +95,9 @@ if st.session_state['logged_in']:
 # ==========================================
 # 4. THE GATEWAY (Login, Registration & Recovery)
 # ==========================================
+# Hardcoded Abra list for foolproof registration
+abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
+
 if not st.session_state['logged_in']:
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -133,6 +138,7 @@ if not st.session_state['logged_in']:
                                         
                                         db_name = user_data['name']
                                         db_role = user_data['role']
+                                        db_muni = user_data.get('assigned_municipality', 'None')
                                         
                                         manila_tz = pytz.timezone('Asia/Manila')
                                         current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -141,6 +147,7 @@ if not st.session_state['logged_in']:
                                         st.session_state['logged_in'] = True
                                         st.session_state['user_name'] = db_name
                                         st.session_state['user_role'] = db_role
+                                        st.session_state['assigned_muni'] = db_muni
                                         st.session_state['last_active'] = time.time()
                                         
                                         st.toast(f"Welcome back, {db_name}!", icon="👋")
@@ -170,6 +177,7 @@ if not st.session_state['logged_in']:
                 st.info("Submitted requests are reviewed by a System Admin before access is granted.")
                 new_name = st.text_input("Full Name")
                 new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+                new_muni = st.selectbox("Assigned Municipality (Select 'None' if Regional/Provincial Office)", ["None"] + abra_munis)
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
                 new_password = st.text_input("Create Password", type="password")
@@ -191,7 +199,8 @@ if not st.session_state['logged_in']:
                                 hashed_pw = make_hashes(new_password)
                                 supabase.table('user_accounts').insert({
                                     "username": new_username, "password_hash": hashed_pw, "name": new_name.strip(),
-                                    "role": new_role, "account_status": "Pending", "contact_info": new_contact.strip(), "failed_attempts": 0 
+                                    "role": new_role, "assigned_municipality": new_muni, "account_status": "Pending", 
+                                    "contact_info": new_contact.strip(), "failed_attempts": 0 
                                 }).execute()
                                 st.success("✅ Request submitted! Please wait for admin approval.")
                         except Exception as e:
@@ -238,12 +247,16 @@ last_updated = get_last_updated_time()
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/240px-Department_of_Health_%28Philippines%29_Seal.svg.png", width=80)
     st.header("Dashboard Controls")
-    st.info(f"👤 **{st.session_state['user_name']}**\n\n*({st.session_state['user_role']})*")
+    
+    # Display their assigned territory in the sidebar
+    muni_display = f"({st.session_state['assigned_muni']})" if st.session_state['assigned_muni'] != "None" else "(Regional Access)"
+    st.info(f"👤 **{st.session_state['user_name']}**\n\n*{st.session_state['user_role']}*\n\n{muni_display}")
     
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
+        st.session_state['assigned_muni'] = ""
         st.rerun()
         
     st.divider()
@@ -260,7 +273,7 @@ with st.sidebar:
     view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
     age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
-# --- DATA HELPER FUNCTIONS (MOVED TO TOP) ---
+# --- DATA HELPER FUNCTIONS ---
 def clean_and_process_car_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
     df = df[df['Code'] != 'nan']
@@ -393,19 +406,31 @@ try:
             df_targets_for_form = fetch_targets_from_supabase()
             
             if not df_targets_for_form.empty:
+                df_abra = df_targets_for_form[df_targets_for_form['Parent_Province'] == 'Abra']
+                
                 with st.form("rhu_daily_encoding"):
                     col_info1, col_info2, col_info3 = st.columns(3)
                     with col_info1:
                         encode_date = st.date_input("Vaccination Date", max_value=datetime.today())
+                    
                     with col_info2:
-                        # --- THE ABRA LOCK: Only pull municipalities where Parent_Province is Abra ---
-                        df_abra = df_targets_for_form[df_targets_for_form['Parent_Province'] == 'Abra']
-                        muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
-                        encode_muni = st.selectbox("Municipality", muni_list)
+                        user_muni = st.session_state.get('assigned_muni', 'None')
+                        
+                        # THE ABRA LOCK LOGIC
+                        if is_admin or user_muni == "None" or user_muni == "":
+                            muni_list = sorted(df_abra[df_abra['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
+                            encode_muni = st.selectbox("Municipality", muni_list)
+                        else:
+                            st.text_input("Municipality (Locked to your assignment)", value=user_muni, disabled=True)
+                            encode_muni = user_muni
+                            
                     with col_info3:
-                        # Pull barangays based on the selected Abra municipality
-                        brgy_list = sorted(df_targets_for_form[(df_targets_for_form['Parent_Municipality'] == encode_muni) & (df_targets_for_form['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
-                        encode_brgy = st.selectbox("Barangay", brgy_list)
+                        brgy_list = sorted(df_abra[(df_abra['Parent_Municipality'] == encode_muni) & (df_abra['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
+                        if not brgy_list:
+                             st.warning("No barangays found. Please check assigned municipality.")
+                             encode_brgy = None
+                        else:
+                             encode_brgy = st.selectbox("Barangay", brgy_list)
                     
                     st.divider()
                     st.markdown("#### 💉 Measles-Rubella (MR)")
@@ -438,21 +463,24 @@ try:
                     submit_daily = st.form_submit_button("💾 Save Daily Data to Regional Database", type="primary", use_container_width=True)
                     
                     if submit_daily:
-                        try:
-                            supabase.table('rhu_disaggregated').insert({
-                                "date": str(encode_date),
-                                "municipality": encode_muni,
-                                "barangay": encode_brgy,
-                                "encoder_name": st.session_state['user_name'],
-                                "mr_6_12m_m": mr_6_12_m, "mr_6_12m_f": mr_6_12_f,
-                                "mr_13_23m_m": mr_13_23_m, "mr_13_23m_f": mr_13_23_f,
-                                "mr_24_59m_m": mr_24_59_m, "mr_24_59m_f": mr_24_59_f,
-                                "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
-                                "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
-                            }).execute()
-                            st.success(f"✅ Data for {encode_brgy} successfully saved! Thank you, {st.session_state['user_name']}.")
-                        except Exception as e:
-                            st.error(f"Failed to save data: {e}")
+                        if encode_brgy is None:
+                             st.error("Cannot save data without a selected Barangay.")
+                        else:
+                            try:
+                                supabase.table('rhu_disaggregated').insert({
+                                    "date": str(encode_date),
+                                    "municipality": encode_muni,
+                                    "barangay": encode_brgy,
+                                    "encoder_name": st.session_state['user_name'],
+                                    "mr_6_12m_m": mr_6_12_m, "mr_6_12m_f": mr_6_12_f,
+                                    "mr_13_23m_m": mr_13_23_m, "mr_13_23m_f": mr_13_23_f,
+                                    "mr_24_59m_m": mr_24_59_m, "mr_24_59m_f": mr_24_59_f,
+                                    "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
+                                    "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
+                                }).execute()
+                                st.success(f"✅ Data for {encode_brgy} successfully saved! Thank you, {st.session_state['user_name']}.")
+                            except Exception as e:
+                                st.error(f"Failed to save data: {e}")
             else:
                  st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
 
@@ -530,18 +558,23 @@ try:
             st.divider()
             
             st.markdown("### 🔐 User Account Management")
+            st.write("Edit user roles, approval status, and assign them to specific municipalities to restrict their encoding access.")
             res_users = supabase.table('user_accounts').select('*').execute()
             if res_users.data:
                 users_admin_df = pd.DataFrame(res_users.data)
                 users_admin_df['contact_info'] = users_admin_df['contact_info'].fillna("").astype(str)
-                
-                cols = ['username', 'name', 'role', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
+                # Ensure the new column is present in the dataframe
+                if 'assigned_municipality' not in users_admin_df.columns:
+                     users_admin_df['assigned_municipality'] = "None"
+                     
+                cols = ['username', 'name', 'role', 'assigned_municipality', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
                 users_admin_df = users_admin_df[cols]
                 
                 edited_users = st.data_editor(
                     users_admin_df,
                     column_config={
                         "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
+                        "assigned_municipality": st.column_config.SelectboxColumn("Assigned MHO", width="medium", options=["None"] + abra_munis),
                         "password_hash": None, 
                         "username": st.column_config.TextColumn("Username", disabled=True),
                         "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
