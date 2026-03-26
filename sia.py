@@ -181,7 +181,7 @@ if not st.session_state['logged_in']:
 
         with tab_signup:
             st.info("Submitted requests are reviewed by a System Admin before access is granted.")
-            new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+            new_role = st.selectbox("Designation / Role", ["Municipal Health Office", "DOH Regional Office", "Provincial Health Office", "System Admin",  "Data Encoder", "Guest / Viewer"])
             
             with st.form("signup_form"):
                 new_name = st.text_input("Full Name")
