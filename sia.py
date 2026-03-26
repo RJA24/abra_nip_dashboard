@@ -475,7 +475,7 @@ try:
                         va_12_59_m = st.number_input("Male", min_value=0, key="va2m")
                         va_12_59_f = st.number_input("Female", min_value=0, key="va2f")
                     
-                    submit_daily = st.form_submit_button("💾 Save Daily Data to Regional Database", type="primary", use_container_width=True)
+                    submit_daily = st.form_submit_button("💾 Save Daily Data", type="primary", use_container_width=True)
                     
                     if submit_daily:
                         if encode_brgy is None:
@@ -493,9 +493,92 @@ try:
                                     "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
                                     "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
                                 }).execute()
-                                st.success(f"✅ Data for {encode_brgy} successfully saved! Thank you, {st.session_state['user_name']}.")
+                                st.success(f"✅ Data for {encode_brgy} successfully saved!")
+                                time.sleep(1)
+                                st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to save data: {e}")
+
+                # --- NEW FEATURE: THE 7-DAY DATA EDITOR ---
+                st.divider()
+                st.markdown("### 📋 Review & Edit Your Encoded Data")
+                
+                try:
+                    user_muni = st.session_state.get('assigned_muni', 'None')
+                    
+                    # Fetch data: Admins and Regional staff see everything, RHUs see only their town
+                    if is_admin or user_muni == "None" or user_muni == "":
+                        res_rhu = supabase.table('rhu_disaggregated').select('*').execute()
+                    else:
+                        res_rhu = supabase.table('rhu_disaggregated').select('*').eq('municipality', user_muni).execute()
+                        
+                    if res_rhu.data:
+                        df_rhu = pd.DataFrame(res_rhu.data)
+                        df_rhu['date'] = pd.to_datetime(df_rhu['date']).dt.date
+                        df_rhu = df_rhu.sort_values('date', ascending=False)
+                        
+                        # Reorder columns for a cleaner table layout
+                        col_order = ['id', 'date', 'municipality', 'barangay', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f', 'vita_6_11m_m', 'vita_11_6m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'encoder_name']
+                        df_rhu = df_rhu[[c for c in col_order if c in df_rhu.columns]]
+                        
+                        today = datetime.today().date()
+                        
+                        # Apply the 7-Day Lock Logic
+                        if is_admin:
+                            st.info("🛡️ System Admin View: You have overriding access to edit all historical records.")
+                            df_editable = df_rhu.copy()
+                            df_locked = pd.DataFrame()
+                        else:
+                            st.info("You can edit data within 7 days of the vaccination date. Older entries are permanently locked.")
+                            df_rhu['is_editable'] = (today - df_rhu['date']).dt.days <= 7
+                            df_editable = df_rhu[df_rhu['is_editable']].drop(columns=['is_editable'])
+                            df_locked = df_rhu[~df_rhu['is_editable']].drop(columns=['is_editable'])
+
+                        # Table 1: Editable
+                        if not df_editable.empty:
+                            st.markdown("#### 🟢 Recent Records (Editable)")
+                            edited_rhu = st.data_editor(
+                                df_editable,
+                                column_config={
+                                    "id": None, # Hides the database ID from the user
+                                    "date": st.column_config.DateColumn("Date", disabled=True),
+                                    "municipality": st.column_config.TextColumn("Municipality", disabled=True),
+                                    "barangay": st.column_config.TextColumn("Barangay", disabled=True),
+                                    "encoder_name": st.column_config.TextColumn("Encoder", disabled=True)
+                                },
+                                use_container_width=True,
+                                num_rows="fixed",
+                                key="rhu_data_editor"
+                            )
+                            
+                            if st.button("💾 Save Edits to Database", type="secondary"):
+                                try:
+                                    records_to_update = edited_rhu.copy()
+                                    records_to_update['date'] = records_to_update['date'].astype(str)
+                                    updates = records_to_update.to_dict(orient='records')
+                                    supabase.table('rhu_disaggregated').upsert(updates).execute()
+                                    st.success("✅ Edits successfully saved!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to save edits: {e}")
+                        
+                        # Table 2: Locked
+                        if not df_locked.empty:
+                            st.markdown("#### 🔒 Locked Records (Historical)")
+                            st.dataframe(
+                                df_locked,
+                                column_config={
+                                    "id": None, # Hides the database ID
+                                    "date": "Date", "municipality": "Municipality", "barangay": "Barangay", "encoder_name": "Encoder"
+                                },
+                                use_container_width=True
+                            )
+                    else:
+                        st.info("No encoded data found yet.")
+                except Exception as e:
+                    st.error(f"Could not load encoded data: {e}")
+                # --------------------------------------------------
             else:
                  st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
 
