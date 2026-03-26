@@ -289,52 +289,26 @@ def fetch_targets_from_supabase():
     }
     return df.rename(columns=col_mapping)
 
-# --- PROVINCIAL SEALS DICTIONARY ---
-PROVINCE_LOGOS = {
-    "Abra": "https://upload.wikimedia.org/wikipedia/commons/b/b8/Provincial_Seal_of_Abra.png",
-    "Apayao": "https://upload.wikimedia.org/wikipedia/commons/2/23/Apayao_provincial_seal.png",
-    "Benguet": "https://upload.wikimedia.org/wikipedia/commons/6/69/Benguet_provincial_seal.png",
-    "Ifugao": "https://upload.wikimedia.org/wikipedia/commons/5/52/Ifugao_provincial_seal.png",
-    "Kalinga": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Kalinga_provincial_seal.png",
-    "Mountain Province": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Mountain_Province_provincial_seal.png",
-    "Default": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
-}
-
 with st.sidebar:
-    # 1. Sleek Header & DYNAMIC LOGO
+    # 1. Sleek Header & UNIFIED CAR LOGO
     col1, col2 = st.columns([2, 8])
     with col1:
-        user_territory = st.session_state.get('assigned_muni', 'None')
-        logo_url = PROVINCE_LOGOS["Default"]
-        
-        if user_territory != "None" and user_territory != "":
-            # Check if they are assigned directly to a Province (like "Abra")
-            if user_territory in PROVINCE_LOGOS:
-                logo_url = PROVINCE_LOGOS[user_territory]
-            else:
-                # Look up the municipality's parent province
-                try:
-                    df_targets_logo = fetch_targets_from_supabase()
-                    if not df_targets_logo.empty:
-                        match = df_targets_logo[(df_targets_logo['Location'] == user_territory) & (df_targets_logo['Level'] == 'Municipality')]
-                        if not match.empty:
-                            user_prov = match['Parent_Province'].iloc[0]
-                            logo_url = PROVINCE_LOGOS.get(user_prov, PROVINCE_LOGOS["Default"])
-                except:
-                    pass
-                
-        st.image(logo_url, use_container_width=True)
+        # Pointing to the official DOH Seal which represents the Regional Office
+        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
+        st.image(car_logo_url, use_container_width=True)
         
     with col2:
         st.markdown(f"**{st.session_state['user_name']}**")
         st.caption(f"*{st.session_state['user_role']}*")
     
-    muni_display = f"{st.session_state['assigned_muni']}" if st.session_state['assigned_muni'] != "None" else "Regional Access"
+    # Show their territory based on their account assignment
+    user_territory = st.session_state.get('assigned_muni', 'None')
+    muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
     st.info(f"📍 **Territory:** {muni_display}")
     
     st.divider()
     
-    # 2. Workspace Toggle (Only for Encoders)
+    # 2. Workspace Toggle (Only for Encoders/Admins)
     app_mode = "📊 Dashboard View"
     if is_encoder:
         st.markdown("**⚙️ WORKSPACE MODE**")
@@ -349,11 +323,11 @@ with st.sidebar:
         age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
         st.divider()
     
-    # 4. System Actions Grouped at the Bottom
+    # 4. System Actions
     st.markdown("**🛠️ SYSTEM ACTIONS**")
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
-        st.toast("Dashboard Interface Refreshed!", icon="🔄")
+        st.toast("Data Refreshed!", icon="🔄")
         time.sleep(0.5)
         st.rerun()
         
