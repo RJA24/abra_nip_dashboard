@@ -72,6 +72,8 @@ def check_hashes(password, hashed_text):
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'username' not in st.session_state: # NEW: To track the actual DB username
+    st.session_state['username'] = ""
 if 'user_name' not in st.session_state:
     st.session_state['user_name'] = ""
 if 'user_role' not in st.session_state:
@@ -87,6 +89,7 @@ if st.session_state['logged_in']:
     
     if current_time - st.session_state['last_active'] > timeout_seconds:
         st.session_state['logged_in'] = False
+        st.session_state['username'] = ""
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
         st.session_state['assigned_muni'] = "None"
@@ -148,6 +151,7 @@ if not st.session_state['logged_in']:
                                         supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
                                         
                                         st.session_state['logged_in'] = True
+                                        st.session_state['username'] = input_username # NEW: Storing the DB login ID
                                         st.session_state['user_name'] = db_name
                                         st.session_state['user_role'] = db_role
                                         st.session_state['assigned_muni'] = db_muni
@@ -259,7 +263,7 @@ with st.sidebar:
     # 1. Sleek Header & UNIFIED CAR LOGO
     col1, col2 = st.columns([2, 8])
     with col1:
-        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png"
+        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Department_of_Health_%28Philippines%29_Seal.svg/512px-Department_of_Health_%28Philippines%29_Seal.svg.png"
         st.image(car_logo_url, use_container_width=True)
         
     with col2:
@@ -272,26 +276,57 @@ with st.sidebar:
     
     st.divider()
     
-    # 2. Workspace Toggle (Only for Encoders/Admins)
+    # 2. Workspace Toggle
     app_mode = "📊 Dashboard View"
     if is_encoder:
         st.markdown("**⚙️ WORKSPACE MODE**")
         app_mode = st.radio("Workspace Mode", ["📊 Dashboard View", "📝 Data Entry Mode"], label_visibility="collapsed")
         st.divider()
     
-    # 3. Dynamic Filters (Only shows if in Dashboard mode)
+    # 3. Dynamic Filters
     if app_mode == "📊 Dashboard View":
         st.markdown("**🎛️ DASHBOARD FILTERS**")
         view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
         st.write("") 
         age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
         
-        # --- PLACEHOLDER FOR DYNAMIC DROPDOWNS ---
         geo_filters_container = st.container()
         
         st.divider()
     
-    # 4. System Actions Grouped at the Bottom
+    # 4. NEW: Account Settings & Password Change
+    st.markdown("**⚙️ ACCOUNT SETTINGS**")
+    with st.expander("🔑 Change Password"):
+        with st.form("change_password_form"):
+            current_pw = st.text_input("Current Password", type="password")
+            new_pw = st.text_input("New Password", type="password")
+            confirm_new_pw = st.text_input("Confirm New Password", type="password")
+            submit_pw_change = st.form_submit_button("Update Password", use_container_width=True)
+
+            if submit_pw_change:
+                if not current_pw or not new_pw or not confirm_new_pw:
+                    st.error("Please fill all fields.")
+                elif new_pw != confirm_new_pw:
+                    st.error("New passwords do not match.")
+                else:
+                    try:
+                        # Fetch the hash of the logged-in user to verify current password
+                        res = supabase.table('user_accounts').select('password_hash').eq('username', st.session_state['username']).execute()
+                        if res.data:
+                            stored_hash = res.data[0]['password_hash']
+                            if check_hashes(current_pw, stored_hash):
+                                new_hash = make_hashes(new_pw)
+                                supabase.table('user_accounts').update({'password_hash': new_hash}).eq('username', st.session_state['username']).execute()
+                                st.success("✅ Password successfully updated!")
+                            else:
+                                st.error("❌ Current password is incorrect.")
+                        else:
+                            st.error("Account verification failed.")
+                    except Exception as e:
+                        st.error(f"Error updating password: {e}")
+    st.write("")
+
+    # 5. System Actions Grouped at the Bottom
     st.markdown("**🛠️ SYSTEM ACTIONS**")
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
@@ -301,6 +336,7 @@ with st.sidebar:
         
     if st.button("🚪 Logout", type="primary", use_container_width=True):
         st.session_state['logged_in'] = False
+        st.session_state['username'] = ""
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
         st.session_state['assigned_muni'] = ""
@@ -567,7 +603,6 @@ elif app_mode == "📊 Dashboard View":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
                     
-                    # --- PLACED IN THE SIDEBAR CONTAINER ---
                     with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         
@@ -577,7 +612,6 @@ elif app_mode == "📊 Dashboard View":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
                     
-                    # --- PLACED IN THE SIDEBAR CONTAINER ---
                     with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
