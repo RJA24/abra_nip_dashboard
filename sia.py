@@ -260,17 +260,101 @@ with st.sidebar:
     view_mode = st.radio("Select View Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
     age_filter = st.selectbox("Select Age Group to Chart:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
 
-# --- NEW TAB STRUCTURE ---
+# --- TAB STRUCTURE & ROLE ACCESS ---
 tab_names = ["🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals", "📊 Executive Summary"]
-is_admin = st.session_state['user_role'] == "System Admin"
 
+is_admin = st.session_state['user_role'] == "System Admin"
+is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
+
+if is_encoder:
+    tab_names.insert(1, "📝 Encode Daily Data") # Puts the encoding tab right after Targets
 if is_admin:
     tab_names.append("🛡️ Admin Panel")
 
 tabs = st.tabs(tab_names)
-tab_target, tab_mr, tab_vita, tab_wastage, tab_total = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
-if is_admin:
-    tab_admin = tabs[5]
+
+# Dynamically assign the tabs based on who is logged in
+if is_encoder and is_admin:
+    tab_target, tab_encode, tab_mr, tab_vita, tab_wastage, tab_total, tab_admin = tabs
+elif is_encoder and not is_admin:
+    tab_target, tab_encode, tab_mr, tab_vita, tab_wastage, tab_total = tabs
+elif is_admin and not is_encoder:
+    tab_target, tab_mr, tab_vita, tab_wastage, tab_total, tab_admin = tabs
+else:
+    tab_target, tab_mr, tab_vita, tab_wastage, tab_total = tabs
+# -----------------------------------
+
+# ==========================================
+# THE SECURE RHU ENCODING FORM
+# ==========================================
+if is_encoder:
+    with tab_encode:
+        st.markdown("### 📝 Daily Gender Disaggregation Entry")
+        st.info("Please enter the exact Male/Female breakdown for your daily vaccinations. This data supplements the official VaccTrack totals.")
+        
+        # We fetch the targets to get the list of Municipalities and Barangays
+        df_targets_for_form = fetch_targets_from_supabase()
+        
+        if not df_targets_for_form.empty:
+            with st.form("rhu_daily_encoding"):
+                col_info1, col_info2, col_info3 = st.columns(3)
+                with col_info1:
+                    encode_date = st.date_input("Vaccination Date", max_value=datetime.today())
+                with col_info2:
+                    muni_list = sorted(df_targets_for_form[df_targets_for_form['Level'] == 'Municipality']['Location'].dropna().unique().tolist())
+                    encode_muni = st.selectbox("Municipality", muni_list)
+                with col_info3:
+                    brgy_list = sorted(df_targets_for_form[(df_targets_for_form['Parent_Municipality'] == encode_muni) & (df_targets_for_form['Level'] == 'Barangay')]['Location'].dropna().unique().tolist())
+                    encode_brgy = st.selectbox("Barangay", brgy_list)
+                
+                st.divider()
+                st.markdown("#### 💉 Measles-Rubella (MR)")
+                col_mr1, col_mr2, col_mr3 = st.columns(3)
+                with col_mr1:
+                    st.caption("6 - 12 months")
+                    mr_6_12_m = st.number_input("Male", min_value=0, key="mr1m")
+                    mr_6_12_f = st.number_input("Female", min_value=0, key="mr1f")
+                with col_mr2:
+                    st.caption("13 - 23 months")
+                    mr_13_23_m = st.number_input("Male", min_value=0, key="mr2m")
+                    mr_13_23_f = st.number_input("Female", min_value=0, key="mr2f")
+                with col_mr3:
+                    st.caption("24 - 59 months")
+                    mr_24_59_m = st.number_input("Male", min_value=0, key="mr3m")
+                    mr_24_59_f = st.number_input("Female", min_value=0, key="mr3f")
+
+                st.divider()
+                st.markdown("#### 💊 Vitamin A")
+                col_va1, col_va2 = st.columns(2)
+                with col_va1:
+                    st.caption("6 - 11 months")
+                    va_6_11_m = st.number_input("Male", min_value=0, key="va1m")
+                    va_6_11_f = st.number_input("Female", min_value=0, key="va1f")
+                with col_va2:
+                    st.caption("12 - 59 months")
+                    va_12_59_m = st.number_input("Male", min_value=0, key="va2m")
+                    va_12_59_f = st.number_input("Female", min_value=0, key="va2f")
+                
+                submit_daily = st.form_submit_button("💾 Save Daily Data to Regional Database", type="primary", use_container_width=True)
+                
+                if submit_daily:
+                    try:
+                        supabase.table('rhu_disaggregated').insert({
+                            "date": str(encode_date),
+                            "municipality": encode_muni,
+                            "barangay": encode_brgy,
+                            "encoder_name": st.session_state['user_name'],
+                            "mr_6_12m_m": mr_6_12_m, "mr_6_12m_f": mr_6_12_f,
+                            "mr_13_23m_m": mr_13_23_m, "mr_13_23m_f": mr_13_23_f,
+                            "mr_24_59m_m": mr_24_59_m, "mr_24_59m_f": mr_24_59_f,
+                            "vita_6_11m_m": va_6_11_m, "vita_11_6m_f": va_6_11_f,
+                            "vita_12_59m_m": va_12_59_m, "vita_12_59m_f": va_12_59_f
+                        }).execute()
+                        st.success(f"✅ Data for {encode_brgy} successfully saved! Thank you, {st.session_state['user_name']}.")
+                    except Exception as e:
+                        st.error(f"Failed to save data: {e}")
+        else:
+             st.warning("Please wait for the System Admin to sync the Target Database before encoding daily data.")
 
 def clean_and_process_car_data(df, col_names):
     df['Code'] = df['Code'].astype(str).str.split('.').str[0]
