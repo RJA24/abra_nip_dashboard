@@ -70,11 +70,16 @@ def check_hashes(password, hashed_text):
 # ==========================================
 # 3. SECURITY, SESSION STATE & TIMEOUT
 # ==========================================
+# Robust Initialization: Check each variable individually
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'user_name' not in st.session_state:
     st.session_state['user_name'] = ""
+if 'user_role' not in st.session_state:
     st.session_state['user_role'] = ""
-    st.session_state['assigned_muni'] = ""
+if 'assigned_muni' not in st.session_state:
+    st.session_state['assigned_muni'] = "None"
+if 'last_active' not in st.session_state:
     st.session_state['last_active'] = time.time()
 
 if st.session_state['logged_in']:
@@ -85,7 +90,7 @@ if st.session_state['logged_in']:
         st.session_state['logged_in'] = False
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
-        st.session_state['assigned_muni'] = ""
+        st.session_state['assigned_muni'] = "None"
         st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
         time.sleep(2)
         st.rerun()
