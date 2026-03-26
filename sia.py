@@ -260,7 +260,7 @@ is_admin = st.session_state['user_role'] == "System Admin"
 is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
 with st.sidebar:
-    # 1. NEW PRO-LOOKING PROFILE CARD
+    # 1. NEW PRO-LOOKING PROFILE CARD (With fixed readability)
     user_territory = st.session_state.get('assigned_muni', 'None')
     muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
     
@@ -269,7 +269,7 @@ with st.sidebar:
         <img src="https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png" width="90" style="margin-bottom: 15px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.1));">
         <h3 style="margin: 0; padding: 0; font-size: 1.15rem; font-weight: 700;">{st.session_state['user_name']}</h3>
         <p style="margin: 2px 0 12px 0; font-size: 0.85rem; opacity: 0.8; font-style: italic;">{st.session_state['user_role']}</p>
-        <span style="background-color: var(--primary-color); color: #ffffff; padding: 4px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+        <span style="background-color: rgba(128,128,128,0.15); border: 1px solid rgba(128,128,128,0.3); color: inherit; padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.5px;">
             📍 {muni_display.upper()}
         </span>
     </div>
@@ -277,28 +277,26 @@ with st.sidebar:
     
     st.divider()
     
-    # 2. Workspace Toggle
+    # 2. Workspace Toggle (Inside an Expander)
     app_mode = "📊 Dashboard View"
     if is_encoder:
-        st.markdown("**⚙️ WORKSPACE MODE**")
-        app_mode = st.radio("Workspace Mode", ["📊 Dashboard View", "📝 Data Entry Mode"], label_visibility="collapsed")
-        st.divider()
+        with st.expander("⚙️ WORKSPACE MODE", expanded=False):
+            app_mode = st.radio("Select Interface:", ["📊 Dashboard View", "📝 Data Entry Mode"], label_visibility="collapsed")
     
-    # 3. Dynamic Filters
+    # 3. Dynamic Filters (Inside an Expander)
     if app_mode == "📊 Dashboard View":
-        st.markdown("**🎛️ DASHBOARD FILTERS**")
-        view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
-        st.write("") 
-        age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
-        
-        geo_filters_container = st.container()
-        
-        st.divider()
+        with st.expander("🎛️ DASHBOARD FILTERS", expanded=False):
+            view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
+            st.write("") 
+            age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
+            
+            # The placeholder container for the dynamic location dropdowns
+            geo_filters_container = st.container()
     
-    # 4. Account Settings & Password Change
-    st.markdown("**⚙️ ACCOUNT SETTINGS**")
-    with st.expander("🔑 Change Password"):
+    # 4. Account Settings (Merged into a single Expander)
+    with st.expander("⚙️ ACCOUNT SETTINGS", expanded=False):
         with st.form("change_password_form"):
+            st.caption("Change Your Password")
             current_pw = st.text_input("Current Password", type="password")
             new_pw = st.text_input("New Password", type="password")
             confirm_new_pw = st.text_input("Confirm New Password", type="password")
@@ -324,25 +322,24 @@ with st.sidebar:
                             st.error("Account verification failed.")
                     except Exception as e:
                         st.error(f"Error updating password: {e}")
-    st.write("")
 
-    # 5. System Actions Grouped at the Bottom
-    st.markdown("**🛠️ SYSTEM ACTIONS**")
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.cache_data.clear()
-        st.toast("Dashboard Interface Refreshed!", icon="🔄")
-        time.sleep(0.5)
-        st.rerun()
-        
-    if st.button("🚪 Logout", type="primary", use_container_width=True):
-        st.session_state['logged_in'] = False
-        st.session_state['username'] = ""
-        st.session_state['user_name'] = ""
-        st.session_state['user_role'] = ""
-        st.session_state['assigned_muni'] = ""
-        st.rerun()
-        
-    st.caption(f"🕒 Last Sync: {last_updated}")
+    # 5. System Actions (Inside an Expander)
+    with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            st.cache_data.clear()
+            st.toast("Dashboard Interface Refreshed!", icon="🔄")
+            time.sleep(0.5)
+            st.rerun()
+            
+        if st.button("🚪 Logout", type="primary", use_container_width=True):
+            st.session_state['logged_in'] = False
+            st.session_state['username'] = ""
+            st.session_state['user_name'] = ""
+            st.session_state['user_role'] = ""
+            st.session_state['assigned_muni'] = ""
+            st.rerun()
+            
+        st.caption(f"🕒 Last Sync: {last_updated}")
 
 # --- DATA HELPER FUNCTIONS ---
 def clean_and_process_car_data(df, col_names):
