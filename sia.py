@@ -178,11 +178,21 @@ if not st.session_state['logged_in']:
                             st.error(f"System Error: {e}")
 
         with tab_signup:
+            st.info("Submitted requests are reviewed by a System Admin before access is granted.")
+            
+            # --- THE TRICK: Move Role outside the form to trigger dynamic updates ---
+            new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
+            
             with st.form("signup_form"):
-                st.info("Submitted requests are reviewed by a System Admin before access is granted.")
                 new_name = st.text_input("Full Name")
-                new_role = st.selectbox("Designation / Role", ["System Admin", "DOH Regional Office", "Provincial Health Office", "Municipal Health Office", "Data Encoder", "Guest / Viewer"])
-                new_muni = st.selectbox("Assigned Municipality (Select 'None' if Regional/Provincial Office)", ["None"] + abra_munis)
+                
+                # --- DYNAMIC UI LOGIC ---
+                if new_role in ["Municipal Health Office", "Data Encoder"]:
+                    new_muni = st.selectbox("Assigned Municipality", abra_munis)
+                else:
+                    new_muni = "None" # Silently sets to None for Admins/Regional staff
+                # ------------------------
+                    
                 new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
                 new_username = st.text_input("Desired Username").strip()
                 new_password = st.text_input("Create Password", type="password")
