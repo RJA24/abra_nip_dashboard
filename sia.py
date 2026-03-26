@@ -260,7 +260,7 @@ with st.sidebar:
     col1, col2 = st.columns([2, 8])
     with col1:
         # Using a highly reliable, cached Wikipedia thumbnail to prevent the broken image icon
-        st.image("https://upload.wikimedia.org/wikipedia/commons/6/6b/The_DOH_Seal.png", use_container_width=True)
+        st.image("https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png", use_container_width=True)
     with col2:
         st.markdown(f"**{st.session_state['user_name']}**")
         st.caption(f"*{st.session_state['user_role']}*")
