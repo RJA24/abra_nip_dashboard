@@ -72,7 +72,7 @@ def check_hashes(password, hashed_text):
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-if 'username' not in st.session_state: # NEW: To track the actual DB username
+if 'username' not in st.session_state: 
     st.session_state['username'] = ""
 if 'user_name' not in st.session_state:
     st.session_state['user_name'] = ""
@@ -151,7 +151,7 @@ if not st.session_state['logged_in']:
                                         supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
                                         
                                         st.session_state['logged_in'] = True
-                                        st.session_state['username'] = input_username # NEW: Storing the DB login ID
+                                        st.session_state['username'] = input_username 
                                         st.session_state['user_name'] = db_name
                                         st.session_state['user_role'] = db_role
                                         st.session_state['assigned_muni'] = db_muni
@@ -260,19 +260,20 @@ is_admin = st.session_state['user_role'] == "System Admin"
 is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
 with st.sidebar:
-    # 1. Sleek Header & UNIFIED CAR LOGO
-    col1, col2 = st.columns([2, 8])
-    with col1:
-        car_logo_url = "https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png"
-        st.image(car_logo_url, use_container_width=True)
-        
-    with col2:
-        st.markdown(f"**{st.session_state['user_name']}**")
-        st.caption(f"*{st.session_state['user_role']}*")
-    
+    # 1. NEW PRO-LOOKING PROFILE CARD
     user_territory = st.session_state.get('assigned_muni', 'None')
     muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
-    st.info(f"📍 **Territory:** {muni_display}")
+    
+    st.markdown(f"""
+    <div style="text-align: center; padding: 10px 0px 15px 0px;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/0/0c/Seal_of_the_Cordillera_Administrative_Region.png" width="90" style="margin-bottom: 15px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.1));">
+        <h3 style="margin: 0; padding: 0; font-size: 1.15rem; font-weight: 700;">{st.session_state['user_name']}</h3>
+        <p style="margin: 2px 0 12px 0; font-size: 0.85rem; opacity: 0.8; font-style: italic;">{st.session_state['user_role']}</p>
+        <span style="background-color: var(--primary-color); color: #ffffff; padding: 4px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            📍 {muni_display.upper()}
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.divider()
     
@@ -294,7 +295,7 @@ with st.sidebar:
         
         st.divider()
     
-    # 4. NEW: Account Settings & Password Change
+    # 4. Account Settings & Password Change
     st.markdown("**⚙️ ACCOUNT SETTINGS**")
     with st.expander("🔑 Change Password"):
         with st.form("change_password_form"):
@@ -310,7 +311,6 @@ with st.sidebar:
                     st.error("New passwords do not match.")
                 else:
                     try:
-                        # Fetch the hash of the logged-in user to verify current password
                         res = supabase.table('user_accounts').select('password_hash').eq('username', st.session_state['username']).execute()
                         if res.data:
                             stored_hash = res.data[0]['password_hash']
