@@ -695,7 +695,7 @@ elif app_mode == "📊 Dashboard View":
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             col_names = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
-                            df_raw = conn.read(spreadsheet=sheet_url, worksheet="Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl=0)
+                            df_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl=0)
                             
                             df_clean = clean_and_process_car_data(df_raw, col_names)
                             df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
