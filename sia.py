@@ -288,7 +288,16 @@ with st.sidebar:
         with st.expander("🎛️ DASHBOARD FILTERS", expanded=False):
             view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
             st.write("") 
-            age_filter = st.selectbox("Age Group:", ["6 - 59 months (Grand Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"])
+            # Updated all-in-one explicit filter
+            age_filter = st.selectbox("Program & Age Group:", [
+                "MR: 6 - 59 months (Total)", 
+                "MR: 6 - 12 months", 
+                "MR: 13 - 23 months", 
+                "MR: 24 - 59 months",
+                "Vit A: 6 - 59 months (Total)",
+                "Vit A: 6 - 11 months",
+                "Vit A: 12 - 59 months"
+            ])
             
             # The placeholder container for the dynamic location dropdowns
             geo_filters_container = st.container()
@@ -588,48 +597,34 @@ elif app_mode == "📊 Dashboard View":
             if df_targets.empty:
                 st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
             else:
-                # NEW: Toggle between MR and Vit A
-                # NEW: Toggle between MR and Vit A
-                target_type = st.radio("Select Target Program:", ["Measles-Rubella (MR)", "Vitamin A"], horizontal=True)
-                
-                if target_type == "Measles-Rubella (MR)":
+                # 1. Routing logic based on the new explicit global filter
+                if age_filter.startswith("MR"):
+                    target_type = "MR"
                     col_map = {
-                        "6 - 59 months (Grand Total)": "MR_6-59m_Total", 
-                        "6 - 12 months": "MR_6-12m_Total", 
-                        "13 - 23 months": "MR_13-23m_Total", 
-                        "24 - 59 months": "MR_24-59m_Total"
+                        "MR: 6 - 59 months (Total)": "MR_6-59m_Total", 
+                        "MR: 6 - 12 months": "MR_6-12m_Total", 
+                        "MR: 13 - 23 months": "MR_13-23m_Total", 
+                        "MR: 24 - 59 months": "MR_24-59m_Total"
                     }
                     target_col = col_map[age_filter]
-                    chart_title = f"MR Targets: {age_filter}"
+                    chart_title = f"MR Targets: {age_filter.replace('MR: ', '')}"
                 else:
-                    # Map the global MR age filter to the closest Vitamin A equivalents silently
+                    target_type = "VitA"
                     col_map = {
-                        "6 - 59 months (Grand Total)": "VitA_Total", 
-                        "6 - 12 months": "VitA_6-11m_Total", 
-                        "13 - 23 months": "VitA_12-59m_Total", 
-                        "24 - 59 months": "VitA_12-59m_Total" 
+                        "Vit A: 6 - 59 months (Total)": "VitA_Total",
+                        "Vit A: 6 - 11 months": "VitA_6-11m_Total",
+                        "Vit A: 12 - 59 months": "VitA_12-59m_Total"
                     }
                     target_col = col_map[age_filter]
-                    
-                    # Dynamically adjust the chart title to reflect the actual Vit A bracket being shown
-                    if age_filter == "6 - 12 months":
-                        display_age = "6 - 11 months"
-                    elif age_filter in ["13 - 23 months", "24 - 59 months"]:
-                        display_age = "12 - 59 months"
-                    else:
-                        display_age = "6 - 59 months (Grand Total)"
-                        
-                    chart_title = f"Vitamin A Targets: {display_age}"
-
-                df_view = pd.DataFrame()
+                    chart_title = f"Vitamin A Targets: {age_filter.replace('Vit A: ', '')}"
 
                 df_view = pd.DataFrame()
                 selected_prov = "CAR_Region" 
                 selected_muni = ""
                 
+                # 2. Geographic filtering
                 if view_mode == "Region-wide (Compare Provinces)":
                     df_view = df_targets[df_targets['Level'] == 'Province']
-                    chart_title = f"CAR Regional Targets: {target_col}"
                 elif view_mode == "Province-wide (Compare Municipalities)":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
@@ -638,7 +633,7 @@ elif app_mode == "📊 Dashboard View":
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         
                     df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
-                    chart_title = f"Municipal Targets for {selected_prov}: {target_col}"
+                    chart_title = chart_title.replace("Targets", f"Targets for {selected_prov}")
                 else: 
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
@@ -650,12 +645,12 @@ elif app_mode == "📊 Dashboard View":
                         selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
                         
                     df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-                    chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {target_col}"
+                    chart_title = chart_title.replace("Targets", f"Targets for {selected_muni}, {selected_prov}")
 
-                # Dynamic KPIs based on selection
-                if target_type == "Measles-Rubella (MR)":
+                # 3. Dynamic KPIs
+                if target_type == "MR":
                     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-                    kpi1.metric("6 - 59 months", f"{df_view['MR_6-59m_Total'].sum():,.0f}")
+                    kpi1.metric("6 - 59 months (Total)", f"{df_view['MR_6-59m_Total'].sum():,.0f}")
                     kpi2.metric("6 - 12 months", f"{df_view['MR_6-12m_Total'].sum():,.0f}")
                     kpi3.metric("13 - 23 months", f"{df_view['MR_13-23m_Total'].sum():,.0f}")
                     kpi4.metric("24 - 59 months", f"{df_view['MR_24-59m_Total'].sum():,.0f}")
