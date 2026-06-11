@@ -601,108 +601,72 @@ elif app_mode == "📊 Dashboard View":
             if df_targets.empty:
                 st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
             else:
-                # 1. Handle Geographic Filtering First
-                selected_prov = "CAR_Region" 
-                selected_muni = ""
+                # 1. Routing logic based on universal filter
+                if age_filter.startswith("MR"):
+                    target_type = "MR"
+                    chart_color = '#1E88E5'
+                    col_map = {
+                        "MR: 6 - 59 months (Total)": ("MR_6-59m_Total", "MR_6-59m_M", "MR_6-59m_F"), 
+                        "MR: 6 - 12 months": ("MR_6-12m_Total", "MR_6-12m_M", "MR_6-12m_F"), 
+                        "MR: 13 - 23 months": ("MR_13-23m_Total", "MR_13-23m_M", "MR_13-23m_F"), 
+                        "MR: 24 - 59 months": ("MR_24-59m_Total", "MR_24-59m_M", "MR_24-59m_F")
+                    }
+                else:
+                    target_type = "VitA"
+                    chart_color = '#F4511E'
+                    col_map = {
+                        "Vit A: 6 - 59 months (Total)": ("VitA_Total", "VitA_Total_M", "VitA_Total_F"),
+                        "Vit A: 6 - 11 months": ("VitA_6-11m_Total", "VitA_6-11m_M", "VitA_6-11m_F"),
+                        "Vit A: 12 - 59 months": ("VitA_12-59m_Total", "VitA_12-59m_M", "VitA_12-59m_F")
+                    }
+                    
+                t_col, m_col, f_col = col_map[age_filter]
+                chart_title = f"{age_filter.split(':')[0]} Targets: {age_filter.split(':')[1].strip()}"
+
+                # 2. Geographic filtering
+                selected_prov, selected_muni = "CAR_Region", ""
                 
                 if view_mode == "Region-wide (Compare Provinces)":
                     df_view = df_targets[df_targets['Level'] == 'Province']
-                    location_label = "CAR Region"
                 elif view_mode == "Province-wide (Compare Municipalities)":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                    
                     with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
-                        
                     df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
-                    location_label = f"{selected_prov} Province"
                 else: 
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                    
                     with geo_filters_container:
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
                         default_muni_idx = muni_list.index("Manabo") if "Manabo" in muni_list else 0
                         selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
-                        
                     df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-                    location_label = f"{selected_muni}, {selected_prov}"
-
-                # 2. Create Sub-Tabs for MR and Vit A
-                sub_mr, sub_vita = st.tabs(["💉 Measles-Rubella (MR) Targets", "💊 Vitamin A Targets"])
                 
-                # --- MR TAB CONTENT ---
-                with sub_mr:
-                    st.markdown(f"#### MR Breakdown: {location_label}")
-                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-                    kpi1.metric("6 - 59m (Grand Total)", f"{df_view['MR_6-59m_Total'].sum():,.0f}")
-                    kpi2.metric("6 - 12 months", f"{df_view['MR_6-12m_Total'].sum():,.0f}")
-                    kpi3.metric("13 - 23 months", f"{df_view['MR_13-23m_Total'].sum():,.0f}")
-                    kpi4.metric("24 - 59 months", f"{df_view['MR_24-59m_Total'].sum():,.0f}")
-                    
-                    if not df_view.empty:
-                        c1, c2 = st.columns([7, 3])
-                        with c1:
-                            df_sorted_mr = df_view.sort_values('MR_6-59m_Total', ascending=True) 
-                            fig_mr = px.bar(df_sorted_mr, x='MR_6-59m_Total', y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
-                            fig_mr.update_layout(xaxis_title="Eligible Children (6-59m)", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                            st.plotly_chart(fig_mr, use_container_width=True)
-                        with c2:
-                            mr_age_data = pd.DataFrame({
-                                'Age Group': ['6-12m', '13-23m', '24-59m'], 
-                                'Target': [df_view['MR_6-12m_Total'].sum(), df_view['MR_13-23m_Total'].sum(), df_view['MR_24-59m_Total'].sum()]
-                            })
-                            fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
-                            fig_donut_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=10, b=0))
-                            st.plotly_chart(fig_donut_mr, use_container_width=True)
-                            
-                    with st.expander("📂 View & Download MR Targets"):
-                        mr_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
-                        st.dataframe(mr_df, use_container_width=True, hide_index=True)
-                        csv_mr = mr_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download MR Data", data=csv_mr, file_name=f"MR_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_mr")
+                # 3. Fallback for Vit A Barangay Level
+                if target_type == "VitA" and view_mode == "Specific Municipality (Compare Barangays)":
+                    st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
+                    df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
 
-                # --- VITAMIN A TAB CONTENT ---
-                with sub_vita:
-                    st.markdown(f"#### Vitamin A Breakdown: {location_label}")
-                    
-                    # 1. FIXED: Fallback for missing Barangay Data in Vit A
-                    if view_mode == "Specific Municipality (Compare Barangays)":
-                        st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
-                        # Pull the Municipal row instead of the empty Barangay rows
-                        df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
-                    else:
-                        df_view_va = df_view
-                        
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric("Total Vit A Eligible", f"{df_view_va['VitA_Total'].sum():,.0f}")
-                    kpi2.metric("6 - 11 months", f"{df_view_va['VitA_6-11m_Total'].sum():,.0f}")
-                    kpi3.metric("12 - 59 months", f"{df_view_va['VitA_12-59m_Total'].sum():,.0f}")
-                    
-                    if not df_view_va.empty:
-                        c1, c2 = st.columns([7, 3])
-                        with c1:
-                            df_sorted_va = df_view_va.sort_values('VitA_Total', ascending=True) 
-                            fig_va = px.bar(df_sorted_va, x='VitA_Total', y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
-                            fig_va.update_layout(xaxis_title="Eligible Children (Vit A)", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                            st.plotly_chart(fig_va, use_container_width=True)
-                        with c2:
-                            # 2. FIXED: Dynamic Male/Female Split for the Pie Chart
-                            va_gender_data = pd.DataFrame({
-                                'Gender': ['Male', 'Female'], 
-                                'Target': [df_view_va['VitA_Total'].sum() * 0.50, df_view_va['VitA_Total'].sum() * 0.50]
-                            })
-                            fig_donut_va = px.pie(va_gender_data, names='Gender', values='Target', hole=0.4, title="Estimated M/F Split", color_discrete_sequence=['#1E88E5', '#E53935'])
-                            fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                            st.plotly_chart(fig_donut_va, use_container_width=True)
-                            
-                    with st.expander("📂 View & Download Vit A Targets"):
-                        va_df = df_view_va[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
-                        st.dataframe(va_df, use_container_width=True, hide_index=True)
-                        csv_va = va_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
+                # 4. Render KPIs & Charts
+                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1.metric("Selected Target", f"{df_view[t_col].sum():,.0f}")
+                kpi2.metric("Total Male", f"{df_view[m_col].sum():,.0f}")
+                kpi3.metric("Total Female", f"{df_view[f_col].sum():,.0f}")
+                
+                if not df_view.empty:
+                    c1, c2 = st.columns([7, 3])
+                    with c1:
+                        df_sorted = df_view.sort_values(t_col, ascending=True) 
+                        fig_bar = px.bar(df_sorted, x=t_col, y='Location', orientation='h', title=chart_title, text_auto='.0f', color_discrete_sequence=[chart_color])
+                        fig_bar.update_layout(xaxis_title="Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=30, b=0))
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    with c2:
+                        gender_data = pd.DataFrame({'Gender': ['Male', 'Female'], 'Target': [df_view[m_col].sum(), df_view[f_col].sum()]})
+                        fig_donut = px.pie(gender_data, names='Gender', values='Target', hole=0.4, title="Gender Distribution", color_discrete_sequence=['#1E88E5', '#E53935'])
+                        fig_donut.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
+                        st.plotly_chart(fig_donut, use_container_width=True)
 
         with tab_mr:
             st.markdown("### 💉 Measles-Rubella Accomplishment")
@@ -747,53 +711,46 @@ elif app_mode == "📊 Dashboard View":
                 st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
                 
                 if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading MR and Vitamin A targets..."):
+                    with st.spinner("Downloading Targets & Gender Data..."):
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             
-                            # 1. Fetch & Clean MR Targets
-                            mr_cols = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
+                            # 1. Fetch MR Targets (All 14 columns)
+                            mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
                             df_mr_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0)
                             df_mr_clean = clean_and_process_car_data(df_mr_raw, mr_cols)
                             
-                            # 2. Fetch & Clean Vit A Targets
-                            # Sheet Columns: A(0)=Code, C(2)=Location, D(3)=6-11m, E(4)=12-59m, F(5)=Total
-                            vita_cols = ["Code", "Location", "6-11m_Total", "12-59m_Total", "VitA_Total"]
-                            
-                            # Update usecols to specifically grab indices 0, 2, 3, 4, 5 (skipping index 1)
-                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5], skiprows=2, names=vita_cols, ttl=0)
-                            
+                            # 2. Fetch Vit A Targets (Specific indices mapping to Totals and Genders)
+                            vita_cols = ["Code", "Location", "VitA_Total_M", "VitA_Total_F", "VitA_Total", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total"]
+                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], skiprows=2, names=vita_cols, ttl=0)
                             df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols)
                             
-                            # 3. Merge them together on the geographic 'Code'
-                            df_merged = pd.merge(
-                                df_mr_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']],
-                                df_vita_clean[['Code', '6-11m_Total', '12-59m_Total', 'VitA_Total']],
-                                on='Code', how='left'
-                            )
+                            # 3. Merge
+                            df_merged = pd.merge(df_mr_clean, df_vita_clean.drop(columns=['Location', 'Level', 'Parent_Province', 'Parent_Municipality'], errors='ignore'), on='Code', how='left')
                             
-                           # 4. Map to Supabase Columns
-                            df_merged.columns = [
+                            # 4. Filter and Push to Supabase
+                            df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
+                                                 '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
+                                                 '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
+                                                 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total',
+                                                 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']].copy()
+                            
+                            df_push.columns = [
                                 'code', 'location', 'level', 'parent_province', 'parent_municipality', 
                                 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
-                                'vita_6_11m', 'vita_12_59m', 'vita_total'
+                                'mr_6_59m_m', 'mr_6_59m_f', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f',
+                                'vita_6_11m', 'vita_12_59m', 'vita_total',
+                                'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f'
                             ]
                             
-                            # --- FIXED: Force float values (0.0) into strict integers (0) for Supabase
-                            numeric_columns = [
-                                'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
-                                'vita_6_11m', 'vita_12_59m', 'vita_total'
-                            ]
-                            for col in numeric_columns:
-                                df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0).astype(int)
+                            num_cols = df_push.columns[5:]
+                            for c in num_cols:
+                                df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
                             
-                            df_merged = df_merged.replace({np.nan: None})
-                            data_to_push = df_merged.to_dict(orient='records')
+                            df_push = df_push.replace({np.nan: None})
+                            supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
                             
-                            # Push to Supabase
-                            supabase.table('targets').upsert(data_to_push).execute()
-                            
-                            st.success("✅ Target Database Successfully Synced (MR & Vit A)!")
+                            st.success("✅ Targets & Genders Successfully Synced!")
                             st.cache_data.clear()
                         except Exception as e:
                             st.error(f"Target Sync Failed: {e}")
