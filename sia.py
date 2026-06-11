@@ -670,8 +670,8 @@ elif app_mode == "📊 Dashboard View":
                         fig_bar.update_layout(xaxis_title="Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_bar, use_container_width=True)
                     with col_chart2:
-                        # 1. FIXED: Dynamic Pie Chart Data
-                        if target_type == "Measles-Rubella (MR)":
+                        # 1. FIXED: Now checking for "MR" instead of "Measles-Rubella (MR)"
+                        if target_type == "MR":
                             age_data = pd.DataFrame({
                                 'Age Group': ['6-12m', '13-23m', '24-59m'], 
                                 'Target': [df_view['MR_6-12m_Total'].sum(), df_view['MR_13-23m_Total'].sum(), df_view['MR_24-59m_Total'].sum()]
@@ -689,8 +689,8 @@ elif app_mode == "📊 Dashboard View":
                     st.warning("No data available.")
 
                 with st.expander("📂 View & Download Target Database"):
-                    # 2. FIXED: Dynamic Download Table Columns
-                    if target_type == "Measles-Rubella (MR)":
+                    # 2. FIXED: Now checking for "MR" here as well
+                    if target_type == "MR":
                         display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
                         dl_prefix = "MR"
                     else:
