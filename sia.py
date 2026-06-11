@@ -363,25 +363,26 @@ def clean_and_process_car_data(df, col_names):
 @st.cache_data(ttl="15s")
 def fetch_targets_from_supabase():
     res = supabase.table('targets').select('*').execute()
-    if not res.data:
-        return pd.DataFrame()
-    
+    if not res.data: return pd.DataFrame()
     df = pd.DataFrame(res.data)
     
-    # --- CRASH PREVENTION ---
-    # If Supabase hasn't synced the new columns yet, add them as 0s
-    expected_vita_cols = ['vita_6_11m', 'vita_12_59m', 'vita_total']
-    for col in expected_vita_cols:
-        if col not in df.columns:
-            df[col] = 0
-            
     col_mapping = {
         'code': 'Code', 'location': 'Location', 'level': 'Level',
         'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-        'grand_total_6_59m': 'MR_6-59m_Total', 'grand_total_6_12m': 'MR_6-12m_Total',
-        'grand_total_13_23m': 'MR_13-23m_Total', 'grand_total_24_59m': 'MR_24-59m_Total',
-        'vita_6_11m': 'VitA_6-11m_Total', 'vita_12_59m': 'VitA_12-59m_Total', 'vita_total': 'VitA_Total'
+        'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
+        'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
+        'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
+        'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
+        'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
+        'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
+        'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F'
     }
+    
+    # Crash Prevention Fallback
+    for db_col in col_mapping.keys():
+        if db_col not in df.columns:
+            df[db_col] = 0
+            
     return df.rename(columns=col_mapping)
 
 # ==========================================
