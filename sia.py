@@ -740,9 +740,12 @@ elif app_mode == "📊 Dashboard View":
                             df_mr_clean = clean_and_process_car_data(df_mr_raw, mr_cols)
                             
                             # 2. Fetch & Clean Vit A Targets
-                            # Assuming Vit A sheet has standard 6-11m and 12-59m layout
-                            vita_cols = ["Code", "Location", "Total_Male", "Total_Female", "VitA_Total", "6-11m_Male", "6-11m_Female", "6-11m_Total", "12-59m_Male", "12-59m_Female", "12-59m_Total"]
-                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=list(range(11)), skiprows=2, names=vita_cols, ttl=0)
+                            # Sheet Columns: A(0)=Code, C(2)=Location, D(3)=6-11m, E(4)=12-59m, F(5)=Total
+                            vita_cols = ["Code", "Location", "6-11m_Total", "12-59m_Total", "VitA_Total"]
+                            
+                            # Update usecols to specifically grab indices 0, 2, 3, 4, 5 (skipping index 1)
+                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5], skiprows=2, names=vita_cols, ttl=0)
+                            
                             df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols)
                             
                             # 3. Merge them together on the geographic 'Code'
