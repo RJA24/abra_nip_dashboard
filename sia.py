@@ -746,20 +746,29 @@ elif app_mode == "📊 Dashboard View":
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             
-                            # 1. Fetch MR Targets (All 14 columns)
+                            # 1. Fetch MR Targets (Matches the MR Sheet perfectly)
                             mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
                             df_mr_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0)
                             df_mr_clean = clean_and_process_car_data(df_mr_raw, mr_cols)
                             
-                            # 2. Fetch Vit A Targets (Specific indices mapping to Totals and Genders)
-                            vita_cols = ["Code", "Location", "VitA_Total_M", "VitA_Total_F", "VitA_Total", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total"]
-                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], skiprows=2, names=vita_cols, ttl=0)
-                            df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols)
+                            # 2. Fetch Vit A Targets (Matches the Vit A Sheet perfectly)
+                            # C0=Code, C2=Loc, C3=6-11(M), C4=6-11(F), C5=6-11(T), C6=12-59(M), C7=12-59(F), C8=12-59(T), C9=TOTAL
+                            vita_cols_raw = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
+                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols_raw, ttl=0)
+                            df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols_raw)
                             
-                            # 3. Merge
+                            # 3. Calculate missing Gender Grand Totals for Vit A
+                            # Ensure columns are numeric before adding
+                            for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
+                                df_vita_clean[c] = pd.to_numeric(df_vita_clean[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                                
+                            df_vita_clean['VitA_Total_M'] = df_vita_clean['VitA_6-11m_M'] + df_vita_clean['VitA_12-59m_M']
+                            df_vita_clean['VitA_Total_F'] = df_vita_clean['VitA_6-11m_F'] + df_vita_clean['VitA_12-59m_F']
+                            
+                            # 4. Merge MR and Vit A
                             df_merged = pd.merge(df_mr_clean, df_vita_clean.drop(columns=['Location', 'Level', 'Parent_Province', 'Parent_Municipality'], errors='ignore'), on='Code', how='left')
                             
-                            # 4. Filter and Push to Supabase
+                            # 5. Filter and Push to Supabase
                             df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
                                                  '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
                                                  '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
@@ -774,6 +783,7 @@ elif app_mode == "📊 Dashboard View":
                                 'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f'
                             ]
                             
+                            # Format as strict integers
                             num_cols = df_push.columns[5:]
                             for c in num_cols:
                                 df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
