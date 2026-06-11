@@ -752,12 +752,20 @@ elif app_mode == "📊 Dashboard View":
                                 on='Code', how='left'
                             )
                             
-                            # 4. Map to Supabase Columns
+                           # 4. Map to Supabase Columns
                             df_merged.columns = [
                                 'code', 'location', 'level', 'parent_province', 'parent_municipality', 
                                 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
                                 'vita_6_11m', 'vita_12_59m', 'vita_total'
                             ]
+                            
+                            # --- FIXED: Force float values (0.0) into strict integers (0) for Supabase
+                            numeric_columns = [
+                                'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
+                                'vita_6_11m', 'vita_12_59m', 'vita_total'
+                            ]
+                            for col in numeric_columns:
+                                df_merged[col] = pd.to_numeric(df_merged[col], errors='coerce').fillna(0).astype(int)
                             
                             df_merged = df_merged.replace({np.nan: None})
                             data_to_push = df_merged.to_dict(orient='records')
