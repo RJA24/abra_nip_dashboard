@@ -589,17 +589,39 @@ elif app_mode == "📊 Dashboard View":
                 st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
             else:
                 # NEW: Toggle between MR and Vit A
+                # NEW: Toggle between MR and Vit A
                 target_type = st.radio("Select Target Program:", ["Measles-Rubella (MR)", "Vitamin A"], horizontal=True)
                 
                 if target_type == "Measles-Rubella (MR)":
-                    col_map = {"6 - 59 months (Grand Total)": "MR_6-59m_Total", "6 - 12 months": "MR_6-12m_Total", "13 - 23 months": "MR_13-23m_Total", "24 - 59 months": "MR_24-59m_Total"}
+                    col_map = {
+                        "6 - 59 months (Grand Total)": "MR_6-59m_Total", 
+                        "6 - 12 months": "MR_6-12m_Total", 
+                        "13 - 23 months": "MR_13-23m_Total", 
+                        "24 - 59 months": "MR_24-59m_Total"
+                    }
                     target_col = col_map[age_filter]
+                    chart_title = f"MR Targets: {age_filter}"
                 else:
-                    col_map = {"6 - 59 months (Grand Total)": "VitA_Total", "6 - 11 months": "VitA_6-11m_Total", "12 - 59 months": "VitA_12-59m_Total"}
-                    # Temporary override for age filter if they select Vit A
-                    vita_age_filter = st.selectbox("Vitamin A Age Group:", ["6 - 59 months (Grand Total)", "6 - 11 months", "12 - 59 months"])
-                    target_col = col_map[vita_age_filter]
-                    chart_title = f"Vitamin A Targets: {vita_age_filter}"
+                    # Map the global MR age filter to the closest Vitamin A equivalents silently
+                    col_map = {
+                        "6 - 59 months (Grand Total)": "VitA_Total", 
+                        "6 - 12 months": "VitA_6-11m_Total", 
+                        "13 - 23 months": "VitA_12-59m_Total", 
+                        "24 - 59 months": "VitA_12-59m_Total" 
+                    }
+                    target_col = col_map[age_filter]
+                    
+                    # Dynamically adjust the chart title to reflect the actual Vit A bracket being shown
+                    if age_filter == "6 - 12 months":
+                        display_age = "6 - 11 months"
+                    elif age_filter in ["13 - 23 months", "24 - 59 months"]:
+                        display_age = "12 - 59 months"
+                    else:
+                        display_age = "6 - 59 months (Grand Total)"
+                        
+                    chart_title = f"Vitamin A Targets: {display_age}"
+
+                df_view = pd.DataFrame()
 
                 df_view = pd.DataFrame()
                 selected_prov = "CAR_Region" 
