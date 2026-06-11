@@ -287,10 +287,16 @@ with st.sidebar:
     if app_mode == "📊 Dashboard View":
         with st.expander("🎛️ DASHBOARD FILTERS", expanded=False):
             view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
-            st.write("") 
+            st.write("")
+            # The Universal Program & Age Filter
+            age_filter = st.selectbox("Program & Age Group:", [
+                "MR: 6 - 59 months (Total)", "MR: 6 - 12 months", "MR: 13 - 23 months", "MR: 24 - 59 months",
+                "Vit A: 6 - 59 months (Total)", "Vit A: 6 - 11 months", "Vit A: 12 - 59 months"
+            ])
             
             # The placeholder container for the dynamic location dropdowns
             geo_filters_container = st.container()
+            
     
     # 4. Account Settings (Merged into a single Expander)
     with st.expander("⚙️ ACCOUNT SETTINGS", expanded=False):
