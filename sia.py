@@ -370,8 +370,11 @@ def fetch_targets_from_supabase():
     col_mapping = {
         'code': 'Code', 'location': 'Location', 'level': 'Level',
         'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-        'grand_total_6_59m': '6-59m_Total', 'grand_total_6_12m': '6-12m_Total',
-        'grand_total_13_23m': '13-23m_Total', 'grand_total_24_59m': '24-59m_Total'
+        # MR Targets
+        'grand_total_6_59m': 'MR_6-59m_Total', 'grand_total_6_12m': 'MR_6-12m_Total',
+        'grand_total_13_23m': 'MR_13-23m_Total', 'grand_total_24_59m': 'MR_24-59m_Total',
+        # Vitamin A Targets (New)
+        'vita_6_11m': 'VitA_6-11m_Total', 'vita_12_59m': 'VitA_12-59m_Total', 'vita_total': 'VitA_Total'
     }
     return df.rename(columns=col_mapping)
 
@@ -585,17 +588,26 @@ elif app_mode == "📊 Dashboard View":
             if df_targets.empty:
                 st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
             else:
-                col_map = {"6 - 59 months (Grand Total)": "6-59m_Total", "6 - 12 months": "6-12m_Total", "13 - 23 months": "13-23m_Total", "24 - 59 months": "24-59m_Total"}
-                target_col = col_map[age_filter]
+                # NEW: Toggle between MR and Vit A
+                target_type = st.radio("Select Target Program:", ["Measles-Rubella (MR)", "Vitamin A"], horizontal=True)
+                
+                if target_type == "Measles-Rubella (MR)":
+                    col_map = {"6 - 59 months (Grand Total)": "MR_6-59m_Total", "6 - 12 months": "MR_6-12m_Total", "13 - 23 months": "MR_13-23m_Total", "24 - 59 months": "MR_24-59m_Total"}
+                    target_col = col_map[age_filter]
+                else:
+                    col_map = {"6 - 59 months (Grand Total)": "VitA_Total", "6 - 11 months": "VitA_6-11m_Total", "12 - 59 months": "VitA_12-59m_Total"}
+                    # Temporary override for age filter if they select Vit A
+                    vita_age_filter = st.selectbox("Vitamin A Age Group:", ["6 - 59 months (Grand Total)", "6 - 11 months", "12 - 59 months"])
+                    target_col = col_map[vita_age_filter]
+                    chart_title = f"Vitamin A Targets: {vita_age_filter}"
 
                 df_view = pd.DataFrame()
-                chart_title = ""
                 selected_prov = "CAR_Region" 
                 selected_muni = ""
                 
                 if view_mode == "Region-wide (Compare Provinces)":
                     df_view = df_targets[df_targets['Level'] == 'Province']
-                    chart_title = f"CAR Regional Targets: {age_filter}"
+                    chart_title = f"CAR Regional Targets: {target_col}"
                 elif view_mode == "Province-wide (Compare Municipalities)":
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
@@ -604,7 +616,7 @@ elif app_mode == "📊 Dashboard View":
                         selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
                         
                     df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
-                    chart_title = f"Municipal Targets for {selected_prov}: {age_filter}"
+                    chart_title = f"Municipal Targets for {selected_prov}: {target_col}"
                 else: 
                     province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
                     default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
@@ -616,14 +628,22 @@ elif app_mode == "📊 Dashboard View":
                         selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
                         
                     df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-                    chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {age_filter}"
+                    chart_title = f"Barangay Targets for {selected_muni}, {selected_prov}: {target_col}"
 
-                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-                kpi1.metric("6 - 59 months", f"{df_view['6-59m_Total'].sum():,.0f}")
-                kpi2.metric("6 - 12 months", f"{df_view['6-12m_Total'].sum():,.0f}")
-                kpi3.metric("13 - 23 months", f"{df_view['13-23m_Total'].sum():,.0f}")
-                kpi4.metric("24 - 59 months", f"{df_view['24-59m_Total'].sum():,.0f}")
-                st.write("") 
+                # Dynamic KPIs based on selection
+                if target_type == "Measles-Rubella (MR)":
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("6 - 59 months", f"{df_view['MR_6-59m_Total'].sum():,.0f}")
+                    kpi2.metric("6 - 12 months", f"{df_view['MR_6-12m_Total'].sum():,.0f}")
+                    kpi3.metric("13 - 23 months", f"{df_view['MR_13-23m_Total'].sum():,.0f}")
+                    kpi4.metric("24 - 59 months", f"{df_view['MR_24-59m_Total'].sum():,.0f}")
+                else:
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("Total Vit A Eligible", f"{df_view['VitA_Total'].sum():,.0f}")
+                    kpi2.metric("6 - 11 months", f"{df_view['VitA_6-11m_Total'].sum():,.0f}")
+                    kpi3.metric("12 - 59 months", f"{df_view['VitA_12-59m_Total'].sum():,.0f}")
+                
+                st.write("")
 
                 if not df_view.empty:
                     col_chart1, col_chart2 = st.columns([7, 3])
@@ -691,22 +711,42 @@ elif app_mode == "📊 Dashboard View":
                 st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
                 
                 if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading targets..."):
+                    with st.spinner("Downloading MR and Vitamin A targets..."):
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
-                            col_names = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
-                            df_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=col_names, ttl=0)
                             
-                            df_clean = clean_and_process_car_data(df_raw, col_names)
-                            df_supabase = df_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']].copy()
-                            df_supabase.columns = ['code', 'location', 'level', 'parent_province', 'parent_municipality', 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m']
+                            # 1. Fetch & Clean MR Targets
+                            mr_cols = ["Code", "Location", "6-59m_Male", "6-59m_Female", "6-59m_Total", "6-12m_Male", "6-12m_Female", "6-12m_Total", "13-23m_Male", "13-23m_Female", "13-23m_Total", "24-59m_Male", "24-59m_Female", "24-59m_Total"]
+                            df_mr_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0)
+                            df_mr_clean = clean_and_process_car_data(df_mr_raw, mr_cols)
                             
-                            df_supabase = df_supabase.replace({np.nan: None})
+                            # 2. Fetch & Clean Vit A Targets
+                            # Assuming Vit A sheet has standard 6-11m and 12-59m layout
+                            vita_cols = ["Code", "Location", "Total_Male", "Total_Female", "VitA_Total", "6-11m_Male", "6-11m_Female", "6-11m_Total", "12-59m_Male", "12-59m_Female", "12-59m_Total"]
+                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=list(range(11)), skiprows=2, names=vita_cols, ttl=0)
+                            df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols)
                             
-                            data_to_push = df_supabase.to_dict(orient='records')
+                            # 3. Merge them together on the geographic 'Code'
+                            df_merged = pd.merge(
+                                df_mr_clean[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']],
+                                df_vita_clean[['Code', '6-11m_Total', '12-59m_Total', 'VitA_Total']],
+                                on='Code', how='left'
+                            )
+                            
+                            # 4. Map to Supabase Columns
+                            df_merged.columns = [
+                                'code', 'location', 'level', 'parent_province', 'parent_municipality', 
+                                'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
+                                'vita_6_11m', 'vita_12_59m', 'vita_total'
+                            ]
+                            
+                            df_merged = df_merged.replace({np.nan: None})
+                            data_to_push = df_merged.to_dict(orient='records')
+                            
+                            # Push to Supabase
                             supabase.table('targets').upsert(data_to_push).execute()
                             
-                            st.success("✅ Target Database Successfully Synced!")
+                            st.success("✅ Target Database Successfully Synced (MR & Vit A)!")
                             st.cache_data.clear()
                         except Exception as e:
                             st.error(f"Target Sync Failed: {e}")
