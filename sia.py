@@ -653,7 +653,18 @@ elif app_mode == "📊 Dashboard View":
                         fig_bar.update_layout(xaxis_title="Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_bar, use_container_width=True)
                     with col_chart2:
-                        age_data = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Target': [df_view['6-12m_Total'].sum(), df_view['13-23m_Total'].sum(), df_view['24-59m_Total'].sum()]})
+                        # 1. FIXED: Dynamic Pie Chart Data
+                        if target_type == "Measles-Rubella (MR)":
+                            age_data = pd.DataFrame({
+                                'Age Group': ['6-12m', '13-23m', '24-59m'], 
+                                'Target': [df_view['MR_6-12m_Total'].sum(), df_view['MR_13-23m_Total'].sum(), df_view['MR_24-59m_Total'].sum()]
+                            })
+                        else:
+                            age_data = pd.DataFrame({
+                                'Age Group': ['6-11m', '12-59m'], 
+                                'Target': [df_view['VitA_6-11m_Total'].sum(), df_view['VitA_12-59m_Total'].sum()]
+                            })
+                            
                         fig_donut = px.pie(age_data, names='Age Group', values='Target', hole=0.4, title="Age Distribution", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
                         fig_donut.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_donut, use_container_width=True)
@@ -661,12 +672,25 @@ elif app_mode == "📊 Dashboard View":
                     st.warning("No data available.")
 
                 with st.expander("📂 View & Download Target Database"):
-                    display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total']]
+                    # 2. FIXED: Dynamic Download Table Columns
+                    if target_type == "Measles-Rubella (MR)":
+                        display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
+                        dl_prefix = "MR"
+                    else:
+                        display_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
+                        dl_prefix = "VitA"
+                        
                     st.dataframe(display_df, use_container_width=True, hide_index=True)
                     
                     export_location = "CAR_Region" if view_mode == "Region-wide (Compare Provinces)" else selected_prov if view_mode == "Province-wide (Compare Municipalities)" else selected_muni
                     csv = display_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("📥 Download Data as CSV", data=csv, file_name=f"SIA_Targets_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary")
+                    st.download_button(
+                        "📥 Download Data as CSV", 
+                        data=csv, 
+                        file_name=f"SIA_Targets_{dl_prefix}_{export_location}_{datetime.now().strftime('%Y%m%d')}.csv", 
+                        mime="text/csv", 
+                        type="primary"
+                    )
 
         with tab_mr:
             st.markdown("### 💉 Measles-Rubella Accomplishment")
