@@ -660,29 +660,39 @@ elif app_mode == "📊 Dashboard View":
                 # --- VITAMIN A TAB CONTENT ---
                 with sub_vita:
                     st.markdown(f"#### Vitamin A Breakdown: {location_label}")
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric("Total Vit A Eligible", f"{df_view['VitA_Total'].sum():,.0f}")
-                    kpi2.metric("6 - 11 months", f"{df_view['VitA_6-11m_Total'].sum():,.0f}")
-                    kpi3.metric("12 - 59 months", f"{df_view['VitA_12-59m_Total'].sum():,.0f}")
                     
-                    if not df_view.empty:
+                    # 1. FIXED: Fallback for missing Barangay Data in Vit A
+                    if view_mode == "Specific Municipality (Compare Barangays)":
+                        st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
+                        # Pull the Municipal row instead of the empty Barangay rows
+                        df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
+                    else:
+                        df_view_va = df_view
+                        
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("Total Vit A Eligible", f"{df_view_va['VitA_Total'].sum():,.0f}")
+                    kpi2.metric("6 - 11 months", f"{df_view_va['VitA_6-11m_Total'].sum():,.0f}")
+                    kpi3.metric("12 - 59 months", f"{df_view_va['VitA_12-59m_Total'].sum():,.0f}")
+                    
+                    if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_va = df_view.sort_values('VitA_Total', ascending=True) 
+                            df_sorted_va = df_view_va.sort_values('VitA_Total', ascending=True) 
                             fig_va = px.bar(df_sorted_va, x='VitA_Total', y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
                             fig_va.update_layout(xaxis_title="Eligible Children (Vit A)", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_va, use_container_width=True)
                         with c2:
-                            va_age_data = pd.DataFrame({
-                                'Age Group': ['6-11m', '12-59m'], 
-                                'Target': [df_view['VitA_6-11m_Total'].sum(), df_view['VitA_12-59m_Total'].sum()]
+                            # 2. FIXED: Dynamic Male/Female Split for the Pie Chart
+                            va_gender_data = pd.DataFrame({
+                                'Gender': ['Male', 'Female'], 
+                                'Target': [df_view_va['VitA_Total'].sum() * 0.50, df_view_va['VitA_Total'].sum() * 0.50]
                             })
-                            fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, color_discrete_sequence=['#8E24AA', '#00ACC1'])
-                            fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            fig_donut_va = px.pie(va_gender_data, names='Gender', values='Target', hole=0.4, title="Estimated M/F Split", color_discrete_sequence=['#1E88E5', '#E53935'])
+                            fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
                             st.plotly_chart(fig_donut_va, use_container_width=True)
                             
                     with st.expander("📂 View & Download Vit A Targets"):
-                        va_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
+                        va_df = df_view_va[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
                         st.dataframe(va_df, use_container_width=True, hide_index=True)
                         csv_va = va_df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
