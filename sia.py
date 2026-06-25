@@ -738,13 +738,51 @@ elif app_mode == "📊 Dashboard View":
                         st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
 
         with tab_mr:
-            st.markdown("### 💉 Measles-Rubella Accomplishment")
+            with tab_mr:
+            st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
+            
+            # Fetch daily doses safely
+            try:
+                res_doses = supabase.table('rhu_disaggregated').select('*').execute()
+                df_doses = pd.DataFrame(res_doses.data) if res_doses.data else pd.DataFrame()
+            except:
+                df_doses = pd.DataFrame()
+
+            # Filter doses to match the current geographic view
+            if not df_doses.empty:
+                if view_mode == "Province-wide (Compare Municipalities)":
+                    df_doses = df_doses[df_doses['municipality'].isin(df_view['Location'].tolist())]
+                elif view_mode == "Specific Municipality (Compare Barangays)":
+                    df_doses = df_doses[(df_doses['municipality'] == selected_muni) & (df_doses['barangay'].isin(df_view['Location'].tolist()))]
+                
+                # Calculate total administered MR doses (Male + Female for all age groups)
+                total_mr_doses = df_doses[['mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f']].sum().sum()
+            else:
+                total_mr_doses = 0
+
+            # Get Targets
+            nat_target = df_view['MR_6-59m_Total'].sum()
+            # Fetch Actual Target dynamically (fallback to 0 if not fully synced yet)
+            act_target = df_view.get('actual_mr_6_59m_total', pd.Series([0])).sum()
+
+            # Calculate Coverage Percentages
+            nat_cov = (total_mr_doses / nat_target * 100) if nat_target > 0 else 0
+            act_cov = (total_mr_doses / act_target * 100) if act_target > 0 else 0
+
+            # UI Display
             col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
-            col_mr1.metric("Coverage Target", "0%")
-            col_mr2.metric("Total Doses Administered", "0")
-            col_mr3.metric("⚠️ Total Deferrals", "0")
-            col_mr4.metric("🚨 Total Refusals", "0")
-            st.info("🚧 MR analytical engine ready. Awaiting VaccTrack Sync.")
+            col_mr1.metric("💉 Total Doses Administered", f"{total_mr_doses:,.0f}")
+            col_mr2.metric("🎯 National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Target", delta_color="off")
+            
+            if act_target > 0:
+                col_mr3.metric("📊 Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Actual Target", delta_color="off")
+            else:
+                col_mr3.metric("📊 Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
+                
+            col_mr4.metric("🚨 Variance (Actual vs Nat)", f"{act_target - nat_target:,.0f}", "Children")
+            
+            st.divider()
+            st.info("🚧 Sub-charts for Deferrals, Refusals, and Age-Group breakdowns will populate here as VaccTrack data flows in.")
 
         with tab_vita:
             st.markdown("### 💊 Vitamin A Accomplishment")
@@ -780,48 +818,55 @@ elif app_mode == "📊 Dashboard View":
                 st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
                 
                 if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading Targets & Gender Data..."):
+                    with st.spinner("Downloading National & Actual Data from 4 Sheets..."):
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             
-                            # 1. Fetch MR Targets (Matches the MR Sheet perfectly)
+                            # 1. Fetch MR (National & Actual)
                             mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
-                            df_mr_raw = conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0)
-                            df_mr_clean = clean_and_process_car_data(df_mr_raw, mr_cols)
+                            df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
                             
-                            # 2. Fetch Vit A Targets (Matches the Vit A Sheet perfectly)
-                            # C0=Code, C2=Loc, C3=6-11(M), C4=6-11(F), C5=6-11(T), C6=12-59(M), C7=12-59(F), C8=12-59(T), C9=TOTAL
-                            vita_cols_raw = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
-                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols_raw, ttl=0)
-                            df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols_raw)
+                            mr_act_cols = ["Code", "Location", "a1", "a2", "Act_MR_6-59m_Total", "a3", "a4", "Act_MR_6-12m_Total", "a5", "a6", "Act_MR_13-23m_Total", "a7", "a8", "Act_MR_24-59m_Total"]
+                            df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual", usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
                             
-                            # 3. Calculate missing Gender Grand Totals for Vit A
-                            # Ensure columns are numeric before adding
+                            # 2. Fetch Vit A (National & Actual)
+                            vita_cols = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
+                            df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
+                            
+                            vita_act_cols = ["Code", "Location", "b1", "b2", "Act_VitA_6-11m_Total", "b3", "b4", "Act_VitA_12-59m_Total", "Act_VitA_Total"]
+                            df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="VitA Actual", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
+                            
+                            # Calc missing genders for VitA National
                             for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
-                                df_vita_clean[c] = pd.to_numeric(df_vita_clean[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                                
-                            df_vita_clean['VitA_Total_M'] = df_vita_clean['VitA_6-11m_M'] + df_vita_clean['VitA_12-59m_M']
-                            df_vita_clean['VitA_Total_F'] = df_vita_clean['VitA_6-11m_F'] + df_vita_clean['VitA_12-59m_F']
+                                df_vita_nat[c] = pd.to_numeric(df_vita_nat[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                            df_vita_nat['VitA_Total_M'] = df_vita_nat['VitA_6-11m_M'] + df_vita_nat['VitA_12-59m_M']
+                            df_vita_nat['VitA_Total_F'] = df_vita_nat['VitA_6-11m_F'] + df_vita_nat['VitA_12-59m_F']
                             
-                            # 4. Merge MR and Vit A
-                            df_merged = pd.merge(df_mr_clean, df_vita_clean.drop(columns=['Location', 'Level', 'Parent_Province', 'Parent_Municipality'], errors='ignore'), on='Code', how='left')
+                            # 3. Mega-Merge all 4 sheets
+                            df_merged = df_mr_nat.copy()
+                            df_merged = pd.merge(df_merged, df_mr_act[['Code', 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total']], on='Code', how='left')
+                            df_merged = pd.merge(df_merged, df_vita_nat[['Code', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']], on='Code', how='left')
+                            df_merged = pd.merge(df_merged, df_vita_act[['Code', 'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total']], on='Code', how='left')
                             
-                            # 5. Filter and Push to Supabase
+                            # 4. Map & Push to Supabase
                             df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
                                                  '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
                                                  '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
                                                  'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total',
-                                                 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']].copy()
+                                                 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F',
+                                                 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total',
+                                                 'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total']].copy()
                             
                             df_push.columns = [
                                 'code', 'location', 'level', 'parent_province', 'parent_municipality', 
                                 'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
                                 'mr_6_59m_m', 'mr_6_59m_f', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f',
                                 'vita_6_11m', 'vita_12_59m', 'vita_total',
-                                'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f'
+                                'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f',
+                                'actual_mr_6_59m_total', 'actual_mr_6_12m_total', 'actual_mr_13_23m_total', 'actual_mr_24_59m_total',
+                                'actual_vita_6_11m_total', 'actual_vita_12_59m_total', 'actual_vita_total'
                             ]
                             
-                            # Format as strict integers
                             num_cols = df_push.columns[5:]
                             for c in num_cols:
                                 df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
@@ -829,7 +874,7 @@ elif app_mode == "📊 Dashboard View":
                             df_push = df_push.replace({np.nan: None})
                             supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
                             
-                            st.success("✅ Targets & Genders Successfully Synced!")
+                            st.success("✅ Mega-Sync Complete: Targets, Genders & Actuals Synced!")
                             st.cache_data.clear()
                         except Exception as e:
                             st.error(f"Target Sync Failed: {e}")
