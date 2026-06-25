@@ -738,7 +738,6 @@ elif app_mode == "📊 Dashboard View":
                         st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
 
         with tab_mr:
-            with tab_mr:
             st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
             
             # Fetch daily doses safely
