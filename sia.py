@@ -792,7 +792,7 @@ elif app_mode == "📊 Dashboard View":
                             # 2. Fetch Vit A Targets (Matches the Vit A Sheet perfectly)
                             # C0=Code, C2=Loc, C3=6-11(M), C4=6-11(F), C5=6-11(T), C6=12-59(M), C7=12-59(F), C8=12-59(T), C9=TOTAL
                             vita_cols_raw = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
-                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols_raw, ttl=0)
+                            df_vita_raw = conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols_raw, ttl=0)
                             df_vita_clean = clean_and_process_car_data(df_vita_raw, vita_cols_raw)
                             
                             # 3. Calculate missing Gender Grand Totals for Vit A
