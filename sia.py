@@ -385,7 +385,12 @@ def fetch_targets_from_supabase():
         'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
         'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
         'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
-        'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F'
+        'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
+        # NEW MAPS FOR ACTUAL TARGETS
+        'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_12m_total': 'Act_MR_6-12m_Total',
+        'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_24_59m_total': 'Act_MR_24-59m_Total',
+        'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total',
+        'actual_vita_total': 'Act_VitA_Total'
     }
     
     # Crash Prevention: Fills with 0 if columns aren't synced yet
@@ -636,25 +641,24 @@ elif app_mode == "📊 Dashboard View":
                 with sub_mr:
                     st.markdown(f"#### MR Breakdown: {location_label}")
                     
-                    # Localized Age Filter (Defaults to MR Total automatically)
                     mr_age = st.selectbox("Select MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="mr_age_sel")
                     
                     mr_map = {
-                        "6 - 59 months (Total)": ('MR_6-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F'),
-                        "6 - 12 months": ('MR_6-12m_Total', 'MR_6-12m_M', 'MR_6-12m_F'),
-                        "13 - 23 months": ('MR_13-23m_Total', 'MR_13-23m_M', 'MR_13-23m_F'),
-                        "24 - 59 months": ('MR_24-59m_Total', 'MR_24-59m_M', 'MR_24-59m_F')
+                        "6 - 59 months (Total)": ('MR_6-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'Act_MR_6-59m_Total'),
+                        "6 - 12 months": ('MR_6-12m_Total', 'MR_6-12m_M', 'MR_6-12m_F', 'Act_MR_6-12m_Total'),
+                        "13 - 23 months": ('MR_13-23m_Total', 'MR_13-23m_M', 'MR_13-23m_F', 'Act_MR_13-23m_Total'),
+                        "24 - 59 months": ('MR_24-59m_Total', 'MR_24-59m_M', 'MR_24-59m_F', 'Act_MR_24-59m_Total')
                     }
-                    t_col, m_col, f_col = mr_map[mr_age]
+                    t_col, m_col, f_col, act_col = mr_map[mr_age]
                     
-                    # Determine Bar Chart Column based on Global Gender Filter
                     plot_col = t_col if gender_filter == "Total (Both)" else m_col if gender_filter == "Male" else f_col
                     
-                    # Metric Cards
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric(f"Target ({gender_filter})", f"{df_view[plot_col].sum():,.0f}")
-                    kpi2.metric("Total Male Target", f"{df_view[m_col].sum():,.0f}")
-                    kpi3.metric("Total Female Target", f"{df_view[f_col].sum():,.0f}")
+                    # Add 4 Metric Cards to show National AND Actual side-by-side
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric(f"National Target ({gender_filter})", f"{df_view[plot_col].sum():,.0f}")
+                    kpi2.metric(f"Actual RHU Target", f"{df_view[act_col].sum():,.0f}")
+                    kpi3.metric("Nat. Male Target", f"{df_view[m_col].sum():,.0f}")
+                    kpi4.metric("Nat. Female Target", f"{df_view[f_col].sum():,.0f}")
                     
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
@@ -664,7 +668,6 @@ elif app_mode == "📊 Dashboard View":
                             fig_mr.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_mr, use_container_width=True)
                         with c2:
-                            # Pie chart for Age Groups based on selected Gender
                             p_col1 = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
                             p_col2 = 'MR_13-23m_Total' if gender_filter == "Total (Both)" else 'MR_13-23m_M' if gender_filter == "Male" else 'MR_13-23m_F'
                             p_col3 = 'MR_24-59m_Total' if gender_filter == "Total (Both)" else 'MR_24-59m_M' if gender_filter == "Male" else 'MR_24-59m_F'
@@ -678,7 +681,7 @@ elif app_mode == "📊 Dashboard View":
                             st.plotly_chart(fig_donut_mr, use_container_width=True)
                             
                     with st.expander("📂 View & Download MR Targets"):
-                        mr_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
+                        mr_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'Act_MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
                         st.dataframe(mr_df, use_container_width=True, hide_index=True)
                         csv_mr = mr_df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Download MR Data", data=csv_mr, file_name=f"MR_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_mr")
@@ -693,23 +696,22 @@ elif app_mode == "📊 Dashboard View":
                     else:
                         df_view_va = df_view
                         
-                    # Localized Age Filter (Defaults to Vit A Total automatically)
                     va_age = st.selectbox("Select Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="va_age_sel")
                     
                     va_map = {
-                        "6 - 59 months (Total)": ('VitA_Total', 'VitA_Total_M', 'VitA_Total_F'),
-                        "6 - 11 months": ('VitA_6-11m_Total', 'VitA_6-11m_M', 'VitA_6-11m_F'),
-                        "12 - 59 months": ('VitA_12-59m_Total', 'VitA_12-59m_M', 'VitA_12-59m_F')
+                        "6 - 59 months (Total)": ('VitA_Total', 'VitA_Total_M', 'VitA_Total_F', 'Act_VitA_Total'),
+                        "6 - 11 months": ('VitA_6-11m_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'Act_VitA_6-11m_Total'),
+                        "12 - 59 months": ('VitA_12-59m_Total', 'VitA_12-59m_M', 'VitA_12-59m_F', 'Act_VitA_12-59m_Total')
                     }
-                    t_col_va, m_col_va, f_col_va = va_map[va_age]
+                    t_col_va, m_col_va, f_col_va, act_col_va = va_map[va_age]
                     
-                    # Determine Bar Chart Column based on Global Gender Filter
                     plot_col_va = t_col_va if gender_filter == "Total (Both)" else m_col_va if gender_filter == "Male" else f_col_va
                     
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric(f"Target ({gender_filter})", f"{df_view_va[plot_col_va].sum():,.0f}")
-                    kpi2.metric("Total Male Target", f"{df_view_va[m_col_va].sum():,.0f}")
-                    kpi3.metric("Total Female Target", f"{df_view_va[f_col_va].sum():,.0f}")
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric(f"National Target ({gender_filter})", f"{df_view_va[plot_col_va].sum():,.0f}")
+                    kpi2.metric(f"Actual RHU Target", f"{df_view_va[act_col_va].sum():,.0f}")
+                    kpi3.metric("Nat. Male Target", f"{df_view_va[m_col_va].sum():,.0f}")
+                    kpi4.metric("Nat. Female Target", f"{df_view_va[f_col_va].sum():,.0f}")
                     
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
@@ -719,7 +721,6 @@ elif app_mode == "📊 Dashboard View":
                             fig_va.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_va, use_container_width=True)
                         with c2:
-                            # Pie chart for Age Groups based on selected Gender
                             p_col1_va = 'VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'VitA_6-11m_M' if gender_filter == "Male" else 'VitA_6-11m_F'
                             p_col2_va = 'VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'VitA_12-59m_M' if gender_filter == "Male" else 'VitA_12-59m_F'
                             
@@ -732,7 +733,7 @@ elif app_mode == "📊 Dashboard View":
                             st.plotly_chart(fig_donut_va, use_container_width=True)
                             
                     with st.expander("📂 View & Download Vit A Targets"):
-                        va_df = df_view_va[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
+                        va_df = df_view_va[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'Act_VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
                         st.dataframe(va_df, use_container_width=True, hide_index=True)
                         csv_va = va_df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
