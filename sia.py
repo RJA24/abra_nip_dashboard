@@ -759,26 +759,32 @@ elif app_mode == "📊 Dashboard View":
             else:
                 total_mr_doses = 0
 
-            # Get Targets
+            # Get Targets from Database
             nat_target = df_view['MR_6-59m_Total'].sum()
-            # Fetch Actual Target dynamically (fallback to 0 if not fully synced yet)
-            act_target = df_view.get('actual_mr_6_59m_total', pd.Series([0])).sum()
+            
+            # Fetch Actual Target dynamically (fallback to 0 if not synced or missing)
+            if 'actual_mr_6_59m_total' in df_view.columns:
+                act_target = df_view['actual_mr_6_59m_total'].sum()
+            else:
+                act_target = 0
 
-            # Calculate Coverage Percentages
+            # Calculate Coverage Percentages safely
             nat_cov = (total_mr_doses / nat_target * 100) if nat_target > 0 else 0
             act_cov = (total_mr_doses / act_target * 100) if act_target > 0 else 0
 
-            # UI Display
+            # UI Display - 4 KPI Cards
             col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
             col_mr1.metric("💉 Total Doses Administered", f"{total_mr_doses:,.0f}")
-            col_mr2.metric("🎯 National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Target", delta_color="off")
+            col_mr2.metric("🎯 National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Nat. Target", delta_color="off")
             
             if act_target > 0:
-                col_mr3.metric("📊 Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Actual Target", delta_color="off")
+                col_mr3.metric("📊 Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Act. Target", delta_color="off")
             else:
                 col_mr3.metric("📊 Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
                 
-            col_mr4.metric("🚨 Variance (Actual vs Nat)", f"{act_target - nat_target:,.0f}", "Children")
+            variance = act_target - nat_target
+            var_label = "More than National" if variance > 0 else "Less than National"
+            col_mr4.metric("🚨 Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
             
             st.divider()
             st.info("🚧 Sub-charts for Deferrals, Refusals, and Age-Group breakdowns will populate here as VaccTrack data flows in.")
@@ -817,23 +823,23 @@ elif app_mode == "📊 Dashboard View":
                 st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
                 
                 if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading National & Actual Data from 4 Sheets..."):
+                    with st.spinner("Downloading National & Actual Targets from 4 Sheets..."):
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             
                             # 1. Fetch MR (National & Actual)
                             mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
-                            df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)", usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
+                            df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)".strip(), usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
                             
                             mr_act_cols = ["Code", "Location", "a1", "a2", "Act_MR_6-59m_Total", "a3", "a4", "Act_MR_6-12m_Total", "a5", "a6", "Act_MR_13-23m_Total", "a7", "a8", "Act_MR_24-59m_Total"]
-                            df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual Target(UPDATE THIS)", usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
+                            df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual".strip(), usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
                             
                             # 2. Fetch Vit A (National & Actual)
                             vita_cols = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
-                            df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
+                            df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
                             
                             vita_act_cols = ["Code", "Location", "b1", "b2", "Act_VitA_6-11m_Total", "b3", "b4", "Act_VitA_12-59m_Total", "Act_VitA_Total"]
-                            df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop(UPDATE THIS)", usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
+                            df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="VitA Actual".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
                             
                             # Calc missing genders for VitA National
                             for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
