@@ -655,41 +655,34 @@ elif app_mode == "📊 Dashboard View":
                 # SUB-TAB 1: NATIONAL MR
                 # ==========================================
                 with tab_nat_mr:
-                    st.markdown(f"#### National MR Breakdown: {location_label}")
-                    mr_age = st.selectbox("Select MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="nat_mr_age_sel")
+                    st.markdown(f"#### National MR Breakdown: {location_label} ({gender_filter})")
                     
-                    mr_map = {
-                        "6 - 59 months (Total)": ('MR_6-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F'),
-                        "6 - 12 months": ('MR_6-12m_Total', 'MR_6-12m_M', 'MR_6-12m_F'),
-                        "13 - 23 months": ('MR_13-23m_Total', 'MR_13-23m_M', 'MR_13-23m_F'),
-                        "24 - 59 months": ('MR_24-59m_Total', 'MR_24-59m_M', 'MR_24-59m_F')
-                    }
-                    t_col, m_col, f_col = mr_map[mr_age]
-                    plot_col = t_col if gender_filter == "Total (Both)" else m_col if gender_filter == "Male" else f_col
+                    # Map columns based on sidebar gender filter
+                    t_col = 'MR_6-59m_Total' if gender_filter == "Total (Both)" else 'MR_6-59m_M' if gender_filter == "Male" else 'MR_6-59m_F'
+                    c1_col = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
+                    c2_col = 'MR_13-23m_Total' if gender_filter == "Total (Both)" else 'MR_13-23m_M' if gender_filter == "Male" else 'MR_13-23m_F'
+                    c3_col = 'MR_24-59m_Total' if gender_filter == "Total (Both)" else 'MR_24-59m_M' if gender_filter == "Male" else 'MR_24-59m_F'
                     
-                    # Reverted to 3 Clean Metric Cards
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric(f"National Target ({gender_filter})", f"{df_view[plot_col].sum():,.0f}")
-                    kpi2.metric("Total Male Target", f"{df_view[m_col].sum():,.0f}")
-                    kpi3.metric("Total Female Target", f"{df_view[f_col].sum():,.0f}")
+                    # 4 Metric Cards Layout
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("6 - 59m (Grand Total)", f"{df_view[t_col].sum():,.0f}")
+                    kpi2.metric("6 - 12 months", f"{df_view[c1_col].sum():,.0f}")
+                    kpi3.metric("13 - 23 months", f"{df_view[c2_col].sum():,.0f}")
+                    kpi4.metric("24 - 59 months", f"{df_view[c3_col].sum():,.0f}")
                     
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
-                            fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
+                            df_sorted_mr = df_view.sort_values(t_col, ascending=True) 
+                            fig_mr = px.bar(df_sorted_mr, x=t_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
                             fig_mr.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_mr, use_container_width=True)
                         with c2:
-                            p_col1 = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
-                            p_col2 = 'MR_13-23m_Total' if gender_filter == "Total (Both)" else 'MR_13-23m_M' if gender_filter == "Male" else 'MR_13-23m_F'
-                            p_col3 = 'MR_24-59m_Total' if gender_filter == "Total (Both)" else 'MR_24-59m_M' if gender_filter == "Male" else 'MR_24-59m_F'
-                            
                             mr_age_data = pd.DataFrame({
                                 'Age Group': ['6-12m', '13-23m', '24-59m'], 
-                                'Target': [df_view[p_col1].sum(), df_view[p_col2].sum(), df_view[p_col3].sum()]
+                                'Target': [df_view[c1_col].sum(), df_view[c2_col].sum(), df_view[c3_col].sum()]
                             })
-                            fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
+                            fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                             fig_donut_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
                             st.plotly_chart(fig_donut_mr, use_container_width=True)
 
@@ -697,44 +690,104 @@ elif app_mode == "📊 Dashboard View":
                 # SUB-TAB 2: NATIONAL VITAMIN A
                 # ==========================================
                 with tab_nat_va:
-                    st.markdown(f"#### National Vitamin A Breakdown: {location_label}")
+                    st.markdown(f"#### National Vitamin A Breakdown: {location_label} ({gender_filter})")
                     if va_warning:
                         st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
                         
-                    va_age = st.selectbox("Select Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="nat_va_age_sel")
+                    t_col_va = 'VitA_Total' if gender_filter == "Total (Both)" else 'VitA_Total_M' if gender_filter == "Male" else 'VitA_Total_F'
+                    c1_col_va = 'VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'VitA_6-11m_M' if gender_filter == "Male" else 'VitA_6-11m_F'
+                    c2_col_va = 'VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'VitA_12-59m_M' if gender_filter == "Male" else 'VitA_12-59m_F'
                     
-                    va_map = {
-                        "6 - 59 months (Total)": ('VitA_Total', 'VitA_Total_M', 'VitA_Total_F'),
-                        "6 - 11 months": ('VitA_6-11m_Total', 'VitA_6-11m_M', 'VitA_6-11m_F'),
-                        "12 - 59 months": ('VitA_12-59m_Total', 'VitA_12-59m_M', 'VitA_12-59m_F')
-                    }
-                    t_col_va, m_col_va, f_col_va = va_map[va_age]
-                    plot_col_va = t_col_va if gender_filter == "Total (Both)" else m_col_va if gender_filter == "Male" else f_col_va
-                    
-                    # Reverted to 3 Clean Metric Cards
+                    # 3 Metric Cards Layout
                     kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric(f"National Target ({gender_filter})", f"{df_view_va[plot_col_va].sum():,.0f}")
-                    kpi2.metric("Total Male Target", f"{df_view_va[m_col_va].sum():,.0f}")
-                    kpi3.metric("Total Female Target", f"{df_view_va[f_col_va].sum():,.0f}")
+                    kpi1.metric("Total Vit A Eligible", f"{df_view_va[t_col_va].sum():,.0f}")
+                    kpi2.metric("6 - 11 months", f"{df_view_va[c1_col_va].sum():,.0f}")
+                    kpi3.metric("12 - 59 months", f"{df_view_va[c2_col_va].sum():,.0f}")
                     
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
-                            fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
+                            df_sorted_va = df_view_va.sort_values(t_col_va, ascending=True) 
+                            fig_va = px.bar(df_sorted_va, x=t_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
                             fig_va.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_va, use_container_width=True)
                         with c2:
-                            p_col1_va = 'VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'VitA_6-11m_M' if gender_filter == "Male" else 'VitA_6-11m_F'
-                            p_col2_va = 'VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'VitA_12-59m_M' if gender_filter == "Male" else 'VitA_12-59m_F'
-                            
                             va_age_data = pd.DataFrame({
                                 'Age Group': ['6-11m', '12-59m'], 
-                                'Target': [df_view_va[p_col1_va].sum(), df_view_va[p_col2_va].sum()]
+                                'Target': [df_view_va[c1_col_va].sum(), df_view_va[c2_col_va].sum()]
                             })
-                            fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#8E24AA', '#00ACC1'])
+                            fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                             fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
                             st.plotly_chart(fig_donut_va, use_container_width=True)
+
+                # ==========================================
+                # SUB-TAB 3: ACTUAL MR
+                # ==========================================
+                with tab_act_mr:
+                    st.markdown(f"#### Actual MR Breakdown (RHU Census): {location_label} ({gender_filter})")
+                    st.info("Actual data reflects local RHU census tracking.")
+                    
+                    act_t_col = 'Act_MR_6-59m_Total' if gender_filter == "Total (Both)" else 'Act_MR_6-59m_M' if gender_filter == "Male" else 'Act_MR_6-59m_F'
+                    act_c1_col = 'Act_MR_6-12m_Total' if gender_filter == "Total (Both)" else 'Act_MR_6-12m_M' if gender_filter == "Male" else 'Act_MR_6-12m_F'
+                    act_c2_col = 'Act_MR_13-23m_Total' if gender_filter == "Total (Both)" else 'Act_MR_13-23m_M' if gender_filter == "Male" else 'Act_MR_13-23m_F'
+                    act_c3_col = 'Act_MR_24-59m_Total' if gender_filter == "Total (Both)" else 'Act_MR_24-59m_M' if gender_filter == "Male" else 'Act_MR_24-59m_F'
+                    
+                    # 4 Metric Cards Layout
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("6 - 59m (Actual Grand Total)", f"{df_view[act_t_col].sum():,.0f}")
+                    kpi2.metric("Actual 6 - 12 months", f"{df_view[act_c1_col].sum():,.0f}")
+                    kpi3.metric("Actual 13 - 23 months", f"{df_view[act_c2_col].sum():,.0f}")
+                    kpi4.metric("Actual 24 - 59 months", f"{df_view[act_c3_col].sum():,.0f}")
+                    
+                    if not df_view.empty:
+                        c1, c2 = st.columns([7, 3])
+                        with c1:
+                            df_sorted_act_mr = df_view.sort_values(act_t_col, ascending=True) 
+                            fig_act_mr = px.bar(df_sorted_act_mr, x=act_t_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
+                            fig_act_mr.update_layout(xaxis_title=f"Actual Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            st.plotly_chart(fig_act_mr, use_container_width=True)
+                        with c2:
+                            act_mr_age_data = pd.DataFrame({
+                                'Age Group': ['6-12m', '13-23m', '24-59m'], 
+                                'Target': [df_view[act_c1_col].sum(), df_view[act_c2_col].sum(), df_view[act_c3_col].sum()]
+                            })
+                            fig_donut_act_mr = px.pie(act_mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
+                            fig_donut_act_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
+                            st.plotly_chart(fig_donut_act_mr, use_container_width=True)
+
+                # ==========================================
+                # SUB-TAB 4: ACTUAL VITAMIN A
+                # ==========================================
+                with tab_act_va:
+                    st.markdown(f"#### Actual Vitamin A Breakdown (RHU Census): {location_label} ({gender_filter})")
+                    if va_warning:
+                        st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
+                    
+                    act_t_col_va = 'Act_VitA_Total' if gender_filter == "Total (Both)" else 'Act_VitA_Total_M' if gender_filter == "Male" else 'Act_VitA_Total_F'
+                    act_c1_col_va = 'Act_VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'Act_VitA_6-11m_M' if gender_filter == "Male" else 'Act_VitA_6-11m_F'
+                    act_c2_col_va = 'Act_VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'Act_VitA_12-59m_M' if gender_filter == "Male" else 'Act_VitA_12-59m_F'
+                    
+                    # 3 Metric Cards Layout
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("Total Actual Vit A", f"{df_view_va[act_t_col_va].sum():,.0f}")
+                    kpi2.metric("Actual 6 - 11 months", f"{df_view_va[act_c1_col_va].sum():,.0f}")
+                    kpi3.metric("Actual 12 - 59 months", f"{df_view_va[act_c2_col_va].sum():,.0f}")
+                    
+                    if not df_view_va.empty:
+                        c1, c2 = st.columns([7, 3])
+                        with c1:
+                            df_sorted_act_va = df_view_va.sort_values(act_t_col_va, ascending=True) 
+                            fig_act_va = px.bar(df_sorted_act_va, x=act_t_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
+                            fig_act_va.update_layout(xaxis_title=f"Actual Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            st.plotly_chart(fig_act_va, use_container_width=True)
+                        with c2:
+                            act_va_age_data = pd.DataFrame({
+                                'Age Group': ['6-11m', '12-59m'], 
+                                'Target': [df_view_va[act_c1_col_va].sum(), df_view_va[act_c2_col_va].sum()]
+                            })
+                            fig_donut_act_va = px.pie(act_va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
+                            fig_donut_act_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
+                            st.plotly_chart(fig_donut_act_va, use_container_width=True)
 
                 
 
