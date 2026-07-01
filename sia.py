@@ -670,12 +670,26 @@ elif app_mode == "📊 Dashboard View":
                     kpi3.metric("13 - 23 months", f"{df_view[c2_col].sum():,.0f}")
                     kpi4.metric("24 - 59 months", f"{df_view[c3_col].sum():,.0f}")
                     
+                    # Dynamic Bar Chart Selection based on Sidebar Age Filter
+                    if age_filter == "MR: 6 - 12 months":
+                        plot_col = c1_col
+                        chart_title = f"Eligible Children (6-12m, {gender_filter})"
+                    elif age_filter == "MR: 13 - 23 months":
+                        plot_col = c2_col
+                        chart_title = f"Eligible Children (13-23m, {gender_filter})"
+                    elif age_filter == "MR: 24 - 59 months":
+                        plot_col = c3_col
+                        chart_title = f"Eligible Children (24-59m, {gender_filter})"
+                    else:
+                        plot_col = t_col
+                        chart_title = f"Eligible Children (Total, {gender_filter})"
+
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_mr = df_view.sort_values(t_col, ascending=True) 
-                            fig_mr = px.bar(df_sorted_mr, x=t_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
-                            fig_mr.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
+                            fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
+                            fig_mr.update_layout(xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_mr, use_container_width=True)
                         with c2:
                             mr_age_data = pd.DataFrame({
@@ -704,12 +718,23 @@ elif app_mode == "📊 Dashboard View":
                     kpi2.metric("6 - 11 months", f"{df_view_va[c1_col_va].sum():,.0f}")
                     kpi3.metric("12 - 59 months", f"{df_view_va[c2_col_va].sum():,.0f}")
                     
+                    # Dynamic Bar Chart Selection based on Sidebar Age Filter
+                    if age_filter == "Vit A: 6 - 11 months":
+                        plot_col_va = c1_col_va
+                        chart_title_va = f"Eligible Children (6-11m, {gender_filter})"
+                    elif age_filter == "Vit A: 12 - 59 months":
+                        plot_col_va = c2_col_va
+                        chart_title_va = f"Eligible Children (12-59m, {gender_filter})"
+                    else:
+                        plot_col_va = t_col_va
+                        chart_title_va = f"Eligible Children (Total, {gender_filter})"
+
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_va = df_view_va.sort_values(t_col_va, ascending=True) 
-                            fig_va = px.bar(df_sorted_va, x=t_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
-                            fig_va.update_layout(xaxis_title=f"Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
+                            fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
+                            fig_va.update_layout(xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_va, use_container_width=True)
                         with c2:
                             va_age_data = pd.DataFrame({
@@ -738,13 +763,27 @@ elif app_mode == "📊 Dashboard View":
                     kpi2.metric("Actual 6 - 12 months", f"{df_view[act_c1_col].sum():,.0f}")
                     kpi3.metric("Actual 13 - 23 months", f"{df_view[act_c2_col].sum():,.0f}")
                     kpi4.metric("Actual 24 - 59 months", f"{df_view[act_c3_col].sum():,.0f}")
+
+                    # Dynamic Bar Chart Selection based on Sidebar Age Filter
+                    if age_filter == "MR: 6 - 12 months":
+                        act_plot_col = act_c1_col
+                        act_chart_title = f"Actual Eligible Children (6-12m, {gender_filter})"
+                    elif age_filter == "MR: 13 - 23 months":
+                        act_plot_col = act_c2_col
+                        act_chart_title = f"Actual Eligible Children (13-23m, {gender_filter})"
+                    elif age_filter == "MR: 24 - 59 months":
+                        act_plot_col = act_c3_col
+                        act_chart_title = f"Actual Eligible Children (24-59m, {gender_filter})"
+                    else:
+                        act_plot_col = act_t_col
+                        act_chart_title = f"Actual Eligible Children (Total, {gender_filter})"
                     
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_act_mr = df_view.sort_values(act_t_col, ascending=True) 
-                            fig_act_mr = px.bar(df_sorted_act_mr, x=act_t_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
-                            fig_act_mr.update_layout(xaxis_title=f"Actual Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
+                            fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
+                            fig_act_mr.update_layout(xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_act_mr, use_container_width=True)
                         with c2:
                             act_mr_age_data = pd.DataFrame({
@@ -773,12 +812,23 @@ elif app_mode == "📊 Dashboard View":
                     kpi2.metric("Actual 6 - 11 months", f"{df_view_va[act_c1_col_va].sum():,.0f}")
                     kpi3.metric("Actual 12 - 59 months", f"{df_view_va[act_c2_col_va].sum():,.0f}")
                     
+                    # Dynamic Bar Chart Selection based on Sidebar Age Filter
+                    if age_filter == "Vit A: 6 - 11 months":
+                        act_plot_col_va = act_c1_col_va
+                        act_chart_title_va = f"Actual Eligible Children (6-11m, {gender_filter})"
+                    elif age_filter == "Vit A: 12 - 59 months":
+                        act_plot_col_va = act_c2_col_va
+                        act_chart_title_va = f"Actual Eligible Children (12-59m, {gender_filter})"
+                    else:
+                        act_plot_col_va = act_t_col_va
+                        act_chart_title_va = f"Actual Eligible Children (Total, {gender_filter})"
+
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
                         with c1:
-                            df_sorted_act_va = df_view_va.sort_values(act_t_col_va, ascending=True) 
-                            fig_act_va = px.bar(df_sorted_act_va, x=act_t_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
-                            fig_act_va.update_layout(xaxis_title=f"Actual Eligible Children ({gender_filter})", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
+                            fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
+                            fig_act_va.update_layout(xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
                             st.plotly_chart(fig_act_va, use_container_width=True)
                         with c2:
                             act_va_age_data = pd.DataFrame({
