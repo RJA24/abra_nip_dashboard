@@ -739,7 +739,7 @@ elif app_mode == "📊 Dashboard View":
                 # ==========================================
                 with tab_act_mr:
                     st.markdown(f"#### Actual MR Breakdown (RHU Census): {location_label}")
-                    st.info("Actual data reflects local RHU census tracking. Note: Gender breakdown is not tracked for Actual targets in the current sheet format.")
+                    st.info("Actual data reflects local RHU census tracking. Note: Actual Male/Female numbers are estimated (50/50 split) for visualization as exact actual genders are not synced.")
                     
                     act_mr_age = st.selectbox("Select Actual MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="act_mr_age_sel")
                     act_mr_map = {
@@ -750,7 +750,12 @@ elif app_mode == "📊 Dashboard View":
                     }
                     act_plot_col = act_mr_map[act_mr_age]
                     
-                    st.metric(f"Total Actual Target", f"{df_view[act_plot_col].sum():,.0f}")
+                    # NEW: 3 KPI Cards for Actual MR
+                    total_act_mr = df_view[act_plot_col].sum()
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("Total Actual Target", f"{total_act_mr:,.0f}")
+                    kpi2.metric("Est. Male Target (50%)", f"{total_act_mr * 0.50:,.0f}")
+                    kpi3.metric("Est. Female Target (50%)", f"{total_act_mr * 0.50:,.0f}")
                     
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
@@ -775,6 +780,8 @@ elif app_mode == "📊 Dashboard View":
                     st.markdown(f"#### Actual Vitamin A Breakdown (RHU Census): {location_label}")
                     if va_warning:
                         st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
+                    else:
+                        st.info("Note: Actual Male/Female numbers are estimated (50/50 split) for visualization as exact actual genders are not synced.")
                     
                     act_va_age = st.selectbox("Select Actual Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="act_va_age_sel")
                     act_va_map = {
@@ -784,7 +791,12 @@ elif app_mode == "📊 Dashboard View":
                     }
                     act_plot_col_va = act_va_map[act_va_age]
                     
-                    st.metric(f"Total Actual Target", f"{df_view_va[act_plot_col_va].sum():,.0f}")
+                    # NEW: 3 KPI Cards for Actual Vit A
+                    total_act_va = df_view_va[act_plot_col_va].sum()
+                    kpi1, kpi2, kpi3 = st.columns(3)
+                    kpi1.metric("Total Actual Target", f"{total_act_va:,.0f}")
+                    kpi2.metric("Est. Male Target (50%)", f"{total_act_va * 0.50:,.0f}")
+                    kpi3.metric("Est. Female Target (50%)", f"{total_act_va * 0.50:,.0f}")
                     
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
