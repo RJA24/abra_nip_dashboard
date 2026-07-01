@@ -610,7 +610,7 @@ elif app_mode == "📊 Dashboard View":
             if df_targets.empty:
                 st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
             else:
-                # 1. Geographic Filtering
+                # 1. Geographic Filtering (Applies to all sub-tabs)
                 selected_prov, selected_muni = "CAR_Region", ""
                 
                 if view_mode == "Region-wide (Compare Provinces)":
@@ -634,31 +634,42 @@ elif app_mode == "📊 Dashboard View":
                     df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
                     location_label = f"{selected_muni}, {selected_prov}"
 
-                # 2. Sub-Tabs
-                sub_mr, sub_vita = st.tabs(["💉 Measles-Rubella (MR) Targets", "💊 Vitamin A Targets"])
+                # 2. Vitamin A Fallback Logic (Needed for all Vit A tabs)
+                if view_mode == "Specific Municipality (Compare Barangays)":
+                    df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
+                    va_warning = True
+                else:
+                    df_view_va = df_view
+                    va_warning = False
+
+                # 3. Create 5 Distinct Sub-Tabs
+                tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
+                    "💉 Nat. MR Targets", "💊 Nat. Vit A Targets", 
+                    "📊 Act. MR Targets", "📈 Act. Vit A Targets", 
+                    "⚖️ Target Comparison"
+                ])
                 
-                # --- MR TAB CONTENT ---
-                with sub_mr:
-                    st.markdown(f"#### MR Breakdown: {location_label}")
-                    
-                    mr_age = st.selectbox("Select MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="mr_age_sel")
+                # ==========================================
+                # SUB-TAB 1: NATIONAL MR
+                # ==========================================
+                with tab_nat_mr:
+                    st.markdown(f"#### National MR Breakdown: {location_label}")
+                    mr_age = st.selectbox("Select MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="nat_mr_age_sel")
                     
                     mr_map = {
-                        "6 - 59 months (Total)": ('MR_6-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'Act_MR_6-59m_Total'),
-                        "6 - 12 months": ('MR_6-12m_Total', 'MR_6-12m_M', 'MR_6-12m_F', 'Act_MR_6-12m_Total'),
-                        "13 - 23 months": ('MR_13-23m_Total', 'MR_13-23m_M', 'MR_13-23m_F', 'Act_MR_13-23m_Total'),
-                        "24 - 59 months": ('MR_24-59m_Total', 'MR_24-59m_M', 'MR_24-59m_F', 'Act_MR_24-59m_Total')
+                        "6 - 59 months (Total)": ('MR_6-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F'),
+                        "6 - 12 months": ('MR_6-12m_Total', 'MR_6-12m_M', 'MR_6-12m_F'),
+                        "13 - 23 months": ('MR_13-23m_Total', 'MR_13-23m_M', 'MR_13-23m_F'),
+                        "24 - 59 months": ('MR_24-59m_Total', 'MR_24-59m_M', 'MR_24-59m_F')
                     }
-                    t_col, m_col, f_col, act_col = mr_map[mr_age]
-                    
+                    t_col, m_col, f_col = mr_map[mr_age]
                     plot_col = t_col if gender_filter == "Total (Both)" else m_col if gender_filter == "Male" else f_col
                     
-                    # Add 4 Metric Cards to show National AND Actual side-by-side
-                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    # Reverted to 3 Clean Metric Cards
+                    kpi1, kpi2, kpi3 = st.columns(3)
                     kpi1.metric(f"National Target ({gender_filter})", f"{df_view[plot_col].sum():,.0f}")
-                    kpi2.metric(f"Actual RHU Target", f"{df_view[act_col].sum():,.0f}")
-                    kpi3.metric("Nat. Male Target", f"{df_view[m_col].sum():,.0f}")
-                    kpi4.metric("Nat. Female Target", f"{df_view[f_col].sum():,.0f}")
+                    kpi2.metric("Total Male Target", f"{df_view[m_col].sum():,.0f}")
+                    kpi3.metric("Total Female Target", f"{df_view[f_col].sum():,.0f}")
                     
                     if not df_view.empty:
                         c1, c2 = st.columns([7, 3])
@@ -679,39 +690,30 @@ elif app_mode == "📊 Dashboard View":
                             fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
                             fig_donut_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
                             st.plotly_chart(fig_donut_mr, use_container_width=True)
-                            
-                    with st.expander("📂 View & Download MR Targets"):
-                        mr_df = df_view[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'MR_6-59m_Total', 'Act_MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total']]
-                        st.dataframe(mr_df, use_container_width=True, hide_index=True)
-                        csv_mr = mr_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download MR Data", data=csv_mr, file_name=f"MR_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_mr")
 
-                # --- VITAMIN A TAB CONTENT ---
-                with sub_vita:
-                    st.markdown(f"#### Vitamin A Breakdown: {location_label}")
-                    
-                    if view_mode == "Specific Municipality (Compare Barangays)":
+                # ==========================================
+                # SUB-TAB 2: NATIONAL VITAMIN A
+                # ==========================================
+                with tab_nat_va:
+                    st.markdown(f"#### National Vitamin A Breakdown: {location_label}")
+                    if va_warning:
                         st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
-                        df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
-                    else:
-                        df_view_va = df_view
                         
-                    va_age = st.selectbox("Select Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="va_age_sel")
+                    va_age = st.selectbox("Select Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="nat_va_age_sel")
                     
                     va_map = {
-                        "6 - 59 months (Total)": ('VitA_Total', 'VitA_Total_M', 'VitA_Total_F', 'Act_VitA_Total'),
-                        "6 - 11 months": ('VitA_6-11m_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'Act_VitA_6-11m_Total'),
-                        "12 - 59 months": ('VitA_12-59m_Total', 'VitA_12-59m_M', 'VitA_12-59m_F', 'Act_VitA_12-59m_Total')
+                        "6 - 59 months (Total)": ('VitA_Total', 'VitA_Total_M', 'VitA_Total_F'),
+                        "6 - 11 months": ('VitA_6-11m_Total', 'VitA_6-11m_M', 'VitA_6-11m_F'),
+                        "12 - 59 months": ('VitA_12-59m_Total', 'VitA_12-59m_M', 'VitA_12-59m_F')
                     }
-                    t_col_va, m_col_va, f_col_va, act_col_va = va_map[va_age]
-                    
+                    t_col_va, m_col_va, f_col_va = va_map[va_age]
                     plot_col_va = t_col_va if gender_filter == "Total (Both)" else m_col_va if gender_filter == "Male" else f_col_va
                     
-                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    # Reverted to 3 Clean Metric Cards
+                    kpi1, kpi2, kpi3 = st.columns(3)
                     kpi1.metric(f"National Target ({gender_filter})", f"{df_view_va[plot_col_va].sum():,.0f}")
-                    kpi2.metric(f"Actual RHU Target", f"{df_view_va[act_col_va].sum():,.0f}")
-                    kpi3.metric("Nat. Male Target", f"{df_view_va[m_col_va].sum():,.0f}")
-                    kpi4.metric("Nat. Female Target", f"{df_view_va[f_col_va].sum():,.0f}")
+                    kpi2.metric("Total Male Target", f"{df_view_va[m_col_va].sum():,.0f}")
+                    kpi3.metric("Total Female Target", f"{df_view_va[f_col_va].sum():,.0f}")
                     
                     if not df_view_va.empty:
                         c1, c2 = st.columns([7, 3])
@@ -731,12 +733,126 @@ elif app_mode == "📊 Dashboard View":
                             fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#8E24AA', '#00ACC1'])
                             fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
                             st.plotly_chart(fig_donut_va, use_container_width=True)
+
+                # ==========================================
+                # SUB-TAB 3: ACTUAL MR
+                # ==========================================
+                with tab_act_mr:
+                    st.markdown(f"#### Actual MR Breakdown (RHU Census): {location_label}")
+                    st.info("Actual data reflects local RHU census tracking. Note: Gender breakdown is not tracked for Actual targets in the current sheet format.")
+                    
+                    act_mr_age = st.selectbox("Select Actual MR Age Group:", ["6 - 59 months (Total)", "6 - 12 months", "13 - 23 months", "24 - 59 months"], key="act_mr_age_sel")
+                    act_mr_map = {
+                        "6 - 59 months (Total)": 'Act_MR_6-59m_Total',
+                        "6 - 12 months": 'Act_MR_6-12m_Total',
+                        "13 - 23 months": 'Act_MR_13-23m_Total',
+                        "24 - 59 months": 'Act_MR_24-59m_Total'
+                    }
+                    act_plot_col = act_mr_map[act_mr_age]
+                    
+                    st.metric(f"Total Actual Target", f"{df_view[act_plot_col].sum():,.0f}")
+                    
+                    if not df_view.empty:
+                        c1, c2 = st.columns([7, 3])
+                        with c1:
+                            df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
+                            fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
+                            fig_act_mr.update_layout(xaxis_title="Actual Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            st.plotly_chart(fig_act_mr, use_container_width=True)
+                        with c2:
+                            act_mr_age_data = pd.DataFrame({
+                                'Age Group': ['6-12m', '13-23m', '24-59m'], 
+                                'Target': [df_view['Act_MR_6-12m_Total'].sum(), df_view['Act_MR_13-23m_Total'].sum(), df_view['Act_MR_24-59m_Total'].sum()]
+                            })
+                            fig_donut_act_mr = px.pie(act_mr_age_data, names='Age Group', values='Target', hole=0.4, title="Actual Age Distribution", color_discrete_sequence=['#43A047', '#FFB300', '#E53935'])
+                            fig_donut_act_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
+                            st.plotly_chart(fig_donut_act_mr, use_container_width=True)
+
+                # ==========================================
+                # SUB-TAB 4: ACTUAL VITAMIN A
+                # ==========================================
+                with tab_act_va:
+                    st.markdown(f"#### Actual Vitamin A Breakdown (RHU Census): {location_label}")
+                    if va_warning:
+                        st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
+                    
+                    act_va_age = st.selectbox("Select Actual Vit A Age Group:", ["6 - 59 months (Total)", "6 - 11 months", "12 - 59 months"], key="act_va_age_sel")
+                    act_va_map = {
+                        "6 - 59 months (Total)": 'Act_VitA_Total',
+                        "6 - 11 months": 'Act_VitA_6-11m_Total',
+                        "12 - 59 months": 'Act_VitA_12-59m_Total'
+                    }
+                    act_plot_col_va = act_va_map[act_va_age]
+                    
+                    st.metric(f"Total Actual Target", f"{df_view_va[act_plot_col_va].sum():,.0f}")
+                    
+                    if not df_view_va.empty:
+                        c1, c2 = st.columns([7, 3])
+                        with c1:
+                            df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
+                            fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
+                            fig_act_va.update_layout(xaxis_title="Actual Eligible Children", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
+                            st.plotly_chart(fig_act_va, use_container_width=True)
+                        with c2:
+                            act_va_age_data = pd.DataFrame({
+                                'Age Group': ['6-11m', '12-59m'], 
+                                'Target': [df_view_va['Act_VitA_6-11m_Total'].sum(), df_view_va['Act_VitA_12-59m_Total'].sum()]
+                            })
+                            fig_donut_act_va = px.pie(act_va_age_data, names='Age Group', values='Target', hole=0.4, title="Actual Age Distribution", color_discrete_sequence=['#8E24AA', '#00ACC1'])
+                            fig_donut_act_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
+                            st.plotly_chart(fig_donut_act_va, use_container_width=True)
+
+                # ==========================================
+                # SUB-TAB 5: COMPARISON (NATIONAL VS ACTUAL)
+                # ==========================================
+                with tab_compare:
+                    st.markdown(f"#### ⚖️ Target Variance Analysis: {location_label}")
+                    st.write("Compare the baseline National allocations against the Actual RHU reported census to identify geographic shortfalls or over-allocations.")
+                    
+                    comp_prog = st.radio("Select Program for Comparison:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
+                    
+                    if comp_prog == "Measles-Rubella (MR)":
+                        df_comp = df_view.copy()
+                        nat_col = 'MR_6-59m_Total'
+                        act_col = 'Act_MR_6-59m_Total'
+                    else:
+                        df_comp = df_view_va.copy()
+                        nat_col = 'VitA_Total'
+                        act_col = 'Act_VitA_Total'
+                        if va_warning:
+                            st.warning("⚠️ Vitamin A comparisons are limited to the Municipal level.")
                             
-                    with st.expander("📂 View & Download Vit A Targets"):
-                        va_df = df_view_va[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 'VitA_Total', 'Act_VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total']]
-                        st.dataframe(va_df, use_container_width=True, hide_index=True)
-                        csv_va = va_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download Vit A Data", data=csv_va, file_name=f"VitA_Targets_{location_label}_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", type="primary", key="dl_va")
+                    if not df_comp.empty:
+                        # 1. Prepare Variance Logic
+                        df_comp['Variance'] = df_comp[act_col] - df_comp[nat_col]
+                        
+                        # Calculate high-level summary KPIs
+                        total_nat_comp = df_comp[nat_col].sum()
+                        total_act_comp = df_comp[act_col].sum()
+                        total_variance = total_act_comp - total_nat_comp
+                        
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Sum: National Target", f"{total_nat_comp:,.0f}")
+                        c2.metric("Sum: Actual Target", f"{total_act_comp:,.0f}")
+                        c3.metric("Net Variance", f"{total_variance:,.0f}", delta_color="inverse")
+                        
+                        st.write("")
+                        
+                        # 2. Side-by-Side Visual Comparison (Plotly Grouped Bar)
+                        df_melt = df_comp.melt(id_vars=['Location'], value_vars=[nat_col, act_col], var_name='Target Type', value_name='Target Count')
+                        df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'National Target', act_col: 'Actual RHU Target'})
+                        
+                        fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
+                        fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, legend_title_text="")
+                        st.plotly_chart(fig_comp, use_container_width=True)
+                        
+                        # 3. Variance Data Table
+                        st.markdown("##### Detailed Breakdown")
+                        df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
+                            nat_col: 'National Target',
+                            act_col: 'Actual Target'
+                        })
+                        st.dataframe(df_table, use_container_width=True, hide_index=True)
 
         with tab_mr:
             st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
