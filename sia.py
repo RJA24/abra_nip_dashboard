@@ -394,6 +394,24 @@ def fetch_targets_from_supabase():
             
     return df.rename(columns=col_mapping)
 
+@st.cache_data(ttl="10m")
+def fetch_live_accomplishments():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # skiprows=1 tells Pandas to treat Row 2 as the actual column headers
+        df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
+        df_vita = conn.read(spreadsheet=sheet_url, worksheet="VitA", skiprows=1)
+        
+        # Clean up empty rows
+        if 'Barangay' in df_mr.columns:
+            df_mr = df_mr.dropna(subset=['Barangay'])
+        if 'Barangay' in df_vita.columns:
+            df_vita = df_vita.dropna(subset=['Barangay'])
+            
+        return df_mr, df_vita
+    except Exception as e:
+        return pd.DataFrame(), pd.DataFrame()
+
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
@@ -702,33 +720,33 @@ try:
     with tab_mr:
         st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
         
-        # Fetch daily doses safely
-        try:
-            res_doses = supabase.table('rhu_disaggregated').select('*').execute()
-            df_doses = pd.DataFrame(res_doses.data) if res_doses.data else pd.DataFrame()
-        except:
-            df_doses = pd.DataFrame()
-
-        # Filter doses to match the current geographic view
-        if not df_doses.empty:
-            if view_mode == "Province-wide (Compare Municipalities)":
-                df_doses = df_doses[df_doses['municipality'].isin(df_view['Location'].tolist())]
-            elif view_mode == "Specific Municipality (Compare Barangays)":
-                df_doses = df_doses[(df_doses['municipality'] == selected_muni) & (df_doses['barangay'].isin(df_view['Location'].tolist()))]
+        df_mr_live, _ = fetch_live_accomplishments()
+        
+        total_mr_doses = 0
+        if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
+            df_mr_filtered = df_mr_live.copy()
             
-            # Calculate total administered MR doses (Male + Female for all age groups)
-            total_mr_doses = df_doses[['mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f']].sum().sum()
-        else:
-            total_mr_doses = 0
+            # Filter by Sidebar Geographic View
+            if view_mode == "Province-wide (Compare Municipalities)":
+                df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+            elif view_mode == "Specific Municipality (Compare Barangays)":
+                df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+            
+            # Map the exact column names from your Google Sheet
+            mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+            
+            # Convert to numbers and sum
+            for col in mr_dose_cols:
+                if col in df_mr_filtered.columns:
+                    df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            
+            total_mr_doses = df_mr_filtered[mr_dose_cols].sum().sum()
+        elif not df_mr_live.empty:
+            st.warning("⚠️ 'Municipality' column not found in Master MR Sheet. Please check the Apps Script and Header setup.")
 
         # Get Targets from Database
         nat_target = df_view['MR_6-59m_Total'].sum()
-        
-        # Fetch Actual Target dynamically (fallback to 0 if not synced or missing)
-        if 'actual_mr_6_59m_total' in df_view.columns:
-            act_target = df_view['actual_mr_6_59m_total'].sum()
-        else:
-            act_target = 0
+        act_target = df_view['Act_MR_6-59m_Total'].sum() if 'Act_MR_6-59m_Total' in df_view.columns else 0
 
         # Calculate Coverage Percentages safely
         nat_cov = (total_mr_doses / nat_target * 100) if nat_target > 0 else 0
@@ -749,16 +767,54 @@ try:
         col_mr4.metric("🚨 Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
         
         st.divider()
-        st.info("🚧 Sub-charts for Deferrals, Refusals, and Age-Group breakdowns will populate here as VaccTrack data flows in.")
+        st.info("🚧 Sub-charts for Deferrals, Refusals, and Age-Group breakdowns will populate here shortly.")
 
     with tab_vita:
-        st.markdown("### 💊 Vitamin A Accomplishment")
+        st.markdown(f"### 💊 Vitamin A Accomplishment: {location_label}")
+        
+        _, df_vita_live = fetch_live_accomplishments()
+        
+        total_vita_doses = 0
+        if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+            df_vita_filtered = df_vita_live.copy()
+            
+            # Filter by Sidebar Geographic View
+            if view_mode == "Province-wide (Compare Municipalities)":
+                df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
+            elif view_mode == "Specific Municipality (Compare Barangays)":
+                df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+            
+            # Map the exact column names from your Google Sheet
+            vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
+            
+            # Convert to numbers and sum
+            for col in vita_dose_cols:
+                if col in df_vita_filtered.columns:
+                    df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            
+            total_vita_doses = df_vita_filtered[vita_dose_cols].sum().sum()
+            
+        # Get Targets from Database
+        nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
+        act_target_va = df_view_va['Act_VitA_Total'].sum() if not df_view_va.empty and 'Act_VitA_Total' in df_view_va.columns else 0
+
+        # Calculate Coverage
+        nat_cov_va = (total_vita_doses / nat_target_va * 100) if nat_target_va > 0 else 0
+        act_cov_va = (total_vita_doses / act_target_va * 100) if act_target_va > 0 else 0
+
+        # UI Display - 4 KPI Cards
         col_va1, col_va2, col_va3, col_va4 = st.columns(4)
-        col_va1.metric("Coverage Target", "0%")
-        col_va2.metric("Total Doses Administered", "0")
-        col_va3.metric("⚠️ Total Deferrals", "0")
-        col_va4.metric("🚨 Total Refusals", "0")
-        st.info("🚧 Vitamin A analytical engine ready. Awaiting VaccTrack Sync.")
+        col_va1.metric("💊 Total Doses Administered", f"{total_vita_doses:,.0f}")
+        col_va2.metric("🎯 National Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Nat. Target", delta_color="off")
+        
+        if act_target_va > 0:
+            col_va3.metric("📊 Actual RHU Coverage %", f"{act_cov_va:.1f}%", f"{act_target_va:,.0f} Act. Target", delta_color="off")
+        else:
+            col_va3.metric("📊 Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
+            
+        variance_va = act_target_va - nat_target_va
+        var_label_va = "More than National" if variance_va > 0 else "Less than National"
+        col_va4.metric("🚨 Variance (Act vs Nat)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
         
     with tab_wastage:
         st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
@@ -853,15 +909,7 @@ try:
                         st.cache_data.clear()
                     except Exception as e:
                         st.error(f"Target Sync Failed: {e}")
-            
-            st.divider()
-
-            st.markdown("### 📥 Phase 2: VaccTrack Raw Data Sync")
-            st.write("Upload the daily export from the `VaccTrack_Raw` Google Sheet into the Accomplishment Database. This powers the MR, Vit A, and Wastage tabs.")
-            
-            if st.button("Sync Daily VaccTrack Accomplishments", type="primary", use_container_width=True):
-                 st.info("Pipeline ready! We will connect this mapping engine once the Vit A target format is confirmed and you have pasted your first batch of export data.")
-            
+                       
             st.divider()
             
             st.markdown("### 🔐 User Account Management")
