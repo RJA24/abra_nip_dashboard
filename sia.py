@@ -717,6 +717,9 @@ try:
                     })
                     st.dataframe(df_table, use_container_width=True, hide_index=True)
 
+    # ==========================================
+    # MR ACCOMPLISHMENT TAB
+    # ==========================================
     with tab_mr:
         st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
         
@@ -740,9 +743,11 @@ try:
                 if col in df_mr_filtered.columns:
                     df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
             
-            total_mr_doses = df_mr_filtered[mr_dose_cols].sum().sum()
-        elif not df_mr_live.empty:
-            st.warning("⚠️ 'Municipality' column not found in Master MR Sheet. Please check the Apps Script and Header setup.")
+            # Add a Total Doses column for easy charting
+            df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1)
+            total_mr_doses = df_mr_filtered['Total Doses'].sum()
+        else:
+            df_mr_filtered = pd.DataFrame()
 
         # Get Targets from Database
         nat_target = df_view['MR_6-59m_Total'].sum()
@@ -767,8 +772,72 @@ try:
         col_mr4.metric("🚨 Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
         
         st.divider()
-        st.info("🚧 Sub-charts for Deferrals, Refusals, and Age-Group breakdowns will populate here shortly.")
+        
+        # --- MR CHARTS & ANALYTICS ---
+        st.markdown("#### 📈 Accomplishment Analytics")
+        if not df_mr_filtered.empty:
+            geo_col = 'Municipality' if view_mode != "Specific Municipality (Compare Barangays)" else 'Barangay'
+            
+            # Ensure Date is parsed
+            if 'Vaccination Date' in df_mr_filtered.columns:
+                df_mr_filtered['Vaccination Date'] = pd.to_datetime(df_mr_filtered['Vaccination Date'], errors='coerce')
+                
+            c1, c2 = st.columns([7, 3])
+            
+            with c1:
+                # 1. Timeline Line Chart
+                if 'Vaccination Date' in df_mr_filtered.columns and not df_mr_filtered['Vaccination Date'].isna().all():
+                    df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                    fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
+                    fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_time, use_container_width=True)
+                
+                # 2. Geographic Bar Chart
+                if geo_col in df_mr_filtered.columns:
+                    df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
+                    fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
+                    fig_geo.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_geo, use_container_width=True)
+                    
+            with c2:
+                # 3. Age Group Donut Chart
+                mr_6_12 = df_mr_filtered[['MR 6-12 Male', 'MR 6-12 Female']].sum().sum()
+                mr_13_23 = df_mr_filtered[['MR 13-23 Male', 'MR 13-23 Female']].sum().sum()
+                mr_24_59 = df_mr_filtered[['MR 24-59 Male', 'MR 24-59 Female']].sum().sum()
+                
+                df_age = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Doses': [mr_6_12, mr_13_23, mr_24_59]})
+                fig_age = px.pie(df_age, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
+                fig_age.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_age, use_container_width=True)
+                
+                # 4. Gender Donut Chart
+                mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
+                mr_female = df_mr_filtered[['MR 6-12 Female', 'MR 13-23 Female', 'MR 24-59 Female']].sum().sum()
+                
+                df_gender = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [mr_male, mr_female]})
+                fig_gender = px.pie(df_gender, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
+                fig_gender.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_gender, use_container_width=True)
+                
+            st.divider()
+            
+            # --- RAW DATA DOWNLOAD ---
+            st.markdown("#### 📥 Raw Data Export")
+            with st.expander("View & Download Raw MR Accomplishment Data"):
+                st.dataframe(df_mr_filtered, use_container_width=True)
+                csv_mr = df_mr_filtered.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download MR Data (CSV)",
+                    data=csv_mr,
+                    file_name=f"MR_Accomplishment_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("Awaiting VaccTrack Sync to populate analytics.")
 
+    # ==========================================
+    # VITAMIN A ACCOMPLISHMENT TAB
+    # ==========================================
     with tab_vita:
         st.markdown(f"### 💊 Vitamin A Accomplishment: {location_label}")
         
@@ -792,7 +861,11 @@ try:
                 if col in df_vita_filtered.columns:
                     df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
             
-            total_vita_doses = df_vita_filtered[vita_dose_cols].sum().sum()
+            # Add a Total Doses column for easy charting
+            df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1)
+            total_vita_doses = df_vita_filtered['Total Doses'].sum()
+        else:
+            df_vita_filtered = pd.DataFrame()
             
         # Get Targets from Database
         nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
@@ -815,6 +888,69 @@ try:
         variance_va = act_target_va - nat_target_va
         var_label_va = "More than National" if variance_va > 0 else "Less than National"
         col_va4.metric("🚨 Variance (Act vs Nat)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
+        
+        st.divider()
+
+        # --- VITAMIN A CHARTS & ANALYTICS ---
+        st.markdown("#### 📈 Accomplishment Analytics")
+        if not df_vita_filtered.empty:
+            geo_col_va = 'Municipality' if view_mode != "Specific Municipality (Compare Barangays)" else 'Barangay'
+            
+            # Ensure Date is parsed
+            if 'Vaccination Date' in df_vita_filtered.columns:
+                df_vita_filtered['Vaccination Date'] = pd.to_datetime(df_vita_filtered['Vaccination Date'], errors='coerce')
+                
+            c1_va, c2_va = st.columns([7, 3])
+            
+            with c1_va:
+                # 1. Timeline Line Chart
+                if 'Vaccination Date' in df_vita_filtered.columns and not df_vita_filtered['Vaccination Date'].isna().all():
+                    df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                    fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
+                    fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_time_va, use_container_width=True)
+                
+                # 2. Geographic Bar Chart
+                if geo_col_va in df_vita_filtered.columns:
+                    df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
+                    fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
+                    fig_geo_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
+                    st.plotly_chart(fig_geo_va, use_container_width=True)
+                    
+            with c2_va:
+                # 3. Age Group Donut Chart
+                va_6_11 = df_vita_filtered[['VitA 6-11 Male', 'VitA 6-11 Female']].sum().sum()
+                va_12_59 = df_vita_filtered[['VitA 12-59 Male', 'VitA 12-59 Female']].sum().sum()
+                
+                df_age_va = pd.DataFrame({'Age Group': ['6-11m', '12-59m'], 'Doses': [va_6_11, va_12_59]})
+                fig_age_va = px.pie(df_age_va, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#00ACC1', '#8E24AA'])
+                fig_age_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_age_va, use_container_width=True)
+                
+                # 4. Gender Donut Chart
+                va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
+                va_female = df_vita_filtered[['VitA 6-11 Female', 'VitA 12-59 Female']].sum().sum()
+                
+                df_gender_va = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [va_male, va_female]})
+                fig_gender_va = px.pie(df_gender_va, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
+                fig_gender_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_gender_va, use_container_width=True)
+
+            st.divider()
+            
+            # --- RAW DATA DOWNLOAD ---
+            st.markdown("#### 📥 Raw Data Export")
+            with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
+                st.dataframe(df_vita_filtered, use_container_width=True)
+                csv_va = df_vita_filtered.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Vitamin A Data (CSV)",
+                    data=csv_va,
+                    file_name=f"VitA_Accomplishment_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
+                    mime="text/csv"
+                )
+        else:
+            st.info("Awaiting VaccTrack Sync to populate analytics.")
         
     with tab_wastage:
         st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
