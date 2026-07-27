@@ -12,7 +12,7 @@ from supabase import create_client, Client
 # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="CAR SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -100,7 +100,7 @@ if st.session_state['logged_in']:
         st.session_state['last_active'] = current_time
 
 # ==========================================
-# 4. THE GATEWAY (Login, Registration & Recovery)
+# 4. THE GATEWAY (Simplified Login)
 # ==========================================
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
@@ -108,147 +108,74 @@ if not st.session_state['logged_in']:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.title("🔒 CAR SIA 2026")
-        st.markdown("##### Secure Regional Command Center")
+        st.title("🔒 Abra SIA 2026")
+        st.markdown("##### Secure Provincial Command Center")
         st.divider()
         
-        tab_login, tab_signup, tab_forgot = st.tabs(["🔑 Log In", "📝 Request Account", "❓ Forgot Password"])
-        
-        with tab_login:
-            with st.form("login_form"):
-                input_username = st.text_input("Username").strip()
-                input_password = st.text_input("Password", type="password")
-                submit_login = st.form_submit_button("Log In", type="primary", use_container_width=True)
-                
-                if submit_login:
-                    if not input_username or not input_password:
-                        st.warning("Please enter both username and password.")
-                    else:
-                        try:
-                            res = supabase.table('user_accounts').select('*').eq('username', input_username).execute()
-                            user_records = res.data
-                            
-                            if user_records:
-                                user_data = user_records[0]
-                                stored_hash = user_data.get('password_hash', '')
-                                account_status = user_data.get('account_status', 'Pending')
-                                failed_attempts = user_data.get('failed_attempts', 0)
-                                MAX_ATTEMPTS = 3
-                                
-                                if account_status == "Locked":
-                                    st.error("🚨 Your account is locked. Please contact a System Admin to unlock it.")
-                                elif account_status == "Approved":
-                                    if check_hashes(input_password, stored_hash):
-                                        if failed_attempts > 0:
-                                            supabase.table('user_accounts').update({'failed_attempts': 0}).eq('username', input_username).execute()
-                                        
-                                        db_name = user_data['name']
-                                        db_role = user_data['role']
-                                        db_muni = user_data.get('assigned_municipality', 'None')
-                                        
-                                        manila_tz = pytz.timezone('Asia/Manila')
-                                        current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-                                        supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
-                                        
-                                        st.session_state['logged_in'] = True
-                                        st.session_state['username'] = input_username 
-                                        st.session_state['user_name'] = db_name
-                                        st.session_state['user_role'] = db_role
-                                        st.session_state['assigned_muni'] = db_muni
-                                        st.session_state['last_active'] = time.time()
-                                        
-                                        st.toast(f"Welcome back, {db_name}!", icon="👋")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else:
-                                        failed_attempts += 1
-                                        if failed_attempts >= MAX_ATTEMPTS:
-                                            supabase.table('user_accounts').update({'failed_attempts': failed_attempts, 'account_status': 'Locked'}).eq('username', input_username).execute()
-                                            st.error("🚨 Maximum login attempts reached. Your account is now locked.")
-                                        else:
-                                            supabase.table('user_accounts').update({'failed_attempts': failed_attempts}).eq('username', input_username).execute()
-                                            st.error(f"❌ Incorrect Password. Attempt {failed_attempts} of {MAX_ATTEMPTS}.")
-                                elif account_status == "Pending":
-                                    st.warning("⏳ Your account request is still pending admin approval.")
-                                elif account_status == "Pending Reset":
-                                    st.warning("🔄 Your password reset request is pending admin approval.")
-                                else:
-                                    st.error("🚫 Your account access has been denied or revoked.")
-                            else:
-                                st.error("❌ Username not found.")
-                        except Exception as e:
-                            st.error(f"System Error: {e}")
-
-        with tab_signup:
-            st.info("Submitted requests are reviewed by a System Admin before access is granted.")
-            new_role = st.selectbox("Designation / Role", ["Municipal Health Office", "DOH Regional Office", "Provincial Health Office", "System Admin",  "Data Encoder", "Guest / Viewer"])
+        with st.form("login_form"):
+            input_username = st.text_input("Username").strip()
+            input_password = st.text_input("Password", type="password")
             
-            with st.form("signup_form"):
-                new_name = st.text_input("Full Name")
-                
-                if new_role in ["Municipal Health Office", "Data Encoder"]:
-                    new_muni = st.selectbox("Assigned Municipality", abra_munis)
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.caption("📌 **For RHU Viewers Only:** Please select your municipality so we can log your visit.")
+            viewer_rhu = st.selectbox("Your Municipality", ["Select Municipality..."] + abra_munis)
+            
+            submit_login = st.form_submit_button("Log In", type="primary", use_container_width=True)
+            
+            if submit_login:
+                if not input_username or not input_password:
+                    st.warning("Please enter both username and password.")
                 else:
-                    new_muni = "None"
-                    
-                new_contact = st.text_input("Official Contact (Email or Viber Number)", placeholder="Used for account verification")
-                new_username = st.text_input("Desired Username").strip()
-                new_password = st.text_input("Create Password", type="password")
-                confirm_password = st.text_input("Confirm Password", type="password")
-                
-                submit_signup = st.form_submit_button("Submit Request", type="primary", use_container_width=True)
-                
-                if submit_signup:
-                    if not all([new_name, new_role, new_contact, new_username, new_password, confirm_password]):
-                        st.warning("Please fill out all fields.")
-                    elif new_password != confirm_password:
-                        st.error("Passwords do not match!")
-                    else:
-                        try:
-                            res = supabase.table('user_accounts').select('username').eq('username', new_username).execute()
-                            if res.data:
-                                st.error("⚠️ That username is already taken. Please choose another.")
+                    try:
+                        res = supabase.table('user_accounts').select('*').eq('username', input_username).execute()
+                        user_records = res.data
+                        
+                        if user_records:
+                            user_data = user_records[0]
+                            stored_hash = user_data.get('password_hash', '')
+                            db_role = user_data.get('role', '')
+                            
+                            # Enforce RHU selection for non-admins
+                            if db_role != "System Admin" and viewer_rhu == "Select Municipality...":
+                                st.error("🚨 You must select your Municipality to log in.")
                             else:
-                                hashed_pw = make_hashes(new_password)
-                                supabase.table('user_accounts').insert({
-                                    "username": new_username, "password_hash": hashed_pw, "name": new_name.strip(),
-                                    "role": new_role, "assigned_municipality": new_muni, "account_status": "Pending", 
-                                    "contact_info": new_contact.strip(), "failed_attempts": 0 
-                                }).execute()
-                                st.success("✅ Request submitted! Please wait for admin approval.")
-                        except Exception as e:
-                            st.error(f"Registration Error: {e}")
+                                if check_hashes(input_password, stored_hash):
+                                    
+                                    # Override name and muni for visitors based on their dropdown selection
+                                    if db_role != "System Admin":
+                                        db_name = f"RHU Visitor ({viewer_rhu})"
+                                        db_muni = viewer_rhu
+                                    else:
+                                        db_name = user_data['name']
+                                        db_muni = "Abra Province"
+                                    
+                                    manila_tz = pytz.timezone('Asia/Manila')
+                                    current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
+                                    supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
+                                    
+                                    st.session_state['logged_in'] = True
+                                    st.session_state['username'] = input_username 
+                                    st.session_state['user_name'] = db_name
+                                    st.session_state['user_role'] = db_role
+                                    st.session_state['assigned_muni'] = db_muni
+                                    st.session_state['last_active'] = time.time()
+                                    
+                                    st.toast(f"Welcome, {db_name}!", icon="👋")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Incorrect Password.")
+                        else:
+                            st.error("❌ Username not found.")
+                    except Exception as e:
+                        st.error(f"System Error: {e}")
 
-        with tab_forgot:
-            with st.form("forgot_password_form"):
-                st.info("An Admin must approve this reset before you can log in.")
-                reset_username = st.text_input("Your Username").strip()
-                reset_new_password = st.text_input("New Password", type="password")
-                reset_confirm_password = st.text_input("Confirm New Password", type="password")
-                
-                submit_reset = st.form_submit_button("Request Password Reset", use_container_width=True)
-                
-                if submit_reset:
-                    if not all([reset_username, reset_new_password, reset_confirm_password]):
-                        st.warning("Please fill out all fields.")
-                    elif reset_new_password != reset_confirm_password:
-                        st.error("Passwords do not match!")
-                    else:
-                        try:
-                            res = supabase.table('user_accounts').select('username').eq('username', reset_username).execute()
-                            if res.data:
-                                supabase.table('user_accounts').update({'password_hash': make_hashes(reset_new_password), 'account_status': 'Pending Reset', 'failed_attempts': 0}).eq('username', reset_username).execute()
-                                st.success("✅ Reset request sent! Your account is locked until Admin approval.")
-                            else:
-                                st.error("⚠️ Username not found.")
-                        except Exception as e:
-                            st.error(f"Reset Error: {e}")
     st.stop()
 
 # ==========================================
 # MAIN DASHBOARD CODE (Only runs if logged in)
 # ==========================================
-st.title("Cordillera Administrative Region (CAR) SIA 2026")
+st.title("Abra Supplemental Immunization Activity (SIA) 2026")
 
 @st.cache_data(ttl="15s")
 def get_last_updated_time():
@@ -257,12 +184,10 @@ def get_last_updated_time():
 
 last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
-is_encoder = st.session_state['user_role'] in ["Municipal Health Office", "Data Encoder", "System Admin"]
 
 with st.sidebar:
-    # 1. NEW PRO-LOOKING PROFILE CARD
+    # 1. PROFILE CARD
     user_territory = st.session_state.get('assigned_muni', 'None')
-    muni_display = f"{user_territory}" if user_territory != "None" else "Regional Access"
     
     st.markdown(f"""
     <div style="text-align: center; padding: 10px 0px 15px 0px;">
@@ -270,16 +195,22 @@ with st.sidebar:
         <h3 style="margin: 0; padding: 0; font-size: 1.15rem; font-weight: 700;">{st.session_state['user_name']}</h3>
         <p style="margin: 2px 0 12px 0; font-size: 0.85rem; opacity: 0.8; font-style: italic;">{st.session_state['user_role']}</p>
         <span style="background-color: rgba(128,128,128,0.15); border: 1px solid rgba(128,128,128,0.3); color: inherit; padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; letter-spacing: 0.5px;">
-            📍 {muni_display.upper()}
+            📍 {user_territory.upper()}
         </span>
     </div>
     """, unsafe_allow_html=True)
     
     st.divider()
     
-    # 2. Dynamic Filters (Inside an Expander)
+    # 2. Dynamic Filters (Abra Only)
     with st.expander("🎛️ DASHBOARD FILTERS", expanded=False):
-        view_mode = st.radio("Geographic Level:", ["Region-wide (Compare Provinces)", "Province-wide (Compare Municipalities)", "Specific Municipality (Compare Barangays)"])
+        view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"])
+        
+        if view_mode == "Specific Municipality":
+            selected_muni = st.selectbox("Select Municipality:", abra_munis)
+        else:
+            selected_muni = "None"
+            
         st.write("")
         # The Universal Program & Age Filter
         age_filter = st.selectbox("Program & Age Group:", [
@@ -287,44 +218,10 @@ with st.sidebar:
             "Vit A: 6 - 59 months (Total)", "Vit A: 6 - 11 months", "Vit A: 12 - 59 months"
         ])
 
-        # NEW: Universal Gender Filter
+        # Universal Gender Filter
         gender_filter = st.selectbox("Target Gender:", ["Total (Both)", "Male", "Female"])
-        st.write("")
         
-        # The placeholder container for the dynamic location dropdowns
-        geo_filters_container = st.container()
-        
-    # 3. Account Settings
-    with st.expander("⚙️ ACCOUNT SETTINGS", expanded=False):
-        with st.form("change_password_form"):
-            st.caption("Change Your Password")
-            current_pw = st.text_input("Current Password", type="password")
-            new_pw = st.text_input("New Password", type="password")
-            confirm_new_pw = st.text_input("Confirm New Password", type="password")
-            submit_pw_change = st.form_submit_button("Update Password", use_container_width=True)
-
-            if submit_pw_change:
-                if not current_pw or not new_pw or not confirm_new_pw:
-                    st.error("Please fill all fields.")
-                elif new_pw != confirm_new_pw:
-                    st.error("New passwords do not match.")
-                else:
-                    try:
-                        res = supabase.table('user_accounts').select('password_hash').eq('username', st.session_state['username']).execute()
-                        if res.data:
-                            stored_hash = res.data[0]['password_hash']
-                            if check_hashes(current_pw, stored_hash):
-                                new_hash = make_hashes(new_pw)
-                                supabase.table('user_accounts').update({'password_hash': new_hash}).eq('username', st.session_state['username']).execute()
-                                st.success("✅ Password successfully updated!")
-                            else:
-                                st.error("❌ Current password is incorrect.")
-                        else:
-                            st.error("Account verification failed.")
-                    except Exception as e:
-                        st.error(f"Error updating password: {e}")
-
-    # 4. System Actions
+    # 3. System Actions
     with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
@@ -378,7 +275,7 @@ def fetch_targets_from_supabase():
         'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
         'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
         'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
-        # ACTUALS TARGETS (TOTALS & GENDERS)
+        # ACTUALS TARGETS
         'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
         'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
         'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
@@ -398,11 +295,9 @@ def fetch_targets_from_supabase():
 def fetch_live_accomplishments():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # skiprows=1 tells Pandas to treat Row 2 as the actual column headers
         df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
         df_vita = conn.read(spreadsheet=sheet_url, worksheet="VitA", skiprows=1)
         
-        # Clean up empty rows
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
         if 'Barangay' in df_vita.columns:
@@ -415,7 +310,6 @@ def fetch_live_accomplishments():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-# Reordered tabs to make Executive Summary first
 tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals"]
 if is_admin:
     tab_names.append("🛡️ Admin Panel")
@@ -432,45 +326,25 @@ try:
         st.info("🚧 Executive Summary will populate once data streams are connected.")
 
     with tab_target:
-        st.markdown("### Regional Target Baseline Overview")
+        st.markdown("### Provincial Target Baseline Overview")
         df_targets = fetch_targets_from_supabase()
         
         if df_targets.empty:
             st.warning("⚠️ The Targets Database is empty. Please ask a System Admin to sync the database from Google Sheets.")
         else:
-            # 1. Geographic Filtering (Applies to all sub-tabs)
-            selected_prov, selected_muni = "CAR_Region", ""
-            
-            if view_mode == "Region-wide (Compare Provinces)":
-                df_view = df_targets[df_targets['Level'] == 'Province']
-                location_label = "CAR Region"
-            elif view_mode == "Province-wide (Compare Municipalities)":
-                province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
-                default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                with geo_filters_container:
-                    selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
-                df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]
-                location_label = f"{selected_prov} Province"
-            else: 
-                province_list = df_targets[df_targets['Level'] == 'Province']['Location'].unique().tolist()
-                default_prov_idx = province_list.index("Abra") if "Abra" in province_list else 0
-                with geo_filters_container:
-                    selected_prov = st.selectbox("Select Province:", province_list, index=default_prov_idx)
-                    muni_list = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == selected_prov)]['Location'].unique().tolist()
-                    default_muni_idx = muni_list.index("Manabo") if "Manabo" in muni_list else 0
-                    selected_muni = st.selectbox("Select Municipality:", muni_list, index=default_muni_idx)
-                df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
-                location_label = f"{selected_muni}, {selected_prov}"
-
-            # 2. Vitamin A Fallback Logic (Needed for all Vit A tabs)
-            if view_mode == "Specific Municipality (Compare Barangays)":
-                df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
-                va_warning = True
-            else:
-                df_view_va = df_view
+            # 1. Geographic Filtering (Locked to Abra)
+            if view_mode == "All Municipalities (Abra)":
+                df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == 'Abra')]
+                location_label = "Abra Province"
                 va_warning = False
+                df_view_va = df_view
+            else:
+                df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
+                location_label = f"{selected_muni}, Abra"
+                va_warning = True
+                df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
 
-            # 3. Create 5 Distinct Sub-Tabs
+            # 2. Create 5 Distinct Sub-Tabs
             tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
                 "💉 Nat. MR Targets", "💊 Nat. Vit A Targets", 
                 "📊 Act. MR Targets", "📈 Act. Vit A Targets", 
@@ -483,20 +357,17 @@ try:
             with tab_nat_mr:
                 st.markdown(f"#### National MR Breakdown: {location_label} ({gender_filter})")
                 
-                # Map columns based on sidebar gender filter
                 t_col = 'MR_6-59m_Total' if gender_filter == "Total (Both)" else 'MR_6-59m_M' if gender_filter == "Male" else 'MR_6-59m_F'
                 c1_col = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
                 c2_col = 'MR_13-23m_Total' if gender_filter == "Total (Both)" else 'MR_13-23m_M' if gender_filter == "Male" else 'MR_13-23m_F'
                 c3_col = 'MR_24-59m_Total' if gender_filter == "Total (Both)" else 'MR_24-59m_M' if gender_filter == "Male" else 'MR_24-59m_F'
                 
-                # 4 Metric Cards Layout
                 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
                 kpi1.metric("6 - 59m (Grand Total)", f"{df_view[t_col].sum():,.0f}")
                 kpi2.metric("6 - 12 months", f"{df_view[c1_col].sum():,.0f}")
                 kpi3.metric("13 - 23 months", f"{df_view[c2_col].sum():,.0f}")
                 kpi4.metric("24 - 59 months", f"{df_view[c3_col].sum():,.0f}")
                 
-                # Dynamic Bar Chart Selection based on Sidebar Age Filter
                 if age_filter == "MR: 6 - 12 months":
                     plot_col = c1_col
                     chart_title = f"Eligible Children (6-12m, {gender_filter})"
@@ -538,13 +409,11 @@ try:
                 c1_col_va = 'VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'VitA_6-11m_M' if gender_filter == "Male" else 'VitA_6-11m_F'
                 c2_col_va = 'VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'VitA_12-59m_M' if gender_filter == "Male" else 'VitA_12-59m_F'
                 
-                # 3 Metric Cards Layout
                 kpi1, kpi2, kpi3 = st.columns(3)
                 kpi1.metric("Total Vit A Eligible", f"{df_view_va[t_col_va].sum():,.0f}")
                 kpi2.metric("6 - 11 months", f"{df_view_va[c1_col_va].sum():,.0f}")
                 kpi3.metric("12 - 59 months", f"{df_view_va[c2_col_va].sum():,.0f}")
                 
-                # Dynamic Bar Chart Selection based on Sidebar Age Filter
                 if age_filter == "Vit A: 6 - 11 months":
                     plot_col_va = c1_col_va
                     chart_title_va = f"Eligible Children (6-11m, {gender_filter})"
@@ -576,21 +445,18 @@ try:
             # ==========================================
             with tab_act_mr:
                 st.markdown(f"#### Actual MR Breakdown (RHU Census): {location_label} ({gender_filter})")
-                st.info("Actual data reflects local RHU census tracking.")
                 
                 act_t_col = 'Act_MR_6-59m_Total' if gender_filter == "Total (Both)" else 'Act_MR_6-59m_M' if gender_filter == "Male" else 'Act_MR_6-59m_F'
                 act_c1_col = 'Act_MR_6-12m_Total' if gender_filter == "Total (Both)" else 'Act_MR_6-12m_M' if gender_filter == "Male" else 'Act_MR_6-12m_F'
                 act_c2_col = 'Act_MR_13-23m_Total' if gender_filter == "Total (Both)" else 'Act_MR_13-23m_M' if gender_filter == "Male" else 'Act_MR_13-23m_F'
                 act_c3_col = 'Act_MR_24-59m_Total' if gender_filter == "Total (Both)" else 'Act_MR_24-59m_M' if gender_filter == "Male" else 'Act_MR_24-59m_F'
                 
-                # 4 Metric Cards Layout
                 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
                 kpi1.metric("6 - 59m (Actual Grand Total)", f"{df_view[act_t_col].sum():,.0f}")
                 kpi2.metric("Actual 6 - 12 months", f"{df_view[act_c1_col].sum():,.0f}")
                 kpi3.metric("Actual 13 - 23 months", f"{df_view[act_c2_col].sum():,.0f}")
                 kpi4.metric("Actual 24 - 59 months", f"{df_view[act_c3_col].sum():,.0f}")
 
-                # Dynamic Bar Chart Selection based on Sidebar Age Filter
                 if age_filter == "MR: 6 - 12 months":
                     act_plot_col = act_c1_col
                     act_chart_title = f"Actual Eligible Children (6-12m, {gender_filter})"
@@ -632,13 +498,11 @@ try:
                 act_c1_col_va = 'Act_VitA_6-11m_Total' if gender_filter == "Total (Both)" else 'Act_VitA_6-11m_M' if gender_filter == "Male" else 'Act_VitA_6-11m_F'
                 act_c2_col_va = 'Act_VitA_12-59m_Total' if gender_filter == "Total (Both)" else 'Act_VitA_12-59m_M' if gender_filter == "Male" else 'Act_VitA_12-59m_F'
                 
-                # 3 Metric Cards Layout
                 kpi1, kpi2, kpi3 = st.columns(3)
                 kpi1.metric("Total Actual Vit A", f"{df_view_va[act_t_col_va].sum():,.0f}")
                 kpi2.metric("Actual 6 - 11 months", f"{df_view_va[act_c1_col_va].sum():,.0f}")
                 kpi3.metric("Actual 12 - 59 months", f"{df_view_va[act_c2_col_va].sum():,.0f}")
                 
-                # Dynamic Bar Chart Selection based on Sidebar Age Filter
                 if age_filter == "Vit A: 6 - 11 months":
                     act_plot_col_va = act_c1_col_va
                     act_chart_title_va = f"Actual Eligible Children (6-11m, {gender_filter})"
@@ -686,10 +550,8 @@ try:
                         st.warning("⚠️ Vitamin A comparisons are limited to the Municipal level.")
                         
                 if not df_comp.empty:
-                    # 1. Prepare Variance Logic
                     df_comp['Variance'] = df_comp[act_col] - df_comp[nat_col]
                     
-                    # Calculate high-level summary KPIs
                     total_nat_comp = df_comp[nat_col].sum()
                     total_act_comp = df_comp[act_col].sum()
                     total_variance = total_act_comp - total_nat_comp
@@ -701,7 +563,6 @@ try:
                     
                     st.write("")
                     
-                    # 2. Side-by-Side Visual Comparison (Plotly Grouped Bar)
                     df_melt = df_comp.melt(id_vars=['Location'], value_vars=[nat_col, act_col], var_name='Target Type', value_name='Target Count')
                     df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'National Target', act_col: 'Actual RHU Target'})
                     
@@ -709,7 +570,6 @@ try:
                     fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, legend_title_text="")
                     st.plotly_chart(fig_comp, use_container_width=True)
                     
-                    # 3. Variance Data Table
                     st.markdown("##### Detailed Breakdown")
                     df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
                         nat_col: 'National Target',
@@ -730,34 +590,28 @@ try:
             df_mr_filtered = df_mr_live.copy()
             
             # Filter by Sidebar Geographic View
-            if view_mode == "Province-wide (Compare Municipalities)":
+            if view_mode == "All Municipalities (Abra)":
                 df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
-            elif view_mode == "Specific Municipality (Compare Barangays)":
+            elif view_mode == "Specific Municipality":
                 df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
             
-            # Map the exact column names from your Google Sheet
             mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
             
-            # Convert to numbers and sum
             for col in mr_dose_cols:
                 if col in df_mr_filtered.columns:
                     df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
             
-            # Add a Total Doses column for easy charting
             df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1)
             total_mr_doses = df_mr_filtered['Total Doses'].sum()
         else:
             df_mr_filtered = pd.DataFrame()
 
-        # Get Targets from Database
         nat_target = df_view['MR_6-59m_Total'].sum()
         act_target = df_view['Act_MR_6-59m_Total'].sum() if 'Act_MR_6-59m_Total' in df_view.columns else 0
 
-        # Calculate Coverage Percentages safely
         nat_cov = (total_mr_doses / nat_target * 100) if nat_target > 0 else 0
         act_cov = (total_mr_doses / act_target * 100) if act_target > 0 else 0
 
-        # UI Display - 4 KPI Cards
         col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
         col_mr1.metric("💉 Total Doses Administered", f"{total_mr_doses:,.0f}")
         col_mr2.metric("🎯 National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Nat. Target", delta_color="off")
@@ -776,23 +630,20 @@ try:
         # --- MR CHARTS & ANALYTICS ---
         st.markdown("#### 📈 Accomplishment Analytics")
         if not df_mr_filtered.empty:
-            geo_col = 'Municipality' if view_mode != "Specific Municipality (Compare Barangays)" else 'Barangay'
+            geo_col = 'Municipality' if view_mode != "Specific Municipality" else 'Barangay'
             
-            # Ensure Date is parsed
             if 'Vaccination Date' in df_mr_filtered.columns:
                 df_mr_filtered['Vaccination Date'] = pd.to_datetime(df_mr_filtered['Vaccination Date'], errors='coerce')
                 
             c1, c2 = st.columns([7, 3])
             
             with c1:
-                # 1. Timeline Line Chart
                 if 'Vaccination Date' in df_mr_filtered.columns and not df_mr_filtered['Vaccination Date'].isna().all():
                     df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                     fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
                     fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig_time, use_container_width=True)
                 
-                # 2. Geographic Bar Chart
                 if geo_col in df_mr_filtered.columns:
                     df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                     fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
@@ -800,7 +651,6 @@ try:
                     st.plotly_chart(fig_geo, use_container_width=True)
                     
             with c2:
-                # 3. Age Group Donut Chart
                 mr_6_12 = df_mr_filtered[['MR 6-12 Male', 'MR 6-12 Female']].sum().sum()
                 mr_13_23 = df_mr_filtered[['MR 13-23 Male', 'MR 13-23 Female']].sum().sum()
                 mr_24_59 = df_mr_filtered[['MR 24-59 Male', 'MR 24-59 Female']].sum().sum()
@@ -810,7 +660,6 @@ try:
                 fig_age.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_age, use_container_width=True)
                 
-                # 4. Gender Donut Chart
                 mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
                 mr_female = df_mr_filtered[['MR 6-12 Female', 'MR 13-23 Female', 'MR 24-59 Female']].sum().sum()
                 
@@ -821,7 +670,6 @@ try:
                 
             st.divider()
             
-            # --- RAW DATA DOWNLOAD ---
             st.markdown("#### 📥 Raw Data Export")
             with st.expander("View & Download Raw MR Accomplishment Data"):
                 st.dataframe(df_mr_filtered, use_container_width=True)
@@ -848,34 +696,28 @@ try:
             df_vita_filtered = df_vita_live.copy()
             
             # Filter by Sidebar Geographic View
-            if view_mode == "Province-wide (Compare Municipalities)":
+            if view_mode == "All Municipalities (Abra)":
                 df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
-            elif view_mode == "Specific Municipality (Compare Barangays)":
+            elif view_mode == "Specific Municipality":
                 df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
             
-            # Map the exact column names from your Google Sheet
             vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
             
-            # Convert to numbers and sum
             for col in vita_dose_cols:
                 if col in df_vita_filtered.columns:
                     df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
             
-            # Add a Total Doses column for easy charting
             df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1)
             total_vita_doses = df_vita_filtered['Total Doses'].sum()
         else:
             df_vita_filtered = pd.DataFrame()
             
-        # Get Targets from Database
         nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
         act_target_va = df_view_va['Act_VitA_Total'].sum() if not df_view_va.empty and 'Act_VitA_Total' in df_view_va.columns else 0
 
-        # Calculate Coverage
         nat_cov_va = (total_vita_doses / nat_target_va * 100) if nat_target_va > 0 else 0
         act_cov_va = (total_vita_doses / act_target_va * 100) if act_target_va > 0 else 0
 
-        # UI Display - 4 KPI Cards
         col_va1, col_va2, col_va3, col_va4 = st.columns(4)
         col_va1.metric("💊 Total Doses Administered", f"{total_vita_doses:,.0f}")
         col_va2.metric("🎯 National Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Nat. Target", delta_color="off")
@@ -894,23 +736,20 @@ try:
         # --- VITAMIN A CHARTS & ANALYTICS ---
         st.markdown("#### 📈 Accomplishment Analytics")
         if not df_vita_filtered.empty:
-            geo_col_va = 'Municipality' if view_mode != "Specific Municipality (Compare Barangays)" else 'Barangay'
+            geo_col_va = 'Municipality' if view_mode != "Specific Municipality" else 'Barangay'
             
-            # Ensure Date is parsed
             if 'Vaccination Date' in df_vita_filtered.columns:
                 df_vita_filtered['Vaccination Date'] = pd.to_datetime(df_vita_filtered['Vaccination Date'], errors='coerce')
                 
             c1_va, c2_va = st.columns([7, 3])
             
             with c1_va:
-                # 1. Timeline Line Chart
                 if 'Vaccination Date' in df_vita_filtered.columns and not df_vita_filtered['Vaccination Date'].isna().all():
                     df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                     fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
                     fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
                     st.plotly_chart(fig_time_va, use_container_width=True)
                 
-                # 2. Geographic Bar Chart
                 if geo_col_va in df_vita_filtered.columns:
                     df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                     fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
@@ -918,7 +757,6 @@ try:
                     st.plotly_chart(fig_geo_va, use_container_width=True)
                     
             with c2_va:
-                # 3. Age Group Donut Chart
                 va_6_11 = df_vita_filtered[['VitA 6-11 Male', 'VitA 6-11 Female']].sum().sum()
                 va_12_59 = df_vita_filtered[['VitA 12-59 Male', 'VitA 12-59 Female']].sum().sum()
                 
@@ -927,7 +765,6 @@ try:
                 fig_age_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_age_va, use_container_width=True)
                 
-                # 4. Gender Donut Chart
                 va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
                 va_female = df_vita_filtered[['VitA 6-11 Female', 'VitA 12-59 Female']].sum().sum()
                 
@@ -938,7 +775,6 @@ try:
 
             st.divider()
             
-            # --- RAW DATA DOWNLOAD ---
             st.markdown("#### 📥 Raw Data Export")
             with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
                 st.dataframe(df_vita_filtered, use_container_width=True)
@@ -966,7 +802,7 @@ try:
             st.info("🚧 C1-C23 Pareto Chart Placeholder")
 
     # ==========================================
-    # SECRET ADMIN PANEL
+    # ADMIN PANEL
     # ==========================================
     if is_admin:
         with tab_admin:
@@ -978,23 +814,18 @@ try:
                     try:
                         conn = st.connection("gsheets", type=GSheetsConnection)
                         
-                        # 1. Fetch MR (National & Actual)
                         mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
                         df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)".strip(), usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
                         
-                        # NOW GRABBING REAL GENDERS INSTEAD OF a1, a2
                         mr_act_cols = ["Code", "Location", "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-59m_Total", "Act_MR_6-12m_M", "Act_MR_6-12m_F", "Act_MR_6-12m_Total", "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_13-23m_Total", "Act_MR_24-59m_M", "Act_MR_24-59m_F", "Act_MR_24-59m_Total"]
                         df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual Target(UPDATE THIS)".strip(), usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
                         
-                        # 2. Fetch Vit A (National & Actual)
                         vita_cols = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
                         df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
                         
-                        # NOW GRABBING REAL GENDERS INSTEAD OF b1, b2
                         vita_act_cols = ["Code", "Location", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_6-11m_Total", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F", "Act_VitA_12-59m_Total", "Act_VitA_Total"]
-                        df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Actual Target(UPDATE THIS)".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
+                        df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Pop(UPDATE THIS)".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
                         
-                        # Calc missing genders for BOTH National and Actual Vit A
                         for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
                             df_vita_nat[c] = pd.to_numeric(df_vita_nat[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
                         df_vita_nat['VitA_Total_M'] = df_vita_nat['VitA_6-11m_M'] + df_vita_nat['VitA_12-59m_M']
@@ -1005,13 +836,11 @@ try:
                         df_vita_act['Act_VitA_Total_M'] = df_vita_act['Act_VitA_6-11m_M'] + df_vita_act['Act_VitA_12-59m_M']
                         df_vita_act['Act_VitA_Total_F'] = df_vita_act['Act_VitA_6-11m_F'] + df_vita_act['Act_VitA_12-59m_F']
                         
-                        # 3. Mega-Merge
                         df_merged = df_mr_nat.copy()
                         df_merged = pd.merge(df_merged, df_mr_act[['Code', 'Act_MR_6-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_Total', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_Total', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_Total', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']], on='Code', how='left')
                         df_merged = pd.merge(df_merged, df_vita_nat[['Code', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']], on='Code', how='left')
                         df_merged = pd.merge(df_merged, df_vita_act[['Code', 'Act_VitA_6-11m_Total', 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_Total', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F', 'Act_VitA_Total', 'Act_VitA_Total_M', 'Act_VitA_Total_F']], on='Code', how='left')
                         
-                        # 4. Map & Push
                         df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
                                              '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
                                              '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
@@ -1049,26 +878,18 @@ try:
             st.divider()
             
             st.markdown("### 🔐 User Account Management")
-            st.write("Edit user roles, approval status, and assign them to specific municipalities to restrict their encoding access.")
             res_users = supabase.table('user_accounts').select('*').execute()
             if res_users.data:
                 users_admin_df = pd.DataFrame(res_users.data)
-                users_admin_df['contact_info'] = users_admin_df['contact_info'].fillna("").astype(str)
-                if 'assigned_municipality' not in users_admin_df.columns:
-                     users_admin_df['assigned_municipality'] = "None"
-                     
-                cols = ['username', 'name', 'role', 'assigned_municipality', 'account_status', 'contact_info', 'failed_attempts', 'password_hash']
-                users_admin_df = users_admin_df[cols]
+                
+                cols = ['username', 'role', 'password_hash']
+                users_admin_df = users_admin_df[[c for c in cols if c in users_admin_df.columns]]
                 
                 edited_users = st.data_editor(
                     users_admin_df,
                     column_config={
-                        "account_status": st.column_config.SelectboxColumn("Account Status", width="medium", options=["Approved", "Pending", "Pending Reset", "Locked", "Denied", "Revoked"], required=True),
-                        "assigned_municipality": st.column_config.SelectboxColumn("Assigned Territory", width="medium", options=["None", "Abra"] + abra_munis),
                         "password_hash": None, 
                         "username": st.column_config.TextColumn("Username", disabled=True),
-                        "contact_info": st.column_config.TextColumn("Contact Info", width="medium"),
-                        "failed_attempts": st.column_config.NumberColumn("Strikes", width="small", disabled=True) 
                     },
                     use_container_width=True,
                     num_rows="dynamic",
@@ -1077,7 +898,6 @@ try:
                 
                 if st.button("💾 Save User Changes", type="secondary"):
                     try:
-                        edited_users.loc[edited_users['account_status'] == 'Approved', 'failed_attempts'] = 0
                         updated_records = edited_users.to_dict(orient='records')
                         supabase.table('user_accounts').upsert(updated_records).execute()
                         st.toast("User accounts updated successfully!", icon="✅")
