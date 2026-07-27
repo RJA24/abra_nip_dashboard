@@ -407,13 +407,17 @@ try:
                     chart_title = f"Eligible Children (Total, {gender_filter})"
 
                 if not df_view.empty:
-                    c1, c2 = st.columns([7, 3])
-                    with c1:
-                        df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
-                        fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
-                        fig_mr.update_layout(xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig_mr, use_container_width=True)
-                    with c2:
+                    # Full width bar chart
+                    df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
+                    fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
+                    fig_mr.update_layout(xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_mr, use_container_width=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Centered Pie Chart below
+                    pc1, pc2, pc3 = st.columns([1, 2, 1])
+                    with pc2:
                         mr_age_data = pd.DataFrame({
                             'Age Group': ['6-12m', '13-23m', '24-59m'], 
                             'Target': [df_view[c1_col].sum(), df_view[c2_col].sum(), df_view[c3_col].sum()]
@@ -450,13 +454,17 @@ try:
                     chart_title_va = f"Eligible Children (Total, {gender_filter})"
 
                 if not df_view_va.empty:
-                    c1, c2 = st.columns([7, 3])
-                    with c1:
-                        df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
-                        fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
-                        fig_va.update_layout(xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig_va, use_container_width=True)
-                    with c2:
+                    # Full width bar chart
+                    df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
+                    fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
+                    fig_va.update_layout(xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_va, use_container_width=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Centered Pie Chart below
+                    pc1, pc2, pc3 = st.columns([1, 2, 1])
+                    with pc2:
                         va_age_data = pd.DataFrame({
                             'Age Group': ['6-11m', '12-59m'], 
                             'Target': [df_view_va[c1_col_va].sum(), df_view_va[c2_col_va].sum()]
@@ -496,13 +504,17 @@ try:
                     act_chart_title = f"Actual Eligible Children (Total, {gender_filter})"
                 
                 if not df_view.empty:
-                    c1, c2 = st.columns([7, 3])
-                    with c1:
-                        df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
-                        fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
-                        fig_act_mr.update_layout(xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig_act_mr, use_container_width=True)
-                    with c2:
+                    # Full width bar chart
+                    df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
+                    fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
+                    fig_act_mr.update_layout(xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_act_mr, use_container_width=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Centered Pie Chart below
+                    pc1, pc2, pc3 = st.columns([1, 2, 1])
+                    with pc2:
                         act_mr_age_data = pd.DataFrame({
                             'Age Group': ['6-12m', '13-23m', '24-59m'], 
                             'Target': [df_view[act_c1_col].sum(), df_view[act_c2_col].sum(), df_view[act_c3_col].sum()]
@@ -539,13 +551,17 @@ try:
                     act_chart_title_va = f"Actual Eligible Children (Total, {gender_filter})"
 
                 if not df_view_va.empty:
-                    c1, c2 = st.columns([7, 3])
-                    with c1:
-                        df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
-                        fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
-                        fig_act_va.update_layout(xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=400, margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig_act_va, use_container_width=True)
-                    with c2:
+                    # Full width bar chart
+                    df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
+                    fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
+                    fig_act_va.update_layout(xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_act_va, use_container_width=True)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # Centered Pie Chart below
+                    pc1, pc2, pc3 = st.columns([1, 2, 1])
+                    with pc2:
                         act_va_age_data = pd.DataFrame({
                             'Age Group': ['6-11m', '12-59m'], 
                             'Target': [df_view_va[act_c1_col_va].sum(), df_view_va[act_c2_col_va].sum()]
@@ -592,7 +608,7 @@ try:
                     df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'National Target', act_col: 'Actual RHU Target'})
                     
                     fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
-                    fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=500, legend_title_text="")
+                    fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, legend_title_text="")
                     st.plotly_chart(fig_comp, use_container_width=True)
                     
                     st.markdown("##### Detailed Breakdown")
@@ -660,22 +676,25 @@ try:
             if 'Vaccination Date' in df_mr_filtered.columns:
                 df_mr_filtered['Vaccination Date'] = pd.to_datetime(df_mr_filtered['Vaccination Date'], errors='coerce')
                 
-            c1, c2 = st.columns([7, 3])
+            # Full width Timeline Line Chart
+            if 'Vaccination Date' in df_mr_filtered.columns and not df_mr_filtered['Vaccination Date'].isna().all():
+                df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
+                fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_time, use_container_width=True)
             
-            with c1:
-                if 'Vaccination Date' in df_mr_filtered.columns and not df_mr_filtered['Vaccination Date'].isna().all():
-                    df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
-                    fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
-                    fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_time, use_container_width=True)
+            # Full width Geographic Bar Chart
+            if geo_col in df_mr_filtered.columns:
+                df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
+                fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
+                fig_geo.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_geo, use_container_width=True)
                 
-                if geo_col in df_mr_filtered.columns:
-                    df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
-                    fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
-                    fig_geo.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_geo, use_container_width=True)
-                    
-            with c2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Pie Charts Side-by-Side below the bar charts
+            pc1, pc2 = st.columns(2)
+            with pc1:
                 mr_6_12 = df_mr_filtered[['MR 6-12 Male', 'MR 6-12 Female']].sum().sum()
                 mr_13_23 = df_mr_filtered[['MR 13-23 Male', 'MR 13-23 Female']].sum().sum()
                 mr_24_59 = df_mr_filtered[['MR 24-59 Male', 'MR 24-59 Female']].sum().sum()
@@ -685,6 +704,7 @@ try:
                 fig_age.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_age, use_container_width=True)
                 
+            with pc2:
                 mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
                 mr_female = df_mr_filtered[['MR 6-12 Female', 'MR 13-23 Female', 'MR 24-59 Female']].sum().sum()
                 
@@ -766,22 +786,25 @@ try:
             if 'Vaccination Date' in df_vita_filtered.columns:
                 df_vita_filtered['Vaccination Date'] = pd.to_datetime(df_vita_filtered['Vaccination Date'], errors='coerce')
                 
-            c1_va, c2_va = st.columns([7, 3])
+            # Full width Timeline Line Chart
+            if 'Vaccination Date' in df_vita_filtered.columns and not df_vita_filtered['Vaccination Date'].isna().all():
+                df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
+                fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_time_va, use_container_width=True)
             
-            with c1_va:
-                if 'Vaccination Date' in df_vita_filtered.columns and not df_vita_filtered['Vaccination Date'].isna().all():
-                    df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
-                    fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
-                    fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_time_va, use_container_width=True)
+            # Full width Geographic Bar Chart
+            if geo_col_va in df_vita_filtered.columns:
+                df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
+                fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
+                fig_geo_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_geo_va, use_container_width=True)
                 
-                if geo_col_va in df_vita_filtered.columns:
-                    df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
-                    fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
-                    fig_geo_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", margin=dict(l=0, r=0, t=40, b=0))
-                    st.plotly_chart(fig_geo_va, use_container_width=True)
-                    
-            with c2_va:
+            st.markdown("<br>", unsafe_allow_html=True)
+                
+            # Pie Charts Side-by-Side below the bar charts
+            pc1_va, pc2_va = st.columns(2)
+            with pc1_va:
                 va_6_11 = df_vita_filtered[['VitA 6-11 Male', 'VitA 6-11 Female']].sum().sum()
                 va_12_59 = df_vita_filtered[['VitA 12-59 Male', 'VitA 12-59 Female']].sum().sum()
                 
@@ -790,6 +813,7 @@ try:
                 fig_age_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_age_va, use_container_width=True)
                 
+            with pc2_va:
                 va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
                 va_female = df_vita_filtered[['VitA 6-11 Female', 'VitA 12-59 Female']].sum().sum()
                 
