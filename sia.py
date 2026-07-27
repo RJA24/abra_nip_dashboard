@@ -927,6 +927,36 @@ try:
             st.divider()
             
             st.markdown("### 🔐 User Account Management")
+            
+            # --- NEW: SECURE ACCOUNT CREATION FORM ---
+            with st.expander("➕ Create New Account"):
+                with st.form("create_account_form"):
+                    new_user = st.text_input("Username")
+                    new_pass = st.text_input("Password", type="password")
+                    new_role = st.selectbox("Role", ["Guest / Viewer", "System Admin"])
+                    
+                    submit_new_account = st.form_submit_button("Create Account", type="primary")
+                    
+                    if submit_new_account:
+                        if not new_user or not new_pass:
+                            st.warning("Please enter both username and password.")
+                        else:
+                            try:
+                                supabase.table('user_accounts').insert({
+                                    "username": new_user.strip(),
+                                    "password_hash": make_hashes(new_pass),
+                                    "name": "RHU Visitor" if new_role == "Guest / Viewer" else "System Admin",
+                                    "role": new_role,
+                                    "account_status": "Approved",
+                                    "failed_attempts": 0
+                                }).execute()
+                                st.success(f"✅ Account '{new_user}' successfully created!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error creating account. Username may already exist. Details: {e}")
+
+            # --- UPDATED: ACCOUNT EDITOR WITH DELETION LOGIC ---
             res_users = supabase.table('user_accounts').select('*').execute()
             if res_users.data:
                 users_admin_df = pd.DataFrame(res_users.data)
@@ -934,11 +964,16 @@ try:
                 cols = ['username', 'role', 'password_hash']
                 users_admin_df = users_admin_df[[c for c in cols if c in users_admin_df.columns]]
                 
+                # Keep track of original usernames to detect if you delete a row
+                original_usernames = set(users_admin_df['username'].dropna().tolist())
+                
+                st.caption("Select a row on the left side and press 'Delete' on your keyboard to remove an account.")
                 edited_users = st.data_editor(
                     users_admin_df,
                     column_config={
                         "password_hash": None, 
                         "username": st.column_config.TextColumn("Username", disabled=True),
+                        "role": st.column_config.SelectboxColumn("Role", options=["Guest / Viewer", "System Admin"])
                     },
                     use_container_width=True,
                     num_rows="dynamic",
@@ -947,9 +982,24 @@ try:
                 
                 if st.button("💾 Save User Changes", type="secondary"):
                     try:
+                        # 1. Detect and execute Deletions in Supabase
+                        current_usernames = set(edited_users['username'].dropna().tolist())
+                        deleted_users = list(original_usernames - current_usernames)
+                        
+                        if deleted_users:
+                            supabase.table('user_accounts').delete().in_('username', deleted_users).execute()
+                        
+                        # 2. Fix the NaN JSON error by cleaning empty data
+                        edited_users = edited_users.dropna(subset=['username']) # Ignore accidental blank rows
+                        edited_users = edited_users.replace({np.nan: None})     # Replace Pandas NaN with clean nulls
+                        
                         updated_records = edited_users.to_dict(orient='records')
-                        supabase.table('user_accounts').upsert(updated_records).execute()
+                        if updated_records:
+                            supabase.table('user_accounts').upsert(updated_records).execute()
+                            
                         st.toast("User accounts updated successfully!", icon="✅")
+                        time.sleep(1)
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Failed to update users: {e}")
             
