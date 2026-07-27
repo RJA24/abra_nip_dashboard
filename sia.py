@@ -41,6 +41,10 @@ st.markdown("""
         border-bottom: 2px solid var(--primary-color);
         font-weight: bold;
     }
+    /* FIX FOR DROPDOWN CUTOFF IN EXPANDERS */
+    [data-testid="stExpander"] {
+        overflow: visible !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -202,8 +206,8 @@ with st.sidebar:
     
     st.divider()
     
-    # 2. Dynamic Filters (Abra Only)
-    with st.expander("🎛️ DASHBOARD FILTERS", expanded=False):
+    # 2. Dynamic Filters (Expanded by default to prevent dropdown cutoffs)
+    with st.expander("🎛️ DASHBOARD FILTERS", expanded=True):
         view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"])
         
         if view_mode == "Specific Municipality":
@@ -289,7 +293,28 @@ def fetch_targets_from_supabase():
         if db_col not in df.columns:
             df[db_col] = 0
             
-    return df.rename(columns=col_mapping)
+    df = df.rename(columns=col_mapping)
+    
+    # Ensure all numeric columns are floats/ints
+    num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
+    for c in num_cols:
+        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+
+    # RE-CALCULATE ACTUAL VITAMIN A TOTALS (Male + Female) TO ENSURE ACCURACY
+    df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
+    df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
+    df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
+    df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
+    df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
+
+    # RE-CALCULATE NATIONAL VITAMIN A TOTALS
+    df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
+    df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
+    df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
+    df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
+    df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
+
+    return df
 
 @st.cache_data(ttl="10m")
 def fetch_live_accomplishments():
