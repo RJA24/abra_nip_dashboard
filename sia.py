@@ -657,9 +657,9 @@ try:
                 
                 # --- NEW: BRUTE-FORCE LARGER BAR LABELS ---
                 fig_geo_cov.update_traces(
-                    textfont=dict(size=16),
-                    insidetextfont=dict(size=16),
-                    outsidetextfont=dict(size=16),
+                    textfont=dict(size=30),
+                    insidetextfont=dict(size=30),
+                    outsidetextfont=dict(size=30),
                     textposition="outside", 
                     cliponaxis=False  # Prevents labels from being cut off at the top
                 )
