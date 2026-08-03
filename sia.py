@@ -545,7 +545,19 @@ try:
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 with st.expander("View Full Geographic Coverage Data"):
-                    st.dataframe(df_geo_summary.style.format({"MR Coverage %": "{:.1f}%", "Vit A Coverage %": "{:.1f}%"} if "Vit A Coverage %" in df_geo_summary.columns else {"MR Coverage %": "{:.1f}%"}), use_container_width=True, hide_index=True)
+                    # Format to remove decimals and add comma separators for readability
+                    format_dict = {
+                        "MR Coverage %": "{:.1f}%",
+                        "MR Target": "{:,.0f}",
+                        "MR Administered": "{:,.0f}"
+                    }
+                    if "Vit A Coverage %" in df_geo_summary.columns:
+                        format_dict.update({
+                            "Vit A Coverage %": "{:.1f}%",
+                            "Vit A Target": "{:,.0f}",
+                            "Vit A Administered": "{:,.0f}"
+                        })
+                    st.dataframe(df_geo_summary.style.format(format_dict), use_container_width=True, hide_index=True)
 
             else:
                 # ==============================
@@ -904,9 +916,9 @@ try:
             
             for col in mr_dose_cols:
                 if col in df_mr_filtered.columns:
-                    df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
             
-            df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1)
+            df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1).astype(int)
             total_mr_doses = df_mr_filtered['Total Doses'].sum()
         else:
             df_mr_filtered = pd.DataFrame()
@@ -1014,9 +1026,9 @@ try:
             
             for col in vita_dose_cols:
                 if col in df_vita_filtered.columns:
-                    df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
             
-            df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1)
+            df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1).astype(int)
             total_vita_doses = df_vita_filtered['Total Doses'].sum()
         else:
             df_vita_filtered = pd.DataFrame()
