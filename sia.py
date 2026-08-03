@@ -1346,18 +1346,18 @@ try:
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
 
-                st.divider()
-                st.markdown("#### Raw Data Export")
-                with st.expander("View & Download Raw MR Deferral/Refusal Data"):
-                    st.dataframe(df_mr_filtered, use_container_width=True)
-                    csv_mr_def = df_mr_filtered.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Download MR Data (CSV)",
-                        data=csv_mr_def,
-                        file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
-                        mime="text/csv",
-                        key="dl_mr_def"
-                    )
+            st.divider()
+            st.markdown("#### Raw Data Export")
+            with st.expander("View & Download Raw MR Deferral/Refusal Data"):
+                st.dataframe(df_mr_filtered, use_container_width=True)
+                csv_mr_def = df_mr_filtered.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download MR Data (CSV)",
+                    data=csv_mr_def,
+                    file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
+                    mime="text/csv",
+                    key="dl_mr_def"
+                )
                 
         with tab_va_reasons:
             if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
