@@ -503,7 +503,7 @@ try:
             nat_target_va = df_view_va[va_nat_col].sum() if not df_view_va.empty else 0
             act_target_va = df_view_va[va_act_col].sum() if (not df_view_va.empty and va_act_col in df_view_va.columns) else 0
 
-            # 2. Process Accomplishments
+            # 2. Process Accomplishments (With simplified geographic filter logic to prevent empty tables)
             total_mr_doses = 0
             df_mr_trend = pd.DataFrame()
             if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
@@ -630,7 +630,7 @@ try:
                 df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
                 df_geo_summary['MR Coverage %'] = (df_geo_summary['MR Administered'] / df_geo_summary['MR Target'] * 100).fillna(0)
                 
-                # Do the same for Vit A (Always calculate Administered, even if Target is missing at Barangay level)
+                # Do the same for Vit A
                 if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
                     va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
                     va_geo_doses.rename(columns={'Total Doses': 'Vit A Administered'}, inplace=True)
@@ -648,29 +648,51 @@ try:
                     lambda row: (row['Vit A Administered'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1
                 )
                 
-                df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=False)
+                # Sort ascending so highest coverage sits at the top of the portrait chart
+                df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=True)
                 
                 # --- MELT FOR GROUPED BAR CHART (MR vs Vit A) ---
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
                 
-                fig_geo_cov = px.bar(df_melt_geo, x=geo_col, y='Coverage %', color='Program', barmode='group', text_auto='.1f', title=f"Coverage % by {geo_col}", color_discrete_sequence=['#1E88E5', '#F4511E'])
+                # Dynamic height: 70 pixels per location guarantees thick bars and room for labels
+                chart_height = max(500, len(df_geo_summary) * 70)
                 
-                # --- NEW: BRUTE-FORCE LARGER BAR LABELS ---
-                fig_geo_cov.update_traces(
-                    textfont=dict(size=30),
-                    insidetextfont=dict(size=30),
-                    outsidetextfont=dict(size=30),
-                    textposition="outside", 
-                    cliponaxis=False  # Prevents labels from being cut off at the top
+                fig_geo_cov = px.bar(
+                    df_melt_geo, 
+                    x='Coverage %', 
+                    y=geo_col, 
+                    color='Program', 
+                    barmode='group', 
+                    orientation='h', 
+                    text_auto='.1f', 
+                    title=f"Coverage % by {geo_col}", 
+                    color_discrete_sequence=['#1E88E5', '#F4511E']
                 )
                 
-                fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                # Force large labels on the outside of the bars
+                fig_geo_cov.update_traces(
+                    textfont=dict(size=16),
+                    insidetextfont=dict(size=16),
+                    outsidetextfont=dict(size=16),
+                    textposition="outside", 
+                    cliponaxis=False 
+                )
                 
-                # Increased height slightly to make room for the larger outside labels
-                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=550, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
+                fig_geo_cov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                
+                fig_geo_cov.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Coverage (%)", 
+                    yaxis_title="", 
+                    height=chart_height, 
+                    margin=dict(l=0, r=50, t=40, b=0), 
+                    legend_title_text="",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
+                )
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 with st.expander("View Full Geographic Coverage Data"):
+                    # Format to remove decimals and add comma separators
                     format_dict = {
                         "MR Coverage %": "{:.1f}%",
                         "MR Target": "{:,.0f}",
@@ -679,7 +701,8 @@ try:
                         "Vit A Target": "{:,.0f}",
                         "Vit A Administered": "{:,.0f}"
                     }
-                    st.dataframe(df_geo_summary.style.format(format_dict), use_container_width=True, hide_index=True)
+                    # Reverse sort again for the raw data table so best is at the top row
+                    st.dataframe(df_geo_summary.sort_values('MR Coverage %', ascending=False).style.format(format_dict), use_container_width=True, hide_index=True)
 
             else:
                 # ==============================
@@ -739,13 +762,42 @@ try:
                 df_comp_geo['Proj Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Proj Target'] * 100).fillna(0)
                 df_comp_geo['Act Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Act Target'] * 100).fillna(0)
                 
-                df_comp_geo = df_comp_geo.sort_values('Proj Coverage %', ascending=False)
+                # Sort ascending for horizontal bar chart
+                df_comp_geo = df_comp_geo.sort_values('Proj Coverage %', ascending=True)
                 df_melt = df_comp_geo.melt(id_vars=[geo_col], value_vars=['Proj Coverage %', 'Act Coverage %'], var_name='Baseline', value_name='Coverage %')
                 df_melt['Baseline'] = df_melt['Baseline'].replace({'Proj Coverage %': 'vs Projected', 'Act Coverage %': 'vs Actual'})
                 
-                fig_comp_cov = px.bar(df_melt, x=geo_col, y='Coverage %', color='Baseline', barmode='group', text_auto='.1f', color_discrete_sequence=['#1E88E5', '#43A047'])
-                fig_comp_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
-                fig_comp_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
+                chart_height_comp = max(500, len(df_comp_geo) * 70)
+                
+                fig_comp_cov = px.bar(
+                    df_melt, 
+                    x='Coverage %', 
+                    y=geo_col, 
+                    color='Baseline', 
+                    barmode='group', 
+                    orientation='h',
+                    text_auto='.1f', 
+                    color_discrete_sequence=['#1E88E5', '#43A047']
+                )
+                
+                fig_comp_cov.update_traces(
+                    textfont=dict(size=16),
+                    insidetextfont=dict(size=16),
+                    outsidetextfont=dict(size=16),
+                    textposition="outside", 
+                    cliponaxis=False
+                )
+                
+                fig_comp_cov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                fig_comp_cov.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Coverage (%)", 
+                    yaxis_title="", 
+                    height=chart_height_comp, 
+                    margin=dict(l=0, r=50, t=40, b=0), 
+                    legend_title_text="",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
                 st.plotly_chart(fig_comp_cov, use_container_width=True)
 
     with tab_target:
