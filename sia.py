@@ -9,30 +9,34 @@ import time
 import hashlib
 from supabase import create_client, Client
 
-# ==========================================
+# # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
 st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
+    /* 1. Pull the dashboard to the very top */
+    .block-container {
+        padding-top: 0.5rem !important; 
+    }
+    header[data-testid="stHeader"] { display: none !important; }
     footer {visibility: hidden;}
     
-    /* MASSIVE KPI CARDS (DEEP BLUE & UNIFORM HEIGHT) */
+    /* 2. MASSIVE KPI CARDS */
     [data-testid="stMetric"] {
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
-        border-bottom: 6px solid #0033A0 !important; /* Deep Blue Bottom Border */
+        border-bottom: 6px solid #0033A0 !important; 
         border-radius: 8px !important;
         padding: 15px 10px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-        height: 140px !important; /* FORCES ALL CARDS TO THE EXACT SAME HEIGHT */
+        height: 140px !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
     }
-    /* Force Label Size */
     [data-testid="stMetricLabel"] * {
         font-size: 15px !important;
         font-weight: 700 !important;
@@ -40,20 +44,76 @@ st.markdown("""
         text-align: center !important;
         width: 100% !important;
     }
-    /* Force Number Size & Color */
     [data-testid="stMetricValue"] * {
         font-size: 42px !important;
         font-weight: 900 !important;
-        color: #0033A0 !important; /* Deep Blue */
+        color: #0033A0 !important; 
         text-align: center !important;
         width: 100% !important;
         line-height: 1.2 !important;
     }
 
-    /* Fix dropdowns getting cut off in sidebar/expanders */
-    [data-testid="stExpander"], div[data-testid="stExpanderDetails"] {
-        overflow: visible !important;
+    /* 3. TABS: LARGER AND CENTER ALIGNED */
+    [data-testid="stTabs"] > div, div[data-baseweb="tab-list"] {
+        gap: 15px !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        padding: 15px 0 !important;
+        margin-bottom: 25px !important;
+        display: flex !important;
+        justify-content: center !important; /* CENTER ALIGNMENT */
     }
+    
+    button[data-testid="stTab"], button[data-baseweb="tab"] {
+        background-color: transparent !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 8px !important;
+        padding: 15px 30px !important; /* LARGER PADDING */
+        flex: 0 1 auto !important; /* STOPS STRETCHING */
+        transition: all 0.2s ease-in-out !important;
+    }
+    
+    button[data-testid="stTab"] p, button[data-baseweb="tab"] p {
+        font-size: 18px !important; /* LARGER TEXT */
+        font-weight: 700 !important;
+        color: #475569 !important;
+        margin: 0 !important;
+    }
+    
+    /* The Active Highlighted Tab */
+    button[data-testid="stTab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] {
+        background-color: #0033A0 !important; 
+        border-color: #0033A0 !important;
+        box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
+    }
+    button[data-testid="stTab"][aria-selected="true"] p, button[data-baseweb="tab"][aria-selected="true"] p {
+        color: #ffffff !important;
+    }
+    
+    div[data-testid="stTabIndicator"], div[data-baseweb="tab-highlight"] { display: none !important; }
+
+    /* 4. PROTECT THE INNER SUB-TABS */
+    .stTabs .stTabs button[data-testid="stTab"], .stTabs .stTabs button[data-baseweb="tab"] {
+        background-color: transparent !important;
+        border: none !important;
+        border-bottom: 2px solid transparent !important;
+        border-radius: 0 !important;
+        padding: 8px 15px !important;
+    }
+    .stTabs .stTabs button[data-testid="stTab"] p, .stTabs .stTabs button[data-baseweb="tab"] p {
+        font-size: 14px !important;
+        color: #64748b !important;
+    }
+    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"], .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
+        border-bottom: 3px solid #0033A0 !important; 
+        background-color: transparent !important;
+        box-shadow: none !important;
+    }
+    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"] p, .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] p {
+        color: #0033A0 !important; 
+    }
+
+    [data-testid="stExpander"], div[data-testid="stExpanderDetails"] { overflow: visible !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -344,9 +404,9 @@ def fetch_live_accomplishments():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Deferral & Refusal Analysis"]
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis"]
 if is_admin:
-    tab_names.append("🛡️ Admin Panel")
+    tab_names.append("Admin Panel")
     
 tabs = st.tabs(tab_names)
 
@@ -360,7 +420,7 @@ try:
     # EXECUTIVE SUMMARY TAB
     # ==========================================
     with tab_total:
-        st.markdown("### 📊 Executive Summary")
+        st.markdown("### Executive Summary")
         
         df_targets = fetch_targets_from_supabase()
         df_mr_live, df_vita_live = fetch_live_accomplishments()
@@ -382,9 +442,55 @@ try:
                 
             c_title, c_drop = st.columns([6, 4])
             with c_title:
-                st.markdown(f"#### Overall Performance: {location_label}")
+                st.markdown(f"#### Overall Performance: {location_label} ({gender_filter})")
             with c_drop:
-                exec_target_mode = st.selectbox("🎯 Target Baseline for Calculations:", ["Projected Population Target", "Actual RHU Target", "Comparison View"], label_visibility="collapsed")
+                exec_target_mode = st.selectbox("Target Baseline for Calculations:", ["Projected Population Target", "Actual RHU Target", "Comparison View"], label_visibility="collapsed")
+
+            # --- DYNAMIC FILTER LOGIC FOR MR ---
+            mr_genders = ["Male"] if gender_filter == "Male" else ["Female"] if gender_filter == "Female" else ["Male", "Female"]
+            mr_t_gen = "_M" if gender_filter == "Male" else "_F" if gender_filter == "Female" else "_Total"
+            
+            if "6 - 12 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 6-12"], "6-12m"
+            elif "13 - 23 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 13-23"], "13-23m"
+            elif "24 - 59 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 24-59"], "24-59m"
+            else:
+                mr_ages, mr_t_age = ["MR 6-12", "MR 13-23", "MR 24-59"], "6-59m"
+
+            mr_dose_cols = [f"{age} {gen}" for age in mr_ages for gen in mr_genders]
+            mr_target_col_geo = f'MR_{mr_t_age}{mr_t_gen}'
+            act_mr_target_col_geo = f'Act_MR_{mr_t_age}{mr_t_gen}'
+            
+            nat_target_mr = df_view[mr_target_col_geo].sum()
+            act_target_mr = df_view[act_mr_target_col_geo].sum() if act_mr_target_col_geo in df_view.columns else 0
+
+            # --- DYNAMIC FILTER LOGIC FOR VIT A ---
+            va_genders = ["Male"] if gender_filter == "Male" else ["Female"] if gender_filter == "Female" else ["Male", "Female"]
+            va_t_gen = "_M" if gender_filter == "Male" else "_F" if gender_filter == "Female" else "_Total"
+            
+            if "6 - 11 months" in age_filter:
+                va_ages, va_t_age = ["VitA 6-11"], "6-11m"
+            elif "12 - 59 months" in age_filter:
+                va_ages, va_t_age = ["VitA 12-59"], "12-59m"
+            else:
+                va_ages, va_t_age = ["VitA 6-11", "VitA 12-59"], "Total"
+            
+            va_dose_cols = [f"{age} {gen}" for age in va_ages for gen in va_genders]
+            
+            if va_t_age == "Total":
+                va_nat_col = f'VitA_Total{va_t_gen.replace("_Total", "")}'
+                va_act_col = f'Act_VitA_Total{va_t_gen.replace("_Total", "")}'
+            else:
+                va_nat_col = f'VitA_{va_t_age}{va_t_gen}'
+                va_act_col = f'Act_VitA_{va_t_age}{va_t_gen}'
+
+            va_target_col_geo = va_nat_col
+            act_va_target_col_geo = va_act_col
+            
+            nat_target_va = df_view_va[va_nat_col].sum() if not df_view_va.empty else 0
+            act_target_va = df_view_va[va_act_col].sum() if (not df_view_va.empty and va_act_col in df_view_va.columns) else 0
 
             # 2. Process Accomplishments
             total_mr_doses = 0
@@ -396,12 +502,11 @@ try:
                 else:
                     df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
                 
-                mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
                 for col in mr_dose_cols:
                     if col in df_mr_filtered.columns:
-                        df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
                 
-                df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1)
+                df_mr_filtered['Total Doses'] = df_mr_filtered[[c for c in mr_dose_cols if c in df_mr_filtered.columns]].sum(axis=1).astype(int)
                 total_mr_doses = df_mr_filtered['Total Doses'].sum()
                 
                 if 'Vaccination Date' in df_mr_filtered.columns:
@@ -418,25 +523,17 @@ try:
                 else:
                     df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
                 
-                vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
-                for col in vita_dose_cols:
+                for col in va_dose_cols:
                     if col in df_vita_filtered.columns:
-                        df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
                 
-                df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1)
+                df_vita_filtered['Total Doses'] = df_vita_filtered[[c for c in va_dose_cols if c in df_vita_filtered.columns]].sum(axis=1).astype(int)
                 total_vita_doses = df_vita_filtered['Total Doses'].sum()
                 
                 if 'Vaccination Date' in df_vita_filtered.columns:
                     df_vita_filtered['Vaccination Date'] = pd.to_datetime(df_vita_filtered['Vaccination Date'], errors='coerce')
                     df_va_trend = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                     df_va_trend.rename(columns={'Total Doses': 'Vit A Doses'}, inplace=True)
-
-            # 3. Targets
-            nat_target_mr = df_view['MR_6-59m_Total'].sum()
-            nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
-            
-            act_target_mr = df_view['Act_MR_6-59m_Total'].sum() if 'Act_MR_6-59m_Total' in df_view.columns else 0
-            act_target_va = df_view_va['Act_VitA_Total'].sum() if not df_view_va.empty and 'Act_VitA_Total' in df_view_va.columns else 0
 
             import plotly.graph_objects as go
 
@@ -445,31 +542,31 @@ try:
                     active_target_mr = nat_target_mr
                     active_target_va = nat_target_va
                     target_label = "Projected Target"
-                    mr_target_col_geo = 'MR_6-59m_Total'
-                    va_target_col_geo = 'VitA_Total'
+                    mr_target_col_geo_active = mr_target_col_geo
+                    va_target_col_geo_active = va_target_col_geo
                 else:
                     active_target_mr = act_target_mr
                     active_target_va = act_target_va
                     target_label = "Actual Target"
-                    mr_target_col_geo = 'Act_MR_6-59m_Total'
-                    va_target_col_geo = 'Act_VitA_Total'
+                    mr_target_col_geo_active = act_mr_target_col_geo
+                    va_target_col_geo_active = act_va_target_col_geo
 
                 mr_cov_pct = (total_mr_doses / active_target_mr * 100) if active_target_mr > 0 else 0
                 va_cov_pct = (total_vita_doses / active_target_va * 100) if active_target_va > 0 else 0
 
                 # 4. KPI Cards
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("💉 MR Doses Administered", f"{total_mr_doses:,.0f}", f"{target_label}: {active_target_mr:,.0f}", delta_color="off")
-                k2.metric("🎯 MR Coverage %", f"{mr_cov_pct:.1f}%")
-                k3.metric("💊 Vit A Doses Administered", f"{total_vita_doses:,.0f}", f"{target_label}: {active_target_va:,.0f}", delta_color="off")
-                k4.metric("🎯 Vit A Coverage %", f"{va_cov_pct:.1f}%")
+                k1.metric("MR Doses Administered", f"{total_mr_doses:,.0f}", f"{target_label}: {active_target_mr:,.0f}", delta_color="off")
+                k2.metric("MR Coverage %", f"{mr_cov_pct:.1f}%")
+                k3.metric("Vit A Doses Administered", f"{total_vita_doses:,.0f}", f"{target_label}: {active_target_va:,.0f}", delta_color="off")
+                k4.metric("Vit A Coverage %", f"{va_cov_pct:.1f}%")
                 
                 st.divider()
                 
                 c1, c2 = st.columns(2)
                 
                 with c1:
-                    st.markdown("#### 🚀 Campaign Progress")
+                    st.markdown("#### Campaign Progress")
                     # MR Gauge
                     fig_gauge_mr = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = mr_cov_pct, title = {'text': f"MR Coverage ({exec_target_mode.split()[0]})"},
@@ -489,7 +586,7 @@ try:
                     st.plotly_chart(fig_gauge_va, use_container_width=True)
 
                 with c2:
-                    st.markdown("#### 📈 Daily Vaccination Trend")
+                    st.markdown("#### Daily Vaccination Trend")
                     if not df_mr_trend.empty or not df_va_trend.empty:
                         if not df_mr_trend.empty and not df_va_trend.empty:
                             df_trend = pd.merge(df_mr_trend, df_va_trend, on='Vaccination Date', how='outer').fillna(0)
@@ -507,7 +604,7 @@ try:
                         st.plotly_chart(fig_trend, use_container_width=True)
                         
                 st.divider()
-                st.markdown(f"#### 🗺️ Geographic Coverage Breakdown ({geo_col})")
+                st.markdown(f"#### Geographic Coverage Breakdown ({geo_col})")
                 
                 # Combine targets and doses for geographic table/chart
                 if not df_mr_live.empty and geo_col in df_mr_filtered.columns:
@@ -516,8 +613,8 @@ try:
                 else:
                     mr_geo_doses = pd.DataFrame(columns=[geo_col, 'MR Administered'])
                     
-                mr_geo_targets = df_view.groupby('Location')[mr_target_col_geo].sum().reset_index()
-                mr_geo_targets.rename(columns={'Location': geo_col, mr_target_col_geo: 'MR Target'}, inplace=True)
+                mr_geo_targets = df_view.groupby('Location')[mr_target_col_geo_active].sum().reset_index()
+                mr_geo_targets.rename(columns={'Location': geo_col, mr_target_col_geo_active: 'MR Target'}, inplace=True)
                 
                 df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
                 df_geo_summary['MR Coverage %'] = (df_geo_summary['MR Administered'] / df_geo_summary['MR Target'] * 100).fillna(0)
@@ -530,8 +627,8 @@ try:
                     else:
                         va_geo_doses = pd.DataFrame(columns=[geo_col, 'Vit A Administered'])
                     
-                    va_geo_targets = df_view_va.groupby('Location')[va_target_col_geo].sum().reset_index()
-                    va_geo_targets.rename(columns={'Location': geo_col, va_target_col_geo: 'Vit A Target'}, inplace=True)
+                    va_geo_targets = df_view_va.groupby('Location')[va_target_col_geo_active].sum().reset_index()
+                    va_geo_targets.rename(columns={'Location': geo_col, va_target_col_geo_active: 'Vit A Target'}, inplace=True)
                     
                     df_geo_summary = pd.merge(df_geo_summary, va_geo_targets, on=geo_col, how='left').fillna(0)
                     df_geo_summary = pd.merge(df_geo_summary, va_geo_doses, on=geo_col, how='left').fillna(0)
@@ -545,7 +642,6 @@ try:
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 with st.expander("View Full Geographic Coverage Data"):
-                    # Format to remove decimals and add comma separators for readability
                     format_dict = {
                         "MR Coverage %": "{:.1f}%",
                         "MR Target": "{:,.0f}",
@@ -573,13 +669,13 @@ try:
                 va_var = act_target_va - nat_target_va
 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("💉 Total MR Doses", f"{total_mr_doses:,.0f}")
-                k2.metric("🎯 MR Target Variance", f"{mr_var:,.0f}", "Actual vs Projected", delta_color="inverse")
-                k3.metric("💊 Total Vit A Doses", f"{total_vita_doses:,.0f}")
-                k4.metric("🎯 Vit A Target Variance", f"{va_var:,.0f}", "Actual vs Projected", delta_color="inverse")
+                k1.metric("Total MR Doses", f"{total_mr_doses:,.0f}")
+                k2.metric("MR Target Variance", f"{mr_var:,.0f}", "Actual vs Projected", delta_color="inverse")
+                k3.metric("Total Vit A Doses", f"{total_vita_doses:,.0f}")
+                k4.metric("Vit A Target Variance", f"{va_var:,.0f}", "Actual vs Projected", delta_color="inverse")
                 
                 st.divider()
-                st.markdown("#### 🚀 Coverage Comparison")
+                st.markdown("#### Coverage Comparison")
                 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
@@ -600,7 +696,7 @@ try:
                     st.plotly_chart(fig_gv2, use_container_width=True)
                     
                 st.divider()
-                st.markdown(f"#### 🗺️ Geographic Coverage Comparison ({geo_col})")
+                st.markdown(f"#### Geographic Coverage Comparison ({geo_col})")
                 
                 if not df_mr_live.empty and geo_col in df_mr_filtered.columns:
                     mr_geo_doses = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
@@ -608,8 +704,8 @@ try:
                 else:
                     mr_geo_doses = pd.DataFrame(columns=[geo_col, 'Doses'])
                     
-                mr_geo_nat = df_view.groupby('Location')['MR_6-59m_Total'].sum().reset_index().rename(columns={'Location': geo_col, 'MR_6-59m_Total': 'Proj Target'})
-                mr_geo_act = df_view.groupby('Location')['Act_MR_6-59m_Total'].sum().reset_index().rename(columns={'Location': geo_col, 'Act_MR_6-59m_Total': 'Act Target'})
+                mr_geo_nat = df_view.groupby('Location')[mr_target_col_geo].sum().reset_index().rename(columns={'Location': geo_col, mr_target_col_geo: 'Proj Target'})
+                mr_geo_act = df_view.groupby('Location')[act_mr_target_col_geo].sum().reset_index().rename(columns={'Location': geo_col, act_mr_target_col_geo: 'Act Target'})
                 
                 df_comp_geo = pd.merge(mr_geo_nat, mr_geo_act, on=geo_col, how='left').fillna(0)
                 df_comp_geo = pd.merge(df_comp_geo, mr_geo_doses, on=geo_col, how='left').fillna(0)
@@ -930,17 +1026,17 @@ try:
         act_cov = (total_mr_doses / act_target * 100) if act_target > 0 else 0
 
         col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
-        col_mr1.metric("💉 Total Doses Administered", f"{total_mr_doses:,.0f}")
-        col_mr2.metric("🎯 National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Nat. Target", delta_color="off")
+        col_mr1.metric("Total Doses Administered", f"{total_mr_doses:,.0f}")
+        col_mr2.metric("National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Nat. Target", delta_color="off")
         
         if act_target > 0:
-            col_mr3.metric("📊 Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Act. Target", delta_color="off")
+            col_mr3.metric("Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Act. Target", delta_color="off")
         else:
-            col_mr3.metric("📊 Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
+            col_mr3.metric("Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
             
         variance = act_target - nat_target
         var_label = "More than National" if variance > 0 else "Less than National"
-        col_mr4.metric("🚨 Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
+        col_mr4.metric("Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
         
         st.divider()
         
@@ -1040,17 +1136,17 @@ try:
         act_cov_va = (total_vita_doses / act_target_va * 100) if act_target_va > 0 else 0
 
         col_va1, col_va2, col_va3, col_va4 = st.columns(4)
-        col_va1.metric("💊 Total Doses Administered", f"{total_vita_doses:,.0f}")
-        col_va2.metric("🎯 National Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Nat. Target", delta_color="off")
+        col_va1.metric("Total Doses Administered", f"{total_vita_doses:,.0f}")
+        col_va2.metric("National Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Nat. Target", delta_color="off")
         
         if act_target_va > 0:
-            col_va3.metric("📊 Actual RHU Coverage %", f"{act_cov_va:.1f}%", f"{act_target_va:,.0f} Act. Target", delta_color="off")
+            col_va3.metric("Actual RHU Coverage %", f"{act_cov_va:.1f}%", f"{act_target_va:,.0f} Act. Target", delta_color="off")
         else:
-            col_va3.metric("📊 Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
+            col_va3.metric("Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
             
         variance_va = act_target_va - nat_target_va
         var_label_va = "More than National" if variance_va > 0 else "Less than National"
-        col_va4.metric("🚨 Variance (Act vs Nat)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
+        col_va4.metric("Variance (Act vs Nat)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
         
         st.divider()
 
@@ -1171,6 +1267,19 @@ try:
                     
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
+
+                st.divider()
+                st.markdown("#### Raw Data Export")
+                with st.expander("View & Download Raw MR Deferral/Refusal Data"):
+                    st.dataframe(df_mr_filtered, use_container_width=True)
+                    csv_mr_def = df_mr_filtered.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download MR Data (CSV)",
+                        data=csv_mr_def,
+                        file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
+                        mime="text/csv",
+                        key="dl_mr_def"
+                    )
                 
         with tab_va_reasons:
             if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
@@ -1202,6 +1311,19 @@ try:
                 plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  # Purple for Refusal
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
+
+                st.divider()
+                st.markdown("#### Raw Data Export")
+                with st.expander("View & Download Raw Vit A Deferral/Refusal Data"):
+                    st.dataframe(df_va_filtered, use_container_width=True)
+                    csv_va_def = df_va_filtered.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download Vit A Data (CSV)",
+                        data=csv_va_def,
+                        file_name=f"VitA_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
+                        mime="text/csv",
+                        key="dl_va_def"
+                    )
 
     # ==========================================
     # ADMIN PANEL
