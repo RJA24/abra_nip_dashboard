@@ -16,12 +16,19 @@ st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout=
 
 st.markdown("""
     <style>
+    /* Move the title higher up the page */
+    .block-container {
+        padding-top: 1.5rem !important;
+    }
+    
     footer {visibility: hidden;}
+    
+    /* KPI Card & Text Sizing */
     [data-testid="stMetric"] {
         background-color: var(--secondary-background-color);
         border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 8px;
-        padding: 15px 20px;
+        border-radius: 10px;
+        padding: 20px 25px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         transition: transform 0.2s ease-in-out;
     }
@@ -29,18 +36,44 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 6px 12px rgba(0,0,0,0.2);
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    [data-testid="stMetricLabel"] p {
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stMetricValue"] div {
+        font-size: 2.2rem !important;
+        font-weight: 800 !important;
+    }
+
+    /* Main Tabs Sizing & Highlighting */
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 8px; 
+    }
     .stTabs [data-baseweb="tab"] {
-        height: 50px;
-        background-color: var(--secondary-background-color);
-        border-radius: 4px 4px 0px 0px;
-        padding: 10px 20px;
+        height: 65px;
+        background-color: rgba(128, 128, 128, 0.08);
+        border-radius: 8px 8px 0px 0px;
+        padding: 10px 25px;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        border-bottom: none;
+        transition: all 0.2s ease-in-out;
     }
+    .stTabs [data-baseweb="tab"] span {
+        font-size: 1.15rem !important;
+        font-weight: 600 !important;
+    }
+    
+    /* The Active/Selected Tab */
     .stTabs [aria-selected="true"] {
-        background-color: var(--background-color);
-        border-bottom: 2px solid var(--primary-color);
-        font-weight: bold;
+        background-color: #1E88E5 !important;
+        border: 1px solid #1E88E5 !important;
+        box-shadow: 0 -4px 12px rgba(30, 136, 229, 0.3);
     }
+    .stTabs [aria-selected="true"] span {
+        color: white !important;
+        font-weight: 800 !important;
+    }
+    
     /* FIX FOR DROPDOWN CUTOFF IN EXPANDERS */
     [data-testid="stExpander"] {
         overflow: visible !important;
