@@ -192,7 +192,7 @@ if not st.session_state['logged_in']:
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.title("🔒 Abra SIA 2026")
+        st.title("Abra SIA 2026")
         st.markdown("##### Secure Provincial Command Center")
         st.divider()
         
