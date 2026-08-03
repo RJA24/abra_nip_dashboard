@@ -16,137 +16,41 @@ st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout=
 
 st.markdown("""
     <style>
-    /* 1. Pull the dashboard to the very top */
-    .block-container {
-        padding-top: 1.5rem !important;
-    }
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
     footer {visibility: hidden;}
     
-    /* 2. Massive KPI Cards */
+    /* MASSIVE KPI CARDS (DEEP BLUE & UNIFORM HEIGHT) */
     [data-testid="stMetric"] {
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
-        border-bottom: 4px solid #0033A0 !important;
+        border-bottom: 6px solid #0033A0 !important; /* Deep Blue Bottom Border */
         border-radius: 8px !important;
-        padding: 20px !important;
+        padding: 15px 10px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-        min-height: 140px !important;
+        height: 140px !important; /* FORCES ALL CARDS TO THE EXACT SAME HEIGHT */
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
     }
-    [data-testid="stMetricLabel"] {
-        text-align: center !important;
-        width: 100% !important;
-    }
+    /* Force Label Size */
     [data-testid="stMetricLabel"] * {
-        font-size: 16px !important;
+        font-size: 15px !important;
         font-weight: 700 !important;
-        color: #64748b !important;
-    }
-    [data-testid="stMetricValue"] {
+        color: #475569 !important;
         text-align: center !important;
         width: 100% !important;
     }
+    /* Force Number Size & Color */
     [data-testid="stMetricValue"] * {
-        font-size: 38px !important;
+        font-size: 42px !important;
         font-weight: 900 !important;
-        color: #0033A0 !important; 
-    }
-
-    /* 3. SLANTED TABS (MAIN TABS ONLY) */
-    div[data-baseweb="tab-list"] {
-        border-top: 1px solid #cbd5e1 !important;
-        border-bottom: 1px solid #cbd5e1 !important;
-        padding: 10px 0 !important;
-        margin-bottom: 25px !important;
-        gap: 8px !important;
+        color: #0033A0 !important; /* Deep Blue */
+        text-align: center !important;
         width: 100% !important;
-        display: flex !important;
-        justify-content: space-between !important;
-    }
-    
-    button[data-baseweb="tab"] {
-        transform: skewX(-25deg) !important;
-        background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        flex: 1 !important; 
-        margin: 0 5px !important;
-        padding: 15px 0 !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    
-    /* Skew the text back forward so it's readable. Targeting multiple possible Streamlit elements to be safe */
-    button[data-baseweb="tab"] > div, 
-    button[data-baseweb="tab"] p, 
-    button[data-baseweb="tab"] span {
-        transform: skewX(25deg) !important;
-        font-weight: 700 !important;
-        font-size: 18px !important;
-        color: #475569 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        margin: 0 !important;
-    }
-    
-    /* The Active Highlighted Tab */
-    button[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #0033A0 !important; 
-        border-color: #0033A0 !important;
-        box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] * {
-        color: #ffffff !important;
-    }
-    
-    /* Hide the annoying blue underline */
-    div[data-baseweb="tab-highlight"] {
-        display: none !important;
+        line-height: 1.2 !important;
     }
 
-    /* 4. SUB-TABS OVERRIDE (Keep nested tabs normal) */
-    .stTabs .stTabs div[data-baseweb="tab-list"] {
-        border: none !important;
-        padding: 0 !important;
-        margin-bottom: 15px !important;
-        display: flex !important;
-        justify-content: flex-start !important;
-        gap: 8px !important;
-    }
-    .stTabs .stTabs button[data-baseweb="tab"] {
-        transform: none !important;
-        background-color: transparent !important;
-        border: 1px solid #e2e8f0 !important;
-        border-bottom: none !important;
-        border-radius: 6px 6px 0 0 !important;
-        flex: 0 1 auto !important;
-        padding: 10px 20px !important;
-    }
-    .stTabs .stTabs button[data-baseweb="tab"] > div, 
-    .stTabs .stTabs button[data-baseweb="tab"] p, 
-    .stTabs .stTabs button[data-baseweb="tab"] span {
-        transform: none !important;
-        font-size: 14px !important;
-        color: #64748b !important;
-    }
-    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #ffffff !important;
-        border-top: 3px solid #0033A0 !important;
-        border-left: 1px solid #e2e8f0 !important;
-        border-right: 1px solid #e2e8f0 !important;
-        box-shadow: none !important;
-    }
-    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] * {
-        color: #0033A0 !important;
-    }
-
-    /* Expander fix */
+    /* Fix dropdowns getting cut off in sidebar/expanders */
     [data-testid="stExpander"], div[data-testid="stExpanderDetails"] {
         overflow: visible !important;
     }
