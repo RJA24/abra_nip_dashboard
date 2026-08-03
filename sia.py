@@ -18,122 +18,135 @@ st.markdown("""
     <style>
     /* 1. Pull the dashboard to the very top */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 1.5rem !important;
     }
     header[data-testid="stHeader"] {
-        display: none !important; /* Removes the empty gap at the top */
+        display: none !important;
     }
     footer {visibility: hidden;}
     
     /* 2. Massive KPI Cards */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 10px;
-        padding: 15px 25px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        transition: transform 0.2s ease-in-out;
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-bottom: 4px solid #0033A0 !important;
+        border-radius: 8px !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        min-height: 140px !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
     }
-    [data-testid="stMetric"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+    [data-testid="stMetricLabel"] {
+        text-align: center !important;
+        width: 100% !important;
     }
     [data-testid="stMetricLabel"] * {
-        font-size: 1.15rem !important;
+        font-size: 16px !important;
         font-weight: 700 !important;
-        color: #333333 !important;
+        color: #64748b !important;
+    }
+    [data-testid="stMetricValue"] {
+        text-align: center !important;
+        width: 100% !important;
     }
     [data-testid="stMetricValue"] * {
-        font-size: 2.6rem !important;
+        font-size: 38px !important;
         font-weight: 900 !important;
-        color: #1E88E5 !important; 
-    }
-    [data-testid="stMetricDelta"] * {
-        font-size: 0.95rem !important;
+        color: #0033A0 !important; 
     }
 
-    /* 3. SLANTED TABS */
-    /* --- MAIN TABS (Global) --- */
+    /* 3. SLANTED TABS (MAIN TABS ONLY) */
     div[data-baseweb="tab-list"] {
-        border-top: 1px solid #475569;
-        border-bottom: 1px solid #475569;
-        padding-top: 15px;
-        padding-bottom: 15px;
-        margin-bottom: 25px;
-        gap: 10px;
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        padding: 10px 0 !important;
+        margin-bottom: 25px !important;
+        gap: 8px !important;
+        width: 100% !important;
+        display: flex !important;
+        justify-content: space-between !important;
     }
+    
     button[data-baseweb="tab"] {
-        transform: skewX(-35deg);
-        background-color: #f0f2f6; /* Inactive grey so tabs are visible */
-        border: none;
-        border-radius: 6px;
-        flex: 1; 
-        margin: 0 5px; /* Margin tweaked to fit your 6 tabs */
+        transform: skewX(-25deg) !important;
+        background-color: #f1f5f9 !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 6px !important;
+        flex: 1 !important; 
+        margin: 0 5px !important;
         padding: 15px 0 !important;
-        transition: all 0.2s ease-in-out;
+        transition: all 0.2s ease-in-out !important;
     }
-    button[data-baseweb="tab"] div[data-testid="stMarkdownContainer"] p {
-        transform: skewX(35deg);
-        font-weight: 600;
-        font-size: 18px; /* Adjusted to fit longer tab names */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        margin: 0;
-        color: #0f172a;
+    
+    /* Skew the text back forward so it's readable. Targeting multiple possible Streamlit elements to be safe */
+    button[data-baseweb="tab"] > div, 
+    button[data-baseweb="tab"] p, 
+    button[data-baseweb="tab"] span {
+        transform: skewX(25deg) !important;
+        font-weight: 700 !important;
+        font-size: 18px !important;
+        color: #475569 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 !important;
     }
+    
+    /* The Active Highlighted Tab */
     button[data-baseweb="tab"][aria-selected="true"] {
         background-color: #0033A0 !important; 
+        border-color: #0033A0 !important;
+        box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
     }
-    button[data-baseweb="tab"][aria-selected="true"] div[data-testid="stMarkdownContainer"] p {
+    button[data-baseweb="tab"][aria-selected="true"] * {
         color: #ffffff !important;
     }
+    
+    /* Hide the annoying blue underline */
     div[data-baseweb="tab-highlight"] {
-        display: none;
+        display: none !important;
     }
 
-    /* --- SUB-TABS OVERRIDE (Nested Tabs) --- */
-    /* Keeps your inner metric sub-tabs looking like clean folders! */
+    /* 4. SUB-TABS OVERRIDE (Keep nested tabs normal) */
     .stTabs .stTabs div[data-baseweb="tab-list"] {
-        border: none;
-        padding: 0;
-        margin-bottom: 15px;
-        display: flex;
-        justify-content: flex-start;
-        gap: 8px;
+        border: none !important;
+        padding: 0 !important;
+        margin-bottom: 15px !important;
+        display: flex !important;
+        justify-content: flex-start !important;
+        gap: 8px !important;
     }
     .stTabs .stTabs button[data-baseweb="tab"] {
-        transform: none; /* Removes the slant */
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-bottom: none;
-        border-radius: 6px 6px 0 0;
-        flex: 0 1 auto;
-        margin: 0;
+        transform: none !important;
+        background-color: transparent !important;
+        border: 1px solid #e2e8f0 !important;
+        border-bottom: none !important;
+        border-radius: 6px 6px 0 0 !important;
+        flex: 0 1 auto !important;
         padding: 10px 20px !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"] div[data-testid="stMarkdownContainer"] p {
-        transform: none; /* Removes the slant */
-        font-size: 15px;
-        font-weight: 500;
-        color: #64748b;
+    .stTabs .stTabs button[data-baseweb="tab"] > div, 
+    .stTabs .stTabs button[data-baseweb="tab"] p, 
+    .stTabs .stTabs button[data-baseweb="tab"] span {
+        transform: none !important;
+        font-size: 14px !important;
+        color: #64748b !important;
     }
     .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
         background-color: #ffffff !important;
-        border-top: 4px solid #0033A0 !important;
-        border-left: 1px solid #e2e8f0;
-        border-right: 1px solid #e2e8f0;
+        border-top: 3px solid #0033A0 !important;
+        border-left: 1px solid #e2e8f0 !important;
+        border-right: 1px solid #e2e8f0 !important;
+        box-shadow: none !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] div[data-testid="stMarkdownContainer"] p {
+    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] * {
         color: #0033A0 !important;
-        font-weight: bold;
     }
 
-    /* FIX FOR DROPDOWN CUTOFF IN EXPANDERS */
+    /* Expander fix */
     [data-testid="stExpander"], div[data-testid="stExpanderDetails"] {
         overflow: visible !important;
     }
