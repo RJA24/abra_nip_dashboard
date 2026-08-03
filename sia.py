@@ -570,7 +570,7 @@ try:
                     fig_gauge_mr = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = mr_cov_pct, title = {'text': f"MR Coverage ({exec_target_mode.split()[0]})"},
                         delta = {'reference': 95, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
-                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
                     ))
                     fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_mr, use_container_width=True)
@@ -579,7 +579,7 @@ try:
                     fig_gauge_va = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = va_cov_pct, title = {'text': f"Vit A Coverage ({exec_target_mode.split()[0]})"},
                         delta = {'reference': 95, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
-                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
                     ))
                     fig_gauge_va.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_va, use_container_width=True)
@@ -667,19 +667,19 @@ try:
                 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    fig_gm1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_mr, title={'text': "MR (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gm1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_mr, title={'text': "MR (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gm1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gm1, use_container_width=True)
                 with c2:
-                    fig_gm2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_mr, title={'text': "MR (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gm2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_mr, title={'text': "MR (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gm2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gm2, use_container_width=True)
                 with c3:
-                    fig_gv1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_va, title={'text': "Vit A (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gv1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_va, title={'text': "Vit A (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gv1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gv1, use_container_width=True)
                 with c4:
-                    fig_gv2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_va, title={'text': "Vit A (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#8E24AA"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gv2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_va, title={'text': "Vit A (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#8E24AA"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gv2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gv2, use_container_width=True)
                     
