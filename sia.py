@@ -54,28 +54,34 @@ st.markdown("""
     }
 
     /* 3. TABS: LARGER AND CENTER ALIGNED */
-    [data-testid="stTabs"] > div, div[data-baseweb="tab-list"] {
-        gap: 15px !important;
-        font-size: 56px !important;
+    [data-testid="stTabs"] > div[role="tablist"], [data-baseweb="tab-list"] {
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
         padding: 15px 0 !important;
         margin-bottom: 25px !important;
         display: flex !important;
-        justify-content: center !important; /* CENTER ALIGNMENT */
+        justify-content: center !important; 
+    }
+    
+    /* Target the inner scroll wrapper to force centering */
+    [data-testid="stTabs"] > div[role="tablist"] > div {
+        display: flex !important;
+        justify-content: center !important;
+        gap: 15px !important;
+        width: 100% !important;
     }
     
     button[data-testid="stTab"], button[data-baseweb="tab"] {
         background-color: transparent !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 8px !important;
-        padding: 15px 30px !important; /* LARGER PADDING */
-        flex: 0 1 auto !important; /* STOPS STRETCHING */
+        padding: 15px 30px !important; 
+        flex: 0 1 auto !important; 
         transition: all 0.2s ease-in-out !important;
     }
     
     button[data-testid="stTab"] p, button[data-baseweb="tab"] p {
-        font-size: 18px !important; /* LARGER TEXT */
+        font-size: 18px !important; 
         font-weight: 700 !important;
         color: #475569 !important;
         margin: 0 !important;
@@ -501,7 +507,7 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
                 else:
-                    df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
                 
                 for col in mr_dose_cols:
                     if col in df_mr_filtered.columns:
@@ -522,7 +528,7 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
                 else:
-                    df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                    df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'] == selected_muni]
                 
                 for col in va_dose_cols:
                     if col in df_vita_filtered.columns:
@@ -1007,7 +1013,7 @@ try:
             if view_mode == "All Municipalities (Abra)":
                 df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
             elif view_mode == "Specific Municipality":
-                df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
             
             mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
             
@@ -1117,7 +1123,7 @@ try:
             if view_mode == "All Municipalities (Abra)":
                 df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
             elif view_mode == "Specific Municipality":
-                df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'] == selected_muni]
             
             vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
             
@@ -1252,7 +1258,7 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
                 elif view_mode == "Specific Municipality":
-                    df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
                 
                 # Group columns: C1 to C6 (Deferrals), C7 to C23 (Refusals)
                 def_prefixes = tuple([f"C{i} " for i in range(1, 7)])
@@ -1290,7 +1296,7 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(df_view['Location'].tolist())]
                 elif view_mode == "Specific Municipality":
-                    df_va_filtered = df_va_filtered[(df_va_filtered['Municipality'] == selected_muni) & (df_va_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'] == selected_muni]
                 
                 # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
                 # *If you add more columns to your Google Sheet later, just add them to the tuples below!*
