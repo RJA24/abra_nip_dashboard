@@ -1646,12 +1646,24 @@ try:
             
             st.divider()
 
-            st.markdown("### 📋 System Access Logs")
+            st.markdown("### 📋 System Access Logs & Session Tracking")
             try:
+                # Pull the latest 100 logs from Supabase
                 res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
+                
                 if res_logs.data:
-                    logs_df = pd.DataFrame(res_logs.data)[['timestamp', 'name', 'role']]
-                    st.dataframe(logs_df, use_container_width=True)
+                    # Convert to dataframe
+                    logs_df = pd.DataFrame(res_logs.data)
+                    
+                    # Make sure the 'action' column exists in case older logs don't have it
+                    if 'action' not in logs_df.columns:
+                        logs_df['action'] = "Legacy Login"
+                        
+                    # Filter to show the columns we care about, INCLUDING the new action column
+                    display_cols = ['timestamp', 'name', 'role', 'action']
+                    logs_df = logs_df[[c for c in display_cols if c in logs_df.columns]]
+                    
+                    st.dataframe(logs_df, use_container_width=True, hide_index=True)
                 else:
                     st.info("No access logs found yet.")
             except Exception as e:
