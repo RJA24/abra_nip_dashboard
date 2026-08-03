@@ -235,7 +235,9 @@ if not st.session_state['logged_in']:
                                     
                                     manila_tz = pytz.timezone('Asia/Manila')
                                     current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-                                    supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role}).execute()
+                                    
+                                    # Added 'action' column to track it was a Login
+                                    supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role, 'action': 'Login'}).execute()
                                     
                                     st.session_state['logged_in'] = True
                                     st.session_state['username'] = input_username 
@@ -243,6 +245,9 @@ if not st.session_state['logged_in']:
                                     st.session_state['user_role'] = db_role
                                     st.session_state['assigned_muni'] = db_muni
                                     st.session_state['last_active'] = time.time()
+                                    
+                                    # --- NEW: RECORD EXACT LOGIN TIME ---
+                                    st.session_state['login_time'] = time.time()
                                     
                                     st.toast(f"Welcome, {db_name}!", icon="👋")
                                     time.sleep(1)
@@ -305,7 +310,7 @@ with st.sidebar:
         # Universal Gender Filter
         gender_filter = st.selectbox("Target Gender:", ["Total (Both)", "Male", "Female"])
         
-    # 3. System Actions
+    # 3. # 3. System Actions
     with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
@@ -314,6 +319,27 @@ with st.sidebar:
             st.rerun()
             
         if st.button("🚪 Logout", type="primary", use_container_width=True):
+            
+            # --- NEW: CALCULATE SESSION DURATION ---
+            if 'login_time' in st.session_state:
+                session_duration_seconds = time.time() - st.session_state['login_time']
+                minutes, seconds = divmod(int(session_duration_seconds), 60)
+                hours, minutes = divmod(minutes, 60)
+                formatted_duration = f"{hours}h {minutes}m {seconds}s"
+                
+                # Push Logout Duration to Supabase
+                try:
+                    manila_tz = pytz.timezone('Asia/Manila')
+                    current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
+                    supabase.table('access_logs').insert({
+                        'timestamp': current_time_str, 
+                        'name': st.session_state['user_name'], 
+                        'role': st.session_state['user_role'],
+                        'action': f'Logout (Duration: {formatted_duration})'
+                    }).execute()
+                except Exception as e:
+                    print(f"Log Error: {e}")
+            
             st.session_state['logged_in'] = False
             st.session_state['username'] = ""
             st.session_state['user_name'] = ""
