@@ -54,21 +54,24 @@ st.markdown("""
     }
 
     /* 3. TABS: LARGER AND CENTER ALIGNED */
-    [data-testid="stTabs"] > div[role="tablist"], [data-baseweb="tab-list"] {
+    [data-testid="stTabs"] > div[data-baseweb="tab-list"], 
+    [data-testid="stTabs"] > div[role="tablist"] {
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
         padding: 15px 0 !important;
         margin-bottom: 25px !important;
         display: flex !important;
-        justify-content: center !important; 
+        width: 100% !important;
+        justify-content: center !important;
     }
     
-    /* Target the inner scroll wrapper to force centering */
+    /* Target the hidden inner scroll wrapper and force it to center */
+    [data-testid="stTabs"] > div > div[data-baseweb="tab-list"] > div, 
     [data-testid="stTabs"] > div[role="tablist"] > div {
         display: flex !important;
         justify-content: center !important;
-        gap: 15px !important;
-        width: 100% !important;
+        margin: 0 auto !important; 
+        width: fit-content !important;
     }
     
     button[data-testid="stTab"], button[data-baseweb="tab"] {
@@ -77,6 +80,7 @@ st.markdown("""
         border-radius: 8px !important;
         padding: 15px 30px !important; 
         flex: 0 1 auto !important; 
+        margin: 0 5px !important;
         transition: all 0.2s ease-in-out !important;
     }
     
@@ -650,6 +654,10 @@ try:
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
                 
                 fig_geo_cov = px.bar(df_melt_geo, x=geo_col, y='Coverage %', color='Program', barmode='group', text_auto='.1f', title=f"Coverage % by {geo_col}", color_discrete_sequence=['#1E88E5', '#F4511E'])
+                
+                # --- NEW: FORCE LARGER BAR LABELS ---
+                fig_geo_cov.update_traces(textfont_size=16, textangle=0, textposition="auto")
+                
                 fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
                 fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
