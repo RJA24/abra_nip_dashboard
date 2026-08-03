@@ -656,7 +656,7 @@ try:
                 fig_geo_cov = px.bar(df_melt_geo, x=geo_col, y='Coverage %', color='Program', barmode='group', text_auto='.1f', title=f"Coverage % by {geo_col}", color_discrete_sequence=['#1E88E5', '#F4511E'])
                 
                 # --- NEW: FORCE LARGER BAR LABELS ---
-                fig_geo_cov.update_traces(textfont_size=26, textangle=0, textposition="auto")
+                fig_geo_cov.update_traces(textfont_size=56, textangle=0, textposition="auto")
                 
                 fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
                 fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
