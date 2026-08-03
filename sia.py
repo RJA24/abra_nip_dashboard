@@ -626,40 +626,43 @@ try:
                 df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
                 df_geo_summary['MR Coverage %'] = (df_geo_summary['MR Administered'] / df_geo_summary['MR Target'] * 100).fillna(0)
                 
-                # Do the same for Vit A
-                if view_mode == "All Municipalities (Abra)":
-                    if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
-                        va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
-                        va_geo_doses.rename(columns={'Total Doses': 'Vit A Administered'}, inplace=True)
-                    else:
-                        va_geo_doses = pd.DataFrame(columns=[geo_col, 'Vit A Administered'])
-                    
-                    va_geo_targets = df_view_va.groupby('Location')[va_target_col_geo_active].sum().reset_index()
-                    va_geo_targets.rename(columns={'Location': geo_col, va_target_col_geo_active: 'Vit A Target'}, inplace=True)
-                    
-                    df_geo_summary = pd.merge(df_geo_summary, va_geo_targets, on=geo_col, how='left').fillna(0)
-                    df_geo_summary = pd.merge(df_geo_summary, va_geo_doses, on=geo_col, how='left').fillna(0)
-                    df_geo_summary['Vit A Coverage %'] = (df_geo_summary['Vit A Administered'] / df_geo_summary['Vit A Target'] * 100).fillna(0)
+                # Do the same for Vit A (Always calculate Administered, even if Target is missing at Barangay level)
+                if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
+                    va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
+                    va_geo_doses.rename(columns={'Total Doses': 'Vit A Administered'}, inplace=True)
+                else:
+                    va_geo_doses = pd.DataFrame(columns=[geo_col, 'Vit A Administered'])
+                
+                va_geo_targets = df_view_va.groupby('Location')[va_target_col_geo_active].sum().reset_index()
+                va_geo_targets.rename(columns={'Location': geo_col, va_target_col_geo_active: 'Vit A Target'}, inplace=True)
+                
+                df_geo_summary = pd.merge(df_geo_summary, va_geo_targets, on=geo_col, how='left').fillna(0)
+                df_geo_summary = pd.merge(df_geo_summary, va_geo_doses, on=geo_col, how='left').fillna(0)
+                
+                # Prevent division by zero if target is 0
+                df_geo_summary['Vit A Coverage %'] = df_geo_summary.apply(
+                    lambda row: (row['Vit A Administered'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1
+                )
                 
                 df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=False)
                 
-                fig_geo_cov = px.bar(df_geo_summary, x=geo_col, y='MR Coverage %', text_auto='.1f', title=f"MR Coverage % by {geo_col}", color='MR Coverage %', color_continuous_scale="blues")
+                # --- MELT FOR GROUPED BAR CHART (MR vs Vit A) ---
+                df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
+                
+                fig_geo_cov = px.bar(df_melt_geo, x=geo_col, y='Coverage %', color='Program', barmode='group', text_auto='.1f', title=f"Coverage % by {geo_col}", color_discrete_sequence=['#1E88E5', '#F4511E'])
                 fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
-                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0))
+                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 with st.expander("View Full Geographic Coverage Data"):
                     format_dict = {
                         "MR Coverage %": "{:.1f}%",
                         "MR Target": "{:,.0f}",
-                        "MR Administered": "{:,.0f}"
+                        "MR Administered": "{:,.0f}",
+                        "Vit A Coverage %": "{:.1f}%",
+                        "Vit A Target": "{:,.0f}",
+                        "Vit A Administered": "{:,.0f}"
                     }
-                    if "Vit A Coverage %" in df_geo_summary.columns:
-                        format_dict.update({
-                            "Vit A Coverage %": "{:.1f}%",
-                            "Vit A Target": "{:,.0f}",
-                            "Vit A Administered": "{:,.0f}"
-                        })
                     st.dataframe(df_geo_summary.style.format(format_dict), use_container_width=True, hide_index=True)
 
             else:
