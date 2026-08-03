@@ -655,11 +655,19 @@ try:
                 
                 fig_geo_cov = px.bar(df_melt_geo, x=geo_col, y='Coverage %', color='Program', barmode='group', text_auto='.1f', title=f"Coverage % by {geo_col}", color_discrete_sequence=['#1E88E5', '#F4511E'])
                 
-                # --- NEW: FORCE LARGER BAR LABELS ---
-                fig_geo_cov.update_traces(textfont_size=56, textangle=0, textposition="auto")
+                # --- NEW: BRUTE-FORCE LARGER BAR LABELS ---
+                fig_geo_cov.update_traces(
+                    textfont=dict(size=16),
+                    insidetextfont=dict(size=16),
+                    outsidetextfont=dict(size=16),
+                    textposition="outside", 
+                    cliponaxis=False  # Prevents labels from being cut off at the top
+                )
                 
                 fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
-                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
+                
+                # Increased height slightly to make room for the larger outside labels
+                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=550, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 with st.expander("View Full Geographic Coverage Data"):
