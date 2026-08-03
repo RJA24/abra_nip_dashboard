@@ -16,109 +16,41 @@ st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout=
 
 st.markdown("""
     <style>
-    /* 1. Pull the dashboard to the very top */
-    .block-container {
-        padding-top: 1.5rem !important;
-    }
-    header[data-testid="stHeader"] { display: none !important; }
     footer {visibility: hidden;}
     
-    /* 2. MASSIVE KPI CARDS (DEEP BLUE) */
+    /* MASSIVE KPI CARDS (DEEP BLUE & UNIFORM HEIGHT) */
     [data-testid="stMetric"] {
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
         border-bottom: 6px solid #0033A0 !important; /* Deep Blue Bottom Border */
         border-radius: 8px !important;
-        padding: 20px 10px !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.08) !important;
+        padding: 15px 10px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+        height: 140px !important; /* FORCES ALL CARDS TO THE EXACT SAME HEIGHT */
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
     }
     /* Force Label Size */
     [data-testid="stMetricLabel"] * {
         font-size: 15px !important;
         font-weight: 700 !important;
         color: #475569 !important;
+        text-align: center !important;
+        width: 100% !important;
     }
     /* Force Number Size & Color */
     [data-testid="stMetricValue"] * {
         font-size: 42px !important;
         font-weight: 900 !important;
         color: #0033A0 !important; /* Deep Blue */
+        text-align: center !important;
+        width: 100% !important;
         line-height: 1.2 !important;
     }
 
-    /* 3. THE SLANTED TABS (Targeting BOTH old and new Streamlit tags) */
-    [data-testid="stTabs"] > div, div[data-baseweb="tab-list"] {
-        gap: 12px !important;
-        border-top: 1px solid #cbd5e1 !important;
-        border-bottom: 1px solid #cbd5e1 !important;
-        padding: 15px 0 !important;
-        margin-bottom: 25px !important;
-        display: flex !important;
-    }
-    
-    /* Target the buttons: Skew backward */
-    button[data-testid="stTab"], button[data-baseweb="tab"] {
-        transform: skewX(-25deg) !important;
-        background-color: #f1f5f9 !important;
-        border: 1px solid #cbd5e1 !important;
-        border-radius: 6px !important;
-        padding: 12px 0 !important;
-        flex: 1 !important;
-        margin: 0 5px !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    
-    /* Target the text inside: Skew forward so it's readable */
-    button[data-testid="stTab"] p, button[data-baseweb="tab"] p {
-        transform: skewX(25deg) !important;
-        font-size: 18px !important;
-        font-weight: 700 !important;
-        color: #334155 !important;
-        margin: 0 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-    
-    /* The Active Highlighted Tab */
-    button[data-testid="stTab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #0033A0 !important; /* Deep Blue */
-        border-color: #0033A0 !important;
-        box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
-    }
-    button[data-testid="stTab"][aria-selected="true"] p, button[data-baseweb="tab"][aria-selected="true"] p {
-        color: #ffffff !important;
-    }
-    
-    /* Kill the annoying underline */
-    div[data-testid="stTabIndicator"], div[data-baseweb="tab-highlight"] {
-        display: none !important;
-    }
-
-    /* 4. PROTECT THE INNER SUB-TABS FROM BECOMING SLANTED */
-    .stTabs .stTabs button[data-testid="stTab"], .stTabs .stTabs button[data-baseweb="tab"] {
-        transform: none !important;
-        background-color: transparent !important;
-        border: none !important;
-        border-bottom: 2px solid transparent !important;
-        border-radius: 0 !important;
-        padding: 8px 15px !important;
-    }
-    .stTabs .stTabs button[data-testid="stTab"] p, .stTabs .stTabs button[data-baseweb="tab"] p {
-        transform: none !important;
-        font-size: 14px !important;
-        color: #64748b !important;
-    }
-    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"], .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
-        border-bottom: 3px solid #0033A0 !important; /* Deep Blue Underline */
-        background-color: transparent !important;
-        box-shadow: none !important;
-    }
-    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"] p, .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] p {
-        color: #0033A0 !important; /* Deep Blue Text */
-    }
-
-    /* Fix dropdowns getting cut off */
+    /* Fix dropdowns getting cut off in sidebar/expanders */
     [data-testid="stExpander"], div[data-testid="stExpanderDetails"] {
         overflow: visible !important;
     }
