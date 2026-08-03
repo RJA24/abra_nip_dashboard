@@ -16,94 +16,96 @@ st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout=
 
 st.markdown("""
     <style>
-    /* Move the title higher up the page */
+    /* 1. Pull the dashboard to the very top */
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 1rem !important;
     }
-    
+    header[data-testid="stHeader"] {
+        display: none !important; /* Removes the empty gap at the top */
+    }
     footer {visibility: hidden;}
     
-    /* KPI Card & Text Sizing */
+    /* 2. Massive KPI Cards */
     [data-testid="stMetric"] {
-        background-color: var(--secondary-background-color);
+        background-color: #ffffff;
         border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 10px;
-        padding: 20px 25px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        padding: 15px 25px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         transition: transform 0.2s ease-in-out;
     }
     [data-testid="stMetric"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        transform: translateY(-3px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.1);
     }
-    [data-testid="stMetricLabel"] p {
-        font-size: 1.05rem !important;
-        font-weight: 600 !important;
+    /* Aggressively target the label text */
+    [data-testid="stMetricLabel"] * {
+        font-size: 1.15rem !important;
+        font-weight: 700 !important;
+        color: #333333 !important;
     }
-    [data-testid="stMetricValue"] div {
-        font-size: 2.2rem !important;
-        font-weight: 800 !important;
+    /* Aggressively target the main number */
+    [data-testid="stMetricValue"] * {
+        font-size: 2.6rem !important;
+        font-weight: 900 !important;
+        color: #1E88E5 !important; /* Deep blue to make the numbers pop */
+    }
+    /* Secondary delta text */
+    [data-testid="stMetricDelta"] * {
+        font-size: 0.95rem !important;
     }
 
-    /* Hide the default Streamlit bottom highlight bar */
+    /* 3. The Perfect Slanted Tabs */
     .stTabs [data-baseweb="tab-highlight"] {
-        display: none !important;
+        display: none !important; /* Kill the default Streamlit underline */
     }
-
-    /* Tab list container: Add top/bottom borders and space out tabs */
     .stTabs [data-baseweb="tab-list"] { 
-        gap: 10px; 
-        border-top: 1px solid rgba(128, 128, 128, 0.4);
-        border-bottom: 1px solid rgba(128, 128, 128, 0.4);
+        gap: 15px; 
+        border-top: 1px solid rgba(128,128,128,0.3);
+        border-bottom: 1px solid rgba(128,128,128,0.3);
         padding: 15px 0px;
         justify-content: center;
-    }
-
-    /* Individual Tab Structure */
-    .stTabs [data-baseweb="tab"] {
-        position: relative;
-        z-index: 1;
-        height: 50px;
-        background-color: transparent !important;
-        border: none !important;
-        padding: 10px 40px !important;
-    }
-
-    /* Slanted Background Shape */
-    .stTabs [data-baseweb="tab"]::before {
-        content: "";
-        position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
         background-color: transparent;
-        z-index: -1;
-        transform: skewX(25deg); /* Creates the forward slant */
-        border-radius: 4px;
-        transition: all 0.2s ease-in-out;
     }
-
-    /* General Tab Text Styling */
-    .stTabs [data-baseweb="tab"] span {
-        font-size: 1.15rem !important;
+    
+    /* Skew the tab background backwards */
+    .stTabs [data-baseweb="tab"] {
+        transform: skewX(-20deg); 
+        background-color: #f0f2f6 !important; /* Inactive grey/blue */
+        border-radius: 6px;
+        padding: 10px 35px !important;
+        margin: 0 5px;
+        height: 55px;
+        border: none !important;
+        transition: all 0.2s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #e6f0fa !important;
+    }
+    
+    /* Skew the text inside forwards so it looks normal! */
+    .stTabs [data-baseweb="tab"] > div {
+        transform: skewX(20deg);
+    }
+    .stTabs [data-baseweb="tab"] p {
+        font-size: 1.2rem !important;
         font-weight: 600 !important;
-        transition: color 0.2s ease-in-out;
+        color: #001f4d !important;
+        margin: 0 !important;
     }
 
-    /* Inactive Tab Text (Dark Blue/Black) */
-    .stTabs [aria-selected="false"] span {
-        color: #001f4d !important; 
+    /* The Active Highlighted Tab */
+    .stTabs [aria-selected="true"] {
+        background-color: #003399 !important;
+        box-shadow: 3px 3px 12px rgba(0, 51, 153, 0.3);
     }
-
-    /* Active Tab Background (Deep Blue) and Text (White) */
-    .stTabs [aria-selected="true"]::before {
-        background-color: #003399 !important; 
-    }
-    .stTabs [aria-selected="true"] span {
+    .stTabs [aria-selected="true"] p {
         color: white !important;
         font-weight: 800 !important;
     }
     
     /* FIX FOR DROPDOWN CUTOFF IN EXPANDERS */
-    [data-testid="stExpander"] {
+    [data-testid="stExpander"], div[data-testid="stExpanderDetails"] {
         overflow: visible !important;
     }
     </style>
