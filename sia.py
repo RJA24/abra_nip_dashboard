@@ -20,65 +20,56 @@ st.markdown("""
     .block-container {
         padding-top: 1.5rem !important;
     }
-    header[data-testid="stHeader"] {
-        display: none !important;
-    }
+    header[data-testid="stHeader"] { display: none !important; }
     footer {visibility: hidden;}
     
     /* 2. MASSIVE KPI CARDS (DEEP BLUE) */
-    div[data-testid="stMetric"], [data-testid="stMetric"] {
+    [data-testid="stMetric"] {
         background-color: #ffffff !important;
         border: 1px solid #e2e8f0 !important;
         border-bottom: 6px solid #0033A0 !important; /* Deep Blue Bottom Border */
         border-radius: 8px !important;
         padding: 20px 10px !important;
         box-shadow: 0 4px 6px rgba(0,0,0,0.08) !important;
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: center !important;
-        align-items: center !important;
     }
     /* Force Label Size */
-    div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] > div, div[data-testid="stMetricLabel"] p {
-        font-size: 16px !important;
+    [data-testid="stMetricLabel"] * {
+        font-size: 15px !important;
         font-weight: 700 !important;
         color: #475569 !important;
-        text-align: center !important;
-        width: 100% !important;
-        justify-content: center !important;
     }
     /* Force Number Size & Color */
-    div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] > div {
+    [data-testid="stMetricValue"] * {
         font-size: 42px !important;
         font-weight: 900 !important;
         color: #0033A0 !important; /* Deep Blue */
-        text-align: center !important;
-        width: 100% !important;
-        justify-content: center !important;
         line-height: 1.2 !important;
     }
 
-    /* 3. THE SLANTED TABS (BRUTE FORCE) */
-    /* Target the container */
-    .stTabs > div[role="tablist"], div[data-baseweb="tab-list"] {
+    /* 3. THE SLANTED TABS (Targeting BOTH old and new Streamlit tags) */
+    [data-testid="stTabs"] > div, div[data-baseweb="tab-list"] {
         gap: 12px !important;
-        border-bottom: 2px solid #cbd5e1 !important;
-        padding-bottom: 10px !important;
-        padding-top: 10px !important;
+        border-top: 1px solid #cbd5e1 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        padding: 15px 0 !important;
+        margin-bottom: 25px !important;
+        display: flex !important;
     }
     
     /* Target the buttons: Skew backward */
-    .stTabs > div[role="tablist"] > button, button[data-baseweb="tab"], button[role="tab"] {
+    button[data-testid="stTab"], button[data-baseweb="tab"] {
         transform: skewX(-25deg) !important;
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
         border-radius: 6px !important;
-        padding: 12px 25px !important;
+        padding: 12px 0 !important;
+        flex: 1 !important;
+        margin: 0 5px !important;
         transition: all 0.2s ease-in-out !important;
     }
     
     /* Target the text inside: Skew forward so it's readable */
-    .stTabs > div[role="tablist"] > button *, button[data-baseweb="tab"] *, button[role="tab"] * {
+    button[data-testid="stTab"] p, button[data-baseweb="tab"] p {
         transform: skewX(25deg) !important;
         font-size: 18px !important;
         font-weight: 700 !important;
@@ -90,12 +81,12 @@ st.markdown("""
     }
     
     /* The Active Highlighted Tab */
-    .stTabs > div[role="tablist"] > button[aria-selected="true"], button[aria-selected="true"] {
+    button[data-testid="stTab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] {
         background-color: #0033A0 !important; /* Deep Blue */
         border-color: #0033A0 !important;
         box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
     }
-    .stTabs > div[role="tablist"] > button[aria-selected="true"] *, button[aria-selected="true"] * {
+    button[data-testid="stTab"][aria-selected="true"] p, button[data-baseweb="tab"][aria-selected="true"] p {
         color: #ffffff !important;
     }
     
@@ -105,7 +96,7 @@ st.markdown("""
     }
 
     /* 4. PROTECT THE INNER SUB-TABS FROM BECOMING SLANTED */
-    .stTabs .stTabs > div[role="tablist"] > button, .stTabs .stTabs button[data-baseweb="tab"] {
+    .stTabs .stTabs button[data-testid="stTab"], .stTabs .stTabs button[data-baseweb="tab"] {
         transform: none !important;
         background-color: transparent !important;
         border: none !important;
@@ -113,17 +104,17 @@ st.markdown("""
         border-radius: 0 !important;
         padding: 8px 15px !important;
     }
-    .stTabs .stTabs > div[role="tablist"] > button *, .stTabs .stTabs button[data-baseweb="tab"] * {
+    .stTabs .stTabs button[data-testid="stTab"] p, .stTabs .stTabs button[data-baseweb="tab"] p {
         transform: none !important;
         font-size: 14px !important;
         color: #64748b !important;
     }
-    .stTabs .stTabs > div[role="tablist"] > button[aria-selected="true"], .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
+    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"], .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
         border-bottom: 3px solid #0033A0 !important; /* Deep Blue Underline */
         background-color: transparent !important;
         box-shadow: none !important;
     }
-    .stTabs .stTabs > div[role="tablist"] > button[aria-selected="true"] *, .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] * {
+    .stTabs .stTabs button[data-testid="stTab"][aria-selected="true"] p, .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] p {
         color: #0033A0 !important; /* Deep Blue Text */
     }
 
