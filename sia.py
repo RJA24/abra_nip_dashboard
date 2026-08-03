@@ -837,18 +837,87 @@ try:
         else:
             st.info("Awaiting VaccTrack Sync to populate analytics.")
         
-    with tab_wastage:
-        st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
-        st.write("Deep dive into vaccine utilization and specific reasons for missed targets.")
+    # ==========================================
+    # DEFERRAL & REFUSAL ANALYSIS TAB
+    # ==========================================
+    with tab_def_ref:
+        st.markdown(f"### 📉 Deferral and Refusal Analysis: {location_label}")
+        st.write("Deep dive into the specific reasons for missed vaccination targets based on RHU reports.")
         
-        col_waste1, col_waste2 = st.columns(2)
-        with col_waste1:
-            st.markdown("#### 🧪 Vaccine Utilization (MR & Vit A)")
-            st.info("🚧 Wastage Rate Chart Placeholder (Opened vs. Administered)")
-            
-        with col_waste2:
-            st.markdown("#### 📋 Top 5 Reasons for Non-Vaccination")
-            st.info("🚧 C1-C23 Pareto Chart Placeholder")
+        df_mr_live, df_vita_live = fetch_live_accomplishments()
+        
+        # Create Sub-Tabs for MR and Vit A
+        tab_mr_reasons, tab_va_reasons = st.tabs(["💉 MR Reasons", "💊 Vit A Reasons"])
+        
+        with tab_mr_reasons:
+            if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
+                df_mr_filtered = df_mr_live.copy()
+                
+                # Apply Geographic Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                elif view_mode == "Specific Municipality":
+                    df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                # Dynamically grab all C1 to C23 columns
+                reason_cols_mr = [col for col in df_mr_filtered.columns if str(col).startswith('C') and str(col)[1:2].isdigit()]
+                
+                if reason_cols_mr:
+                    for col in reason_cols_mr:
+                        df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    
+                    df_reasons_mr = df_mr_filtered[reason_cols_mr].sum().reset_index()
+                    df_reasons_mr.columns = ['Reason', 'Count']
+                    df_reasons_mr = df_reasons_mr[df_reasons_mr['Count'] > 0].sort_values('Count', ascending=True) # Sort to put highest at top
+                    
+                    if not df_reasons_mr.empty:
+                        # Truncate really long reasons for cleaner chart labels
+                        df_reasons_mr['Short Reason'] = df_reasons_mr['Reason'].apply(lambda x: (x[:60] + '...') if len(x) > 60 else x)
+                        
+                        fig_reasons_mr = px.bar(df_reasons_mr, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title="MR Deferrals & Refusals Breakdown", color_discrete_sequence=['#E53935'])
+                        fig_reasons_mr.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(400, len(df_reasons_mr)*40), margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_reasons_mr, use_container_width=True)
+                    else:
+                        st.info("✅ No MR deferrals or refusals have been recorded for this location yet.")
+                else:
+                    st.warning("⚠️ Could not find C1-C23 columns in the Master Sheet.")
+            else:
+                st.info("Awaiting VaccTrack Sync to populate analytics.")
+                
+        with tab_va_reasons:
+            if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+                df_va_filtered = df_vita_live.copy()
+                
+                # Apply Geographic Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                elif view_mode == "Specific Municipality":
+                    df_va_filtered = df_va_filtered[(df_va_filtered['Municipality'] == selected_muni) & (df_va_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                # Dynamically grab all VIT1 to VIT5 columns
+                reason_cols_va = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
+                
+                if reason_cols_va:
+                    for col in reason_cols_va:
+                        df_va_filtered[col] = pd.to_numeric(df_va_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    
+                    df_reasons_va = df_va_filtered[reason_cols_va].sum().reset_index()
+                    df_reasons_va.columns = ['Reason', 'Count']
+                    df_reasons_va = df_reasons_va[df_reasons_va['Count'] > 0].sort_values('Count', ascending=True)
+                    
+                    if not df_reasons_va.empty:
+                        # Truncate really long reasons
+                        df_reasons_va['Short Reason'] = df_reasons_va['Reason'].apply(lambda x: (x[:60] + '...') if len(x) > 60 else x)
+                        
+                        fig_reasons_va = px.bar(df_reasons_va, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title="Vitamin A Deferrals & Refusals Breakdown", color_discrete_sequence=['#F4511E'])
+                        fig_reasons_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(400, len(df_reasons_va)*40), margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_reasons_va, use_container_width=True)
+                    else:
+                        st.info("✅ No Vitamin A deferrals or refusals have been recorded for this location yet.")
+                else:
+                    st.warning("⚠️ Could not find VIT columns in the Master Sheet.")
+            else:
+                st.info("Awaiting VaccTrack Sync to populate analytics.")
 
     # ==========================================
     # ADMIN PANEL
@@ -1017,4 +1086,4 @@ try:
                 st.warning(f"Could not load Access Logs: {e}")
 
 except Exception as e:
-    st.error(f"Dashboard Error: {e}")111
+    st.error(f"Dashboard Error: {e}")
