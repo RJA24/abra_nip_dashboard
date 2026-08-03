@@ -1346,7 +1346,7 @@ try:
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
 
-            # ==========================================
+        # ==========================================
         # RAW DATA EXPORT: DEFERRALS & REFUSALS
         # ==========================================
         st.divider()
@@ -1364,15 +1364,13 @@ try:
                     df_mr_raw = df_mr_live[df_mr_live['Municipality'] == selected_muni].copy()
                 
                 # 2. Filter only rows that have a Deferral or Refusal Reason
-                # (Adjust the column names below if your Google Sheet uses slightly different headers)
                 reason_cols = [c for c in df_mr_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
                 if reason_cols:
-                    # Keep rows where at least one of the reason columns is not null/empty
-                    df_mr_def_only = df_mr_raw.dropna(subset=reason_cols, how='all')
-                    # Drop rows where the reason is just empty space
-                    df_mr_def_only = df_mr_def_only[df_mr_def_only[reason_cols].apply(lambda x: x.str.strip().astype(bool)).any(axis=1)]
+                    # FIX: Convert floats/NaNs to empty strings before stripping
+                    mask = df_mr_raw[reason_cols].fillna('').astype(str).apply(lambda x: x.str.strip() != '')
+                    df_mr_def_only = df_mr_raw[mask.any(axis=1)]
                 else:
-                    df_mr_def_only = df_mr_raw # Fallback if specific columns aren't found
+                    df_mr_def_only = df_mr_raw 
                 
                 if not df_mr_def_only.empty:
                     with st.expander("View & Download Raw MR Deferral/Refusal Data", expanded=False):
@@ -1401,8 +1399,9 @@ try:
                 # 2. Filter only rows that have a Deferral or Refusal Reason
                 reason_cols_va = [c for c in df_va_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
                 if reason_cols_va:
-                    df_va_def_only = df_va_raw.dropna(subset=reason_cols_va, how='all')
-                    df_va_def_only = df_va_def_only[df_va_def_only[reason_cols_va].apply(lambda x: x.str.strip().astype(bool)).any(axis=1)]
+                    # FIX: Convert floats/NaNs to empty strings before stripping
+                    mask_va = df_va_raw[reason_cols_va].fillna('').astype(str).apply(lambda x: x.str.strip() != '')
+                    df_va_def_only = df_va_raw[mask_va.any(axis=1)]
                 else:
                     df_va_def_only = df_va_raw 
 
