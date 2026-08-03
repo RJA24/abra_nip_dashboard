@@ -45,29 +45,57 @@ st.markdown("""
         font-weight: 800 !important;
     }
 
-    /* Main Tabs Sizing & Highlighting */
-    .stTabs [data-baseweb="tab-list"] { 
-        gap: 8px; 
+    /* Hide the default Streamlit bottom highlight bar */
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none !important;
     }
+
+    /* Tab list container: Add top/bottom borders and space out tabs */
+    .stTabs [data-baseweb="tab-list"] { 
+        gap: 10px; 
+        border-top: 1px solid rgba(128, 128, 128, 0.4);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.4);
+        padding: 15px 0px;
+        justify-content: center;
+    }
+
+    /* Individual Tab Structure */
     .stTabs [data-baseweb="tab"] {
-        height: 65px;
-        background-color: rgba(128, 128, 128, 0.08);
-        border-radius: 8px 8px 0px 0px;
-        padding: 10px 25px;
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-bottom: none;
+        position: relative;
+        z-index: 1;
+        height: 50px;
+        background-color: transparent !important;
+        border: none !important;
+        padding: 10px 40px !important;
+    }
+
+    /* Slanted Background Shape */
+    .stTabs [data-baseweb="tab"]::before {
+        content: "";
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: transparent;
+        z-index: -1;
+        transform: skewX(25deg); /* Creates the forward slant */
+        border-radius: 4px;
         transition: all 0.2s ease-in-out;
     }
+
+    /* General Tab Text Styling */
     .stTabs [data-baseweb="tab"] span {
         font-size: 1.15rem !important;
         font-weight: 600 !important;
+        transition: color 0.2s ease-in-out;
     }
-    
-    /* The Active/Selected Tab */
-    .stTabs [aria-selected="true"] {
-        background-color: #1E88E5 !important;
-        border: 1px solid #1E88E5 !important;
-        box-shadow: 0 -4px 12px rgba(30, 136, 229, 0.3);
+
+    /* Inactive Tab Text (Dark Blue/Black) */
+    .stTabs [aria-selected="false"] span {
+        color: #001f4d !important; 
+    }
+
+    /* Active Tab Background (Deep Blue) and Text (White) */
+    .stTabs [aria-selected="true"]::before {
+        background-color: #003399 !important; 
     }
     .stTabs [aria-selected="true"] span {
         color: white !important;
