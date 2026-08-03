@@ -368,20 +368,275 @@ def fetch_live_accomplishments():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals"]
+tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Deferral & Refusal Analysis"]
 if is_admin:
     tab_names.append("🛡️ Admin Panel")
     
 tabs = st.tabs(tab_names)
 
 if is_admin:
-    tab_total, tab_target, tab_mr, tab_vita, tab_wastage, tab_admin = tabs
+    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_admin = tabs
 else:
-    tab_total, tab_target, tab_mr, tab_vita, tab_wastage = tabs
+    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref = tabs
 
 try:
+    # ==========================================
+    # EXECUTIVE SUMMARY TAB
+    # ==========================================
     with tab_total:
-        st.info("🚧 Executive Summary will populate once data streams are connected.")
+        st.markdown("### 📊 Executive Summary")
+        
+        df_targets = fetch_targets_from_supabase()
+        df_mr_live, df_vita_live = fetch_live_accomplishments()
+        
+        if df_targets.empty:
+            st.warning("⚠️ The Targets Database is empty. Please sync the Target Database in the Admin Panel.")
+        else:
+            # 1. Geographic Filtering
+            if view_mode == "All Municipalities (Abra)":
+                df_view = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'] == 'Abra')]
+                location_label = "Abra Province"
+                df_view_va = df_view
+                geo_col = 'Municipality'
+            else:
+                df_view = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
+                location_label = f"{selected_muni}, Abra"
+                df_view_va = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Location'] == selected_muni)]
+                geo_col = 'Barangay'
+                
+            c_title, c_drop = st.columns([6, 4])
+            with c_title:
+                st.markdown(f"#### Overall Performance: {location_label}")
+            with c_drop:
+                exec_target_mode = st.selectbox("🎯 Target Baseline for Calculations:", ["Projected Population Target", "Actual RHU Target", "Comparison View"], label_visibility="collapsed")
+
+            # 2. Process Accomplishments
+            total_mr_doses = 0
+            df_mr_trend = pd.DataFrame()
+            if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
+                df_mr_filtered = df_mr_live.copy()
+                if view_mode == "All Municipalities (Abra)":
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                else:
+                    df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+                for col in mr_dose_cols:
+                    if col in df_mr_filtered.columns:
+                        df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                
+                df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1)
+                total_mr_doses = df_mr_filtered['Total Doses'].sum()
+                
+                if 'Vaccination Date' in df_mr_filtered.columns:
+                    df_mr_filtered['Vaccination Date'] = pd.to_datetime(df_mr_filtered['Vaccination Date'], errors='coerce')
+                    df_mr_trend = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                    df_mr_trend.rename(columns={'Total Doses': 'MR Doses'}, inplace=True)
+
+            total_vita_doses = 0
+            df_va_trend = pd.DataFrame()
+            if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+                df_vita_filtered = df_vita_live.copy()
+                if view_mode == "All Municipalities (Abra)":
+                    df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                else:
+                    df_vita_filtered = df_vita_filtered[(df_vita_filtered['Municipality'] == selected_muni) & (df_vita_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
+                for col in vita_dose_cols:
+                    if col in df_vita_filtered.columns:
+                        df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                
+                df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1)
+                total_vita_doses = df_vita_filtered['Total Doses'].sum()
+                
+                if 'Vaccination Date' in df_vita_filtered.columns:
+                    df_vita_filtered['Vaccination Date'] = pd.to_datetime(df_vita_filtered['Vaccination Date'], errors='coerce')
+                    df_va_trend = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
+                    df_va_trend.rename(columns={'Total Doses': 'Vit A Doses'}, inplace=True)
+
+            # 3. Targets
+            nat_target_mr = df_view['MR_6-59m_Total'].sum()
+            nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
+            
+            act_target_mr = df_view['Act_MR_6-59m_Total'].sum() if 'Act_MR_6-59m_Total' in df_view.columns else 0
+            act_target_va = df_view_va['Act_VitA_Total'].sum() if not df_view_va.empty and 'Act_VitA_Total' in df_view_va.columns else 0
+
+            import plotly.graph_objects as go
+
+            if exec_target_mode in ["Projected Population Target", "Actual RHU Target"]:
+                if exec_target_mode == "Projected Population Target":
+                    active_target_mr = nat_target_mr
+                    active_target_va = nat_target_va
+                    target_label = "Projected Target"
+                    mr_target_col_geo = 'MR_6-59m_Total'
+                    va_target_col_geo = 'VitA_Total'
+                else:
+                    active_target_mr = act_target_mr
+                    active_target_va = act_target_va
+                    target_label = "Actual Target"
+                    mr_target_col_geo = 'Act_MR_6-59m_Total'
+                    va_target_col_geo = 'Act_VitA_Total'
+
+                mr_cov_pct = (total_mr_doses / active_target_mr * 100) if active_target_mr > 0 else 0
+                va_cov_pct = (total_vita_doses / active_target_va * 100) if active_target_va > 0 else 0
+
+                # 4. KPI Cards
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("💉 MR Doses Administered", f"{total_mr_doses:,.0f}", f"{target_label}: {active_target_mr:,.0f}", delta_color="off")
+                k2.metric("🎯 MR Coverage %", f"{mr_cov_pct:.1f}%")
+                k3.metric("💊 Vit A Doses Administered", f"{total_vita_doses:,.0f}", f"{target_label}: {active_target_va:,.0f}", delta_color="off")
+                k4.metric("🎯 Vit A Coverage %", f"{va_cov_pct:.1f}%")
+                
+                st.divider()
+                
+                c1, c2 = st.columns(2)
+                
+                with c1:
+                    st.markdown("#### 🚀 Campaign Progress")
+                    # MR Gauge
+                    fig_gauge_mr = go.Figure(go.Indicator(
+                        mode = "gauge+number+delta", value = mr_cov_pct, title = {'text': f"MR Coverage ({exec_target_mode.split()[0]})"},
+                        delta = {'reference': 95, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+                    ))
+                    fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gauge_mr, use_container_width=True)
+
+                    # Vit A Gauge
+                    fig_gauge_va = go.Figure(go.Indicator(
+                        mode = "gauge+number+delta", value = va_cov_pct, title = {'text': f"Vit A Coverage ({exec_target_mode.split()[0]})"},
+                        delta = {'reference': 95, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+                        gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+                    ))
+                    fig_gauge_va.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gauge_va, use_container_width=True)
+
+                with c2:
+                    st.markdown("#### 📈 Daily Vaccination Trend")
+                    if not df_mr_trend.empty or not df_va_trend.empty:
+                        if not df_mr_trend.empty and not df_va_trend.empty:
+                            df_trend = pd.merge(df_mr_trend, df_va_trend, on='Vaccination Date', how='outer').fillna(0)
+                        elif not df_mr_trend.empty:
+                            df_trend = df_mr_trend.copy()
+                            df_trend['Vit A Doses'] = 0
+                        else:
+                            df_trend = df_va_trend.copy()
+                            df_trend['MR Doses'] = 0
+                            
+                        df_trend = df_trend.sort_values('Vaccination Date')
+                        
+                        fig_trend = px.line(df_trend, x='Vaccination Date', y=['MR Doses', 'Vit A Doses'], markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
+                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses Administered", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_trend, use_container_width=True)
+                        
+                st.divider()
+                st.markdown(f"#### 🗺️ Geographic Coverage Breakdown ({geo_col})")
+                
+                # Combine targets and doses for geographic table/chart
+                if not df_mr_live.empty and geo_col in df_mr_filtered.columns:
+                    mr_geo_doses = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
+                    mr_geo_doses.rename(columns={'Total Doses': 'MR Administered'}, inplace=True)
+                else:
+                    mr_geo_doses = pd.DataFrame(columns=[geo_col, 'MR Administered'])
+                    
+                mr_geo_targets = df_view.groupby('Location')[mr_target_col_geo].sum().reset_index()
+                mr_geo_targets.rename(columns={'Location': geo_col, mr_target_col_geo: 'MR Target'}, inplace=True)
+                
+                df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
+                df_geo_summary['MR Coverage %'] = (df_geo_summary['MR Administered'] / df_geo_summary['MR Target'] * 100).fillna(0)
+                
+                # Do the same for Vit A
+                if view_mode == "All Municipalities (Abra)":
+                    if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
+                        va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
+                        va_geo_doses.rename(columns={'Total Doses': 'Vit A Administered'}, inplace=True)
+                    else:
+                        va_geo_doses = pd.DataFrame(columns=[geo_col, 'Vit A Administered'])
+                    
+                    va_geo_targets = df_view_va.groupby('Location')[va_target_col_geo].sum().reset_index()
+                    va_geo_targets.rename(columns={'Location': geo_col, va_target_col_geo: 'Vit A Target'}, inplace=True)
+                    
+                    df_geo_summary = pd.merge(df_geo_summary, va_geo_targets, on=geo_col, how='left').fillna(0)
+                    df_geo_summary = pd.merge(df_geo_summary, va_geo_doses, on=geo_col, how='left').fillna(0)
+                    df_geo_summary['Vit A Coverage %'] = (df_geo_summary['Vit A Administered'] / df_geo_summary['Vit A Target'] * 100).fillna(0)
+                
+                df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=False)
+                
+                fig_geo_cov = px.bar(df_geo_summary, x=geo_col, y='MR Coverage %', text_auto='.1f', title=f"MR Coverage % by {geo_col}", color='MR Coverage %', color_continuous_scale="blues")
+                fig_geo_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                fig_geo_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig_geo_cov, use_container_width=True)
+                
+                with st.expander("View Full Geographic Coverage Data"):
+                    st.dataframe(df_geo_summary.style.format({"MR Coverage %": "{:.1f}%", "Vit A Coverage %": "{:.1f}%"} if "Vit A Coverage %" in df_geo_summary.columns else {"MR Coverage %": "{:.1f}%"}), use_container_width=True, hide_index=True)
+
+            else:
+                # ==============================
+                # COMPARISON VIEW
+                # ==============================
+                nat_cov_mr = (total_mr_doses / nat_target_mr * 100) if nat_target_mr > 0 else 0
+                act_cov_mr = (total_mr_doses / act_target_mr * 100) if act_target_mr > 0 else 0
+                
+                nat_cov_va = (total_vita_doses / nat_target_va * 100) if nat_target_va > 0 else 0
+                act_cov_va = (total_vita_doses / act_target_va * 100) if act_target_va > 0 else 0
+                
+                mr_var = act_target_mr - nat_target_mr
+                va_var = act_target_va - nat_target_va
+
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("💉 Total MR Doses", f"{total_mr_doses:,.0f}")
+                k2.metric("🎯 MR Target Variance", f"{mr_var:,.0f}", "Actual vs Projected", delta_color="inverse")
+                k3.metric("💊 Total Vit A Doses", f"{total_vita_doses:,.0f}")
+                k4.metric("🎯 Vit A Target Variance", f"{va_var:,.0f}", "Actual vs Projected", delta_color="inverse")
+                
+                st.divider()
+                st.markdown("#### 🚀 Coverage Comparison")
+                
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    fig_gm1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_mr, title={'text': "MR (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gm1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gm1, use_container_width=True)
+                with c2:
+                    fig_gm2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_mr, title={'text': "MR (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gm2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gm2, use_container_width=True)
+                with c3:
+                    fig_gv1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_va, title={'text': "Vit A (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gv1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gv1, use_container_width=True)
+                with c4:
+                    fig_gv2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_va, title={'text': "Vit A (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#8E24AA"}, 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                    fig_gv2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(fig_gv2, use_container_width=True)
+                    
+                st.divider()
+                st.markdown(f"#### 🗺️ Geographic Coverage Comparison ({geo_col})")
+                
+                if not df_mr_live.empty and geo_col in df_mr_filtered.columns:
+                    mr_geo_doses = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
+                    mr_geo_doses.rename(columns={'Total Doses': 'Doses'}, inplace=True)
+                else:
+                    mr_geo_doses = pd.DataFrame(columns=[geo_col, 'Doses'])
+                    
+                mr_geo_nat = df_view.groupby('Location')['MR_6-59m_Total'].sum().reset_index().rename(columns={'Location': geo_col, 'MR_6-59m_Total': 'Proj Target'})
+                mr_geo_act = df_view.groupby('Location')['Act_MR_6-59m_Total'].sum().reset_index().rename(columns={'Location': geo_col, 'Act_MR_6-59m_Total': 'Act Target'})
+                
+                df_comp_geo = pd.merge(mr_geo_nat, mr_geo_act, on=geo_col, how='left').fillna(0)
+                df_comp_geo = pd.merge(df_comp_geo, mr_geo_doses, on=geo_col, how='left').fillna(0)
+                
+                df_comp_geo['Proj Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Proj Target'] * 100).fillna(0)
+                df_comp_geo['Act Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Act Target'] * 100).fillna(0)
+                
+                df_comp_geo = df_comp_geo.sort_values('Proj Coverage %', ascending=False)
+                df_melt = df_comp_geo.melt(id_vars=[geo_col], value_vars=['Proj Coverage %', 'Act Coverage %'], var_name='Baseline', value_name='Coverage %')
+                df_melt['Baseline'] = df_melt['Baseline'].replace({'Proj Coverage %': 'vs Projected', 'Act Coverage %': 'vs Actual'})
+                
+                fig_comp_cov = px.bar(df_melt, x=geo_col, y='Coverage %', color='Baseline', barmode='group', text_auto='.1f', color_discrete_sequence=['#1E88E5', '#43A047'])
+                fig_comp_cov.add_hline(y=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                fig_comp_cov.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Coverage (%)", height=500, margin=dict(l=0, r=0, t=40, b=0), legend_title_text="")
+                st.plotly_chart(fig_comp_cov, use_container_width=True)
 
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
@@ -870,18 +1125,95 @@ try:
         else:
             st.info("Awaiting VaccTrack Sync to populate analytics.")
         
-    with tab_wastage:
-        st.markdown("### 📉 Logistics, Wastage & Deferral Analysis")
-        st.write("Deep dive into vaccine utilization and specific reasons for missed targets.")
+    # ==========================================
+    # DEFERRAL & REFUSAL ANALYSIS TAB
+    # ==========================================
+    with tab_def_ref:
+        st.markdown(f"### 📉 Deferral and Refusal Analysis: {location_label}")
+        st.write("Deep dive into the specific reasons for missed vaccination targets based on RHU reports.")
         
-        col_waste1, col_waste2 = st.columns(2)
-        with col_waste1:
-            st.markdown("#### 🧪 Vaccine Utilization (MR & Vit A)")
-            st.info("🚧 Wastage Rate Chart Placeholder (Opened vs. Administered)")
+        df_mr_live, df_vita_live = fetch_live_accomplishments()
+        
+        # Helper function to generate clean, full-width charts
+        def plot_reasons(df, cols, title, color):
+            if not cols:
+                return st.warning(f"⚠️ Could not find data columns for {title}")
             
-        with col_waste2:
-            st.markdown("#### 📋 Top 5 Reasons for Non-Vaccination")
-            st.info("🚧 C1-C23 Pareto Chart Placeholder")
+            # Clean and sum the data
+            for c in cols:
+                df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            df_sum = df[cols].sum().reset_index()
+            df_sum.columns = ['Reason', 'Count']
+            df_sum = df_sum[df_sum['Count'] > 0].sort_values('Count', ascending=True)
+            
+            if not df_sum.empty:
+                # Truncate extremely long reasons so the chart doesn't shrink
+                df_sum['Short Reason'] = df_sum['Reason'].apply(lambda x: (str(x)[:85] + '...') if len(str(x)) > 85 else str(x))
+                
+                fig = px.bar(df_sum, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title=title, color_discrete_sequence=[color])
+                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(350, len(df_sum)*45), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"✅ No {title.lower()} have been recorded for this location yet.")
+
+        # Create Sub-Tabs for MR and Vit A
+        tab_mr_reasons, tab_va_reasons = st.tabs(["💉 MR Reasons", "💊 Vit A Reasons"])
+        
+        with tab_mr_reasons:
+            if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
+                df_mr_filtered = df_mr_live.copy()
+                
+                # Apply Geographic Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                elif view_mode == "Specific Municipality":
+                    df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                # Group columns: C1 to C6 (Deferrals), C7 to C23 (Refusals)
+                def_prefixes = tuple([f"C{i} " for i in range(1, 7)])
+                ref_prefixes = tuple([f"C{i} " for i in range(7, 24)])
+                
+                reason_cols_mr_def = [col for col in df_mr_filtered.columns if str(col).startswith(def_prefixes)]
+                reason_cols_mr_ref = [col for col in df_mr_filtered.columns if str(col).startswith(ref_prefixes)]
+                
+                # Plot Full Width Charts
+                plot_reasons(df_mr_filtered, reason_cols_mr_def, "MR Deferrals (C1 - C6)", '#FFB300') # Yellow/Orange for Deferral
+                st.markdown("<br>", unsafe_allow_html=True)
+                plot_reasons(df_mr_filtered, reason_cols_mr_ref, "MR Refusals (C7 - C23)", '#E53935') # Red for Refusal
+                    
+            else:
+                st.info("Awaiting VaccTrack Sync to populate analytics.")
+                
+        with tab_va_reasons:
+            if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+                df_va_filtered = df_vita_live.copy()
+                
+                # Apply Geographic Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                elif view_mode == "Specific Municipality":
+                    df_va_filtered = df_va_filtered[(df_va_filtered['Municipality'] == selected_muni) & (df_va_filtered['Barangay'].isin(df_view['Location'].tolist()))]
+                
+                # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
+                # *If you add more columns to your Google Sheet later, just add them to the tuples below!*
+                va_def_prefixes = ('VIT1 ', 'VIT3 ', 'VIT4 ', 'VIT5 ')
+                va_ref_prefixes = ('VIT2 ')
+                
+                reason_cols_va_def = [col for col in df_va_filtered.columns if str(col).startswith(va_def_prefixes)]
+                reason_cols_va_ref = [col for col in df_va_filtered.columns if str(col).startswith(va_ref_prefixes)]
+                
+                # Catch any extra VIT columns (like VIT6+) and throw them into Refusals just in case
+                all_vit = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
+                missed = [c for c in all_vit if c not in reason_cols_va_def and c not in reason_cols_va_ref]
+                if missed:
+                    reason_cols_va_ref.extend(missed) 
+                
+                # Plot Full Width Charts
+                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') # Teal for Deferral
+                st.markdown("<br>", unsafe_allow_html=True)
+                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  # Purple for Refusal
+            else:
+                st.info("Awaiting VaccTrack Sync to populate analytics.")
 
     # ==========================================
     # ADMIN PANEL
