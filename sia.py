@@ -8,6 +8,36 @@ import pytz
 import time
 import hashlib
 from supabase import create_client, Client
+import requests
+import json
+
+@st.cache_data(ttl="24h")
+def fetch_abra_geojson():
+    """
+    Fetches the Philippine municipalities GeoJSON and filters it for Abra.
+    Using the faeldon/philippines-json-maps repository data.
+    """
+    try:
+        # Fetching a reliable, low-resolution GeoJSON for fast loading
+        url = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
+        response = requests.get(url)
+        data = response.json()
+        
+        # Filter the GeoJSON features to ONLY include municipalities in Abra
+        abra_features = [
+            feature for feature in data['features'] 
+            if feature['properties'].get('ADM2_EN', '').upper() == 'ABRA'
+        ]
+        
+        # Reconstruct a clean GeoJSON object just for our province
+        abra_geojson = {
+            "type": "FeatureCollection",
+            "features": abra_features
+        }
+        return abra_geojson
+    except Exception as e:
+        print(f"Error loading map data: {e}")
+        return None
 
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
@@ -716,6 +746,70 @@ try:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
                 )
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
+
+                # ==========================================
+                # 🗺️ CHOROPLETH COVERAGE MAP
+                # ==========================================
+                st.divider()
+                st.markdown(f"#### 🗺️ Provincial Coverage Map: {comp_prog if 'comp_prog' in locals() else 'MR & Vit A'}")
+                
+                # Fetch the boundaries
+                abra_geo = fetch_abra_geojson()
+                
+                if abra_geo and not df_geo_summary.empty:
+                    # Plotly Maps require a specific Mapbox token if using satellite imagery, 
+                    # but 'carto-positron' is a clean, free, light-themed map style we can use without an API key.
+                    
+                    # Ensure municipality names in our data are completely uppercase to match the GeoJSON exactly
+                    df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper()
+                    
+                    # Create two columns so we can show MR on the left and Vit A on the right
+                    map_c1, map_c2 = st.columns(2)
+                    
+                    with map_c1:
+                        st.markdown("**Measles-Rubella (MR) Coverage**")
+                        fig_map_mr = px.choropleth_mapbox(
+                            df_geo_summary,
+                            geojson=abra_geo,
+                            locations='Map_Location',
+                            featureidkey="properties.ADM3_EN", # This targets the municipality name in the GeoJSON
+                            color='MR Coverage %',
+                            color_continuous_scale="RdYlGn", # Red -> Yellow -> Green
+                            range_color=[0, 100],
+                            mapbox_style="carto-positron",
+                            zoom=8.5,
+                            center={"lat": 17.58, "lon": 120.80}, # Center point of Abra
+                            opacity=0.7,
+                            hover_name=geo_col,
+                            hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,'}
+                        )
+                        fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
+                        st.plotly_chart(fig_map_mr, use_container_width=True)
+                        
+                    with map_c2:
+                        st.markdown("**Vitamin A Coverage**")
+                        if 'Vit A Coverage %' in df_geo_summary.columns:
+                            fig_map_va = px.choropleth_mapbox(
+                                df_geo_summary,
+                                geojson=abra_geo,
+                                locations='Map_Location',
+                                featureidkey="properties.ADM3_EN", 
+                                color='Vit A Coverage %',
+                                color_continuous_scale="RdYlGn",
+                                range_color=[0, 100],
+                                mapbox_style="carto-positron",
+                                zoom=8.5,
+                                center={"lat": 17.58, "lon": 120.80},
+                                opacity=0.7,
+                                hover_name=geo_col,
+                                hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,'}
+                            )
+                            fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
+                            st.plotly_chart(fig_map_va, use_container_width=True)
+                        else:
+                            st.info("Vitamin A map data currently unavailable at this geographic level.")
+                else:
+                    st.warning("Map boundary data could not be loaded or dataset is empty.")
                 
                 with st.expander("View Full Geographic Coverage Data"):
                     # Format to remove decimals and add comma separators
