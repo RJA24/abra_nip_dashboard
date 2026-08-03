@@ -846,6 +846,28 @@ try:
         
         df_mr_live, df_vita_live = fetch_live_accomplishments()
         
+        # Helper function to generate clean, full-width charts
+        def plot_reasons(df, cols, title, color):
+            if not cols:
+                return st.warning(f"⚠️ Could not find data columns for {title}")
+            
+            # Clean and sum the data
+            for c in cols:
+                df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+            df_sum = df[cols].sum().reset_index()
+            df_sum.columns = ['Reason', 'Count']
+            df_sum = df_sum[df_sum['Count'] > 0].sort_values('Count', ascending=True)
+            
+            if not df_sum.empty:
+                # Truncate extremely long reasons so the chart doesn't shrink
+                df_sum['Short Reason'] = df_sum['Reason'].apply(lambda x: (str(x)[:85] + '...') if len(str(x)) > 85 else str(x))
+                
+                fig = px.bar(df_sum, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title=title, color_discrete_sequence=[color])
+                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(350, len(df_sum)*45), margin=dict(l=0, r=0, t=40, b=0))
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"✅ No {title.lower()} have been recorded for this location yet.")
+
         # Create Sub-Tabs for MR and Vit A
         tab_mr_reasons, tab_va_reasons = st.tabs(["💉 MR Reasons", "💊 Vit A Reasons"])
         
@@ -859,28 +881,18 @@ try:
                 elif view_mode == "Specific Municipality":
                     df_mr_filtered = df_mr_filtered[(df_mr_filtered['Municipality'] == selected_muni) & (df_mr_filtered['Barangay'].isin(df_view['Location'].tolist()))]
                 
-                # Dynamically grab all C1 to C23 columns
-                reason_cols_mr = [col for col in df_mr_filtered.columns if str(col).startswith('C') and str(col)[1:2].isdigit()]
+                # Group columns: C1 to C6 (Deferrals), C7 to C23 (Refusals)
+                def_prefixes = tuple([f"C{i} " for i in range(1, 7)])
+                ref_prefixes = tuple([f"C{i} " for i in range(7, 24)])
                 
-                if reason_cols_mr:
-                    for col in reason_cols_mr:
-                        df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                reason_cols_mr_def = [col for col in df_mr_filtered.columns if str(col).startswith(def_prefixes)]
+                reason_cols_mr_ref = [col for col in df_mr_filtered.columns if str(col).startswith(ref_prefixes)]
+                
+                # Plot Full Width Charts
+                plot_reasons(df_mr_filtered, reason_cols_mr_def, "MR Deferrals (C1 - C6)", '#FFB300') # Yellow/Orange for Deferral
+                st.markdown("<br>", unsafe_allow_html=True)
+                plot_reasons(df_mr_filtered, reason_cols_mr_ref, "MR Refusals (C7 - C23)", '#E53935') # Red for Refusal
                     
-                    df_reasons_mr = df_mr_filtered[reason_cols_mr].sum().reset_index()
-                    df_reasons_mr.columns = ['Reason', 'Count']
-                    df_reasons_mr = df_reasons_mr[df_reasons_mr['Count'] > 0].sort_values('Count', ascending=True) # Sort to put highest at top
-                    
-                    if not df_reasons_mr.empty:
-                        # Truncate really long reasons for cleaner chart labels
-                        df_reasons_mr['Short Reason'] = df_reasons_mr['Reason'].apply(lambda x: (x[:60] + '...') if len(x) > 60 else x)
-                        
-                        fig_reasons_mr = px.bar(df_reasons_mr, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title="MR Deferrals & Refusals Breakdown", color_discrete_sequence=['#E53935'])
-                        fig_reasons_mr.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(400, len(df_reasons_mr)*40), margin=dict(l=0, r=0, t=40, b=0))
-                        st.plotly_chart(fig_reasons_mr, use_container_width=True)
-                    else:
-                        st.info("✅ No MR deferrals or refusals have been recorded for this location yet.")
-                else:
-                    st.warning("⚠️ Could not find C1-C23 columns in the Master Sheet.")
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
                 
@@ -894,28 +906,24 @@ try:
                 elif view_mode == "Specific Municipality":
                     df_va_filtered = df_va_filtered[(df_va_filtered['Municipality'] == selected_muni) & (df_va_filtered['Barangay'].isin(df_view['Location'].tolist()))]
                 
-                # Dynamically grab all VIT1 to VIT5 columns
-                reason_cols_va = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
+                # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
+                # *If you add more columns to your Google Sheet later, just add them to the tuples below!*
+                va_def_prefixes = ('VIT1 ', 'VIT3 ', 'VIT4 ', 'VIT5 ')
+                va_ref_prefixes = ('VIT2 ')
                 
-                if reason_cols_va:
-                    for col in reason_cols_va:
-                        df_va_filtered[col] = pd.to_numeric(df_va_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                    
-                    df_reasons_va = df_va_filtered[reason_cols_va].sum().reset_index()
-                    df_reasons_va.columns = ['Reason', 'Count']
-                    df_reasons_va = df_reasons_va[df_reasons_va['Count'] > 0].sort_values('Count', ascending=True)
-                    
-                    if not df_reasons_va.empty:
-                        # Truncate really long reasons
-                        df_reasons_va['Short Reason'] = df_reasons_va['Reason'].apply(lambda x: (x[:60] + '...') if len(x) > 60 else x)
-                        
-                        fig_reasons_va = px.bar(df_reasons_va, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title="Vitamin A Deferrals & Refusals Breakdown", color_discrete_sequence=['#F4511E'])
-                        fig_reasons_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(400, len(df_reasons_va)*40), margin=dict(l=0, r=0, t=40, b=0))
-                        st.plotly_chart(fig_reasons_va, use_container_width=True)
-                    else:
-                        st.info("✅ No Vitamin A deferrals or refusals have been recorded for this location yet.")
-                else:
-                    st.warning("⚠️ Could not find VIT columns in the Master Sheet.")
+                reason_cols_va_def = [col for col in df_va_filtered.columns if str(col).startswith(va_def_prefixes)]
+                reason_cols_va_ref = [col for col in df_va_filtered.columns if str(col).startswith(va_ref_prefixes)]
+                
+                # Catch any extra VIT columns (like VIT6+) and throw them into Refusals just in case
+                all_vit = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
+                missed = [c for c in all_vit if c not in reason_cols_va_def and c not in reason_cols_va_ref]
+                if missed:
+                    reason_cols_va_ref.extend(missed) 
+                
+                # Plot Full Width Charts
+                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') # Teal for Deferral
+                st.markdown("<br>", unsafe_allow_html=True)
+                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  # Purple for Refusal
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
 
