@@ -56,6 +56,7 @@ st.markdown("""
     /* 3. TABS: LARGER AND CENTER ALIGNED */
     [data-testid="stTabs"] > div, div[data-baseweb="tab-list"] {
         gap: 15px !important;
+        font-size: 56px !important;
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
         padding: 15px 0 !important;
