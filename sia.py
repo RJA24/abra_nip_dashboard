@@ -1346,18 +1346,81 @@ try:
             else:
                 st.info("Awaiting VaccTrack Sync to populate analytics.")
 
-            st.divider()
-            st.markdown("#### Raw Data Export")
-            with st.expander("View & Download Raw MR Deferral/Refusal Data"):
-                st.dataframe(df_mr_filtered, use_container_width=True)
-                csv_mr_def = df_mr_filtered.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Download MR Data (CSV)",
-                    data=csv_mr_def,
-                    file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
-                    mime="text/csv",
-                    key="dl_mr_def"
-                )
+            # ==========================================
+        # RAW DATA EXPORT: DEFERRALS & REFUSALS
+        # ==========================================
+        st.divider()
+        st.markdown("#### 📥 Raw Data Export")
+        
+        # We use sub-tabs here to keep the UI clean
+        raw_tab_mr, raw_tab_va = st.tabs(["MR Deferrals & Refusals", "Vit A Deferrals & Refusals"])
+        
+        with raw_tab_mr:
+            if not df_mr_live.empty:
+                # 1. Apply Location Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_mr_raw = df_mr_live[df_mr_live['Municipality'].isin(df_view['Location'].tolist())].copy()
+                else:
+                    df_mr_raw = df_mr_live[df_mr_live['Municipality'] == selected_muni].copy()
+                
+                # 2. Filter only rows that have a Deferral or Refusal Reason
+                # (Adjust the column names below if your Google Sheet uses slightly different headers)
+                reason_cols = [c for c in df_mr_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
+                if reason_cols:
+                    # Keep rows where at least one of the reason columns is not null/empty
+                    df_mr_def_only = df_mr_raw.dropna(subset=reason_cols, how='all')
+                    # Drop rows where the reason is just empty space
+                    df_mr_def_only = df_mr_def_only[df_mr_def_only[reason_cols].apply(lambda x: x.str.strip().astype(bool)).any(axis=1)]
+                else:
+                    df_mr_def_only = df_mr_raw # Fallback if specific columns aren't found
+                
+                if not df_mr_def_only.empty:
+                    with st.expander("View & Download Raw MR Deferral/Refusal Data", expanded=False):
+                        st.dataframe(df_mr_def_only, use_container_width=True)
+                        csv_mr = df_mr_def_only.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="⬇️ Download MR Data (CSV)",
+                            data=csv_mr,
+                            file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
+                            mime="text/csv",
+                            key="dl_mr_def_raw"
+                        )
+                else:
+                    st.info(f"No MR deferrals or refusals recorded yet for {location_label}.")
+            else:
+                st.warning("MR Accomplishment data is empty.")
+
+        with raw_tab_va:
+            if not df_vita_live.empty:
+                # 1. Apply Location Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_va_raw = df_vita_live[df_vita_live['Municipality'].isin(df_view['Location'].tolist())].copy()
+                else:
+                    df_va_raw = df_vita_live[df_vita_live['Municipality'] == selected_muni].copy()
+                
+                # 2. Filter only rows that have a Deferral or Refusal Reason
+                reason_cols_va = [c for c in df_va_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
+                if reason_cols_va:
+                    df_va_def_only = df_va_raw.dropna(subset=reason_cols_va, how='all')
+                    df_va_def_only = df_va_def_only[df_va_def_only[reason_cols_va].apply(lambda x: x.str.strip().astype(bool)).any(axis=1)]
+                else:
+                    df_va_def_only = df_va_raw 
+
+                if not df_va_def_only.empty:
+                    with st.expander("View & Download Raw Vit A Deferral/Refusal Data", expanded=False):
+                        st.dataframe(df_va_def_only, use_container_width=True)
+                        csv_va = df_va_def_only.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="⬇️ Download Vit A Data (CSV)",
+                            data=csv_va,
+                            file_name=f"VitA_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
+                            mime="text/csv",
+                            key="dl_va_def_raw"
+                        )
+                else:
+                    st.info(f"No Vit A deferrals or refusals recorded yet for {location_label}.")
+            else:
+                st.warning("Vit A Accomplishment data is empty.")
                 
         with tab_va_reasons:
             if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
