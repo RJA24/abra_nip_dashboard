@@ -59,6 +59,8 @@ st.markdown("""
     }
 
     /* 3. SLANTED TABS (MAIN TABS ONLY) */
+    div[data-testid="stTabs"] > div[data-baseweb="tab-list"], 
+    .stTabs > div[role="tablist"],
     div[data-baseweb="tab-list"] {
         border-top: 1px solid #cbd5e1 !important;
         border-bottom: 1px solid #cbd5e1 !important;
@@ -70,7 +72,8 @@ st.markdown("""
         justify-content: space-between !important;
     }
     
-    button[data-baseweb="tab"] {
+    button[data-baseweb="tab"], 
+    button[role="tab"] {
         transform: skewX(-25deg) !important;
         background-color: #f1f5f9 !important;
         border: 1px solid #cbd5e1 !important;
@@ -81,10 +84,13 @@ st.markdown("""
         transition: all 0.2s ease-in-out !important;
     }
     
-    /* Skew the text back forward so it's readable. Targeting multiple possible Streamlit elements to be safe */
+    /* Skew the text back forward so it's readable */
     button[data-baseweb="tab"] > div, 
     button[data-baseweb="tab"] p, 
-    button[data-baseweb="tab"] span {
+    button[data-baseweb="tab"] span,
+    button[role="tab"] > div, 
+    button[role="tab"] p, 
+    button[role="tab"] span {
         transform: skewX(25deg) !important;
         font-weight: 700 !important;
         font-size: 18px !important;
@@ -96,22 +102,25 @@ st.markdown("""
     }
     
     /* The Active Highlighted Tab */
-    button[data-baseweb="tab"][aria-selected="true"] {
+    button[data-baseweb="tab"][aria-selected="true"],
+    button[role="tab"][aria-selected="true"] {
         background-color: #0033A0 !important; 
         border-color: #0033A0 !important;
         box-shadow: 0 4px 10px rgba(0, 51, 160, 0.3) !important;
     }
-    button[data-baseweb="tab"][aria-selected="true"] * {
+    button[data-baseweb="tab"][aria-selected="true"] *,
+    button[role="tab"][aria-selected="true"] * {
         color: #ffffff !important;
     }
     
-    /* Hide the annoying blue underline */
-    div[data-baseweb="tab-highlight"] {
+    div[data-baseweb="tab-highlight"],
+    div[data-testid="stTabIndicator"] {
         display: none !important;
     }
 
     /* 4. SUB-TABS OVERRIDE (Keep nested tabs normal) */
-    .stTabs .stTabs div[data-baseweb="tab-list"] {
+    div[data-testid="stTabs"] div[data-testid="stTabs"] div[data-baseweb="tab-list"],
+    .stTabs .stTabs div[role="tablist"] {
         border: none !important;
         padding: 0 !important;
         margin-bottom: 15px !important;
@@ -119,7 +128,9 @@ st.markdown("""
         justify-content: flex-start !important;
         gap: 8px !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"] {
+    
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"],
+    .stTabs .stTabs button[role="tab"] {
         transform: none !important;
         background-color: transparent !important;
         border: 1px solid #e2e8f0 !important;
@@ -128,21 +139,29 @@ st.markdown("""
         flex: 0 1 auto !important;
         padding: 10px 20px !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"] > div, 
-    .stTabs .stTabs button[data-baseweb="tab"] p, 
-    .stTabs .stTabs button[data-baseweb="tab"] span {
+    
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"] > div, 
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"] p, 
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"] span,
+    .stTabs .stTabs button[role="tab"] > div, 
+    .stTabs .stTabs button[role="tab"] p, 
+    .stTabs .stTabs button[role="tab"] span {
         transform: none !important;
         font-size: 14px !important;
         color: #64748b !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] {
+    
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
+    .stTabs .stTabs button[role="tab"][aria-selected="true"] {
         background-color: #ffffff !important;
         border-top: 3px solid #0033A0 !important;
         border-left: 1px solid #e2e8f0 !important;
         border-right: 1px solid #e2e8f0 !important;
         box-shadow: none !important;
     }
-    .stTabs .stTabs button[data-baseweb="tab"][aria-selected="true"] * {
+    
+    div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] *,
+    .stTabs .stTabs button[role="tab"][aria-selected="true"] * {
         color: #0033A0 !important;
     }
 
