@@ -335,16 +335,16 @@ def fetch_live_accomplishments():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Wastage & Refusals"]
+tab_names = ["📊 Executive Summary", "🎯 Target Overview", "💉 MR Accomplishment", "💊 Vit A Accomplishment", "📉 Deferral & Refusal Analysis"]
 if is_admin:
     tab_names.append("🛡️ Admin Panel")
     
 tabs = st.tabs(tab_names)
 
 if is_admin:
-    tab_total, tab_target, tab_mr, tab_vita, tab_wastage, tab_admin = tabs
+    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_admin = tabs
 else:
-    tab_total, tab_target, tab_mr, tab_vita, tab_wastage = tabs
+    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref = tabs
 
 try:
     with tab_total:
@@ -1017,4 +1017,4 @@ try:
                 st.warning(f"Could not load Access Logs: {e}")
 
 except Exception as e:
-    st.error(f"Dashboard Error: {e}")
+    st.error(f"Dashboard Error: {e}")11
