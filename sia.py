@@ -13,44 +13,44 @@ import json
 
 @st.cache_data(ttl="24h")
 def fetch_abra_geojson():
-    """
-    Fetches the Philippine municipalities GeoJSON and filters it for Abra.
-    Uses multiple fallbacks and standardizes the property keys.
-    """
-    try:
-        # Primary URL
-        url = "https://raw.githubusercontent.com/macabeus/philippines-json-maps/master/2015/geojson/municities.json"
-        response = requests.get(url)
-        
-        if response.status_code != 200:
-            # Fallback URL if the first is down
-            url = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
-            response = requests.get(url)
+    # A list of the most reliable open-source Philippine GeoJSON repositories
+    urls = [
+        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json",
+        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2015/geojson/municities.json"
+    ]
+    
+    # This header prevents GitHub from blocking the request
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'} 
+    
+    for url in urls:
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
             
-        data = response.json()
-        abra_features = []
-        
-        # Loop through map shapes and extract Abra
-        for feature in data.get('features', []):
-            props = feature.get('properties', {})
-            # Different map files use different labels for Province
-            prov_name = props.get('ADM2_EN') or props.get('NAME_2') or props.get('PROV') or ""
-            
-            if str(prov_name).upper() == 'ABRA':
-                # Force a standard municipality name property so Plotly doesn't get confused
-                muni_name = props.get('ADM3_EN') or props.get('NAME_3') or props.get('MUN_NAME') or ""
-                feature['properties']['Standard_Name'] = str(muni_name).upper()
-                abra_features.append(feature)
+            # Only try to read the JSON if we successfully got the file
+            if response.status_code == 200:
+                data = response.json()
+                abra_features = []
                 
-        if not abra_features:
-            st.error("Map loaded, but could not find 'Abra' in the dataset.")
-            return None
+                for feature in data.get('features', []):
+                    props = feature.get('properties', {})
+                    
+                    # Different maps use different property tags for Province
+                    prov = str(props.get('ADM2_EN', '') or props.get('NAME_2', '') or props.get('PROV', '')).upper()
+                    
+                    if 'ABRA' in prov:
+                        # Force a standard municipality name property so Plotly always finds it
+                        muni = props.get('ADM3_EN', '') or props.get('NAME_3', '') or props.get('MUN_NAME', '')
+                        feature['properties']['Standard_Name'] = str(muni).upper()
+                        abra_features.append(feature)
+                
+                if abra_features:
+                    return {"type": "FeatureCollection", "features": abra_features}
+                    
+        except Exception:
+            continue # If this URL fails, silently move to the next one
             
-        return {"type": "FeatureCollection", "features": abra_features}
-        
-    except Exception as e:
-        st.error(f"Map Fetch Error: {e}")
-        return None
+    # If all URLs fail, return None so the app doesn't crash
+    return None
 
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
