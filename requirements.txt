@@ -4,3 +4,4 @@ st-gsheets-connection
 plotly
 pytz
 supabase
+streamlit-autorefresh
