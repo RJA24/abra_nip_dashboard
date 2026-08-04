@@ -38,9 +38,15 @@ def fetch_abra_geojson():
                     prov = str(props.get('ADM2_EN', '') or props.get('NAME_2', '') or props.get('PROV', '')).upper()
                     
                     if 'ABRA' in prov:
-                        # Force a standard municipality name property so Plotly always finds it
                         muni = props.get('ADM3_EN', '') or props.get('NAME_3', '') or props.get('MUN_NAME', '')
-                        feature['properties']['Standard_Name'] = str(muni).upper()
+                        
+                        # Clean the name to ensure perfect matching
+                        clean_name = str(muni).strip().upper()
+                        
+                        feature['properties']['Standard_Name'] = clean_name
+                        # IMPORTANT: Plotly natively looks for a root 'id' field
+                        feature['id'] = clean_name 
+                        
                         abra_features.append(feature)
                 
                 if abra_features:
@@ -63,7 +69,7 @@ st.markdown("""
     .block-container {
         padding-top: 0.5rem !important; 
     }
-    header[data-testid="stHeader"] { display: none !important; }
+    header[data-testid="stHeader"] { background-color: transparent !important; }
     footer {visibility: hidden;}
     
     /* 2. MASSIVE KPI CARDS */
@@ -786,8 +792,13 @@ try:
                     # Plotly Maps require a specific Mapbox token if using satellite imagery, 
                     # but 'carto-positron' is a clean, free, light-themed map style we can use without an API key.
                     
-                    # Ensure municipality names in our data are completely uppercase to match the GeoJSON exactly
-                    df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper()
+                    # Ensure municipality names are uppercase and handle common map spelling differences
+                    df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
+                    df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
+                        'PEÑARRUBIA': 'PENARRUBIA',
+                        'LICUAN-BAAY': 'LICUAN-BAAY (LICUAN)',
+                        'SALLAPADAN': 'SALAPADAN'
+                    })
                     
                     # Create two columns so we can show MR on the left and Vit A on the right
                     map_c1, map_c2 = st.columns(2)
@@ -798,13 +809,13 @@ try:
                             df_geo_summary,
                             geojson=abra_geo,
                             locations='Map_Location',
-                            featureidkey="properties.Standard_Name", # This targets the municipality name in the GeoJSON
+                            featureidkey="id", # Changed this to look for our new root ID
                             color='MR Coverage %',
-                            color_continuous_scale="RdYlGn", # Red -> Yellow -> Green
+                            color_continuous_scale="RdYlGn", 
                             range_color=[0, 100],
                             mapbox_style="carto-positron",
                             zoom=8.5,
-                            center={"lat": 17.58, "lon": 120.80}, # Center point of Abra
+                            center={"lat": 17.58, "lon": 120.80},
                             opacity=0.7,
                             hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,'}
@@ -819,7 +830,7 @@ try:
                                 df_geo_summary,
                                 geojson=abra_geo,
                                 locations='Map_Location',
-                                featureidkey="properties.Standard_Name", 
+                                featureidkey="id", # Changed this to look for our new root ID
                                 color='Vit A Coverage %',
                                 color_continuous_scale="RdYlGn",
                                 range_color=[0, 100],
