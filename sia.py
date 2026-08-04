@@ -270,23 +270,23 @@ if not st.session_state['logged_in']:
                             # Identify if the user is using the guest account
                             is_guest = "guest" in db_role.lower() or "viewer" in db_role.lower() or input_username.lower() == "guest"
                             
-                            # Enforce RHU selection ONLY for standard visitors (not admins, not guests)
+                            # Enforce RHU selection ONLY for standard RHU visitors
                             if db_role != "System Admin" and not is_guest and viewer_rhu == "Select Municipality...":
                                 st.error("🚨 You must select your Municipality to log in.")
                             else:
                                 if check_hashes(input_password, stored_hash):
                                     
-                                    # 1. Admin gets their DB name
+                                    # 1. Admin Settings
                                     if db_role == "System Admin":
                                         db_name = user_data['name']
                                         db_muni = "Abra Province"
                                         
-                                    # 2. Guest strictly gets "Visitor"
+                                    # 2. Guest Settings (Will display as "Welcome! Visitor!")
                                     elif is_guest:
                                         db_name = "Visitor"
                                         db_muni = "Abra Province"
                                         
-                                    # 3. RHU gets your exact original format
+                                    # 3. RHU Settings (Will display as "Welcome! RHU Visitor (Municipality)!")
                                     else:
                                         db_name = f"RHU Visitor ({viewer_rhu})"
                                         db_muni = viewer_rhu
@@ -314,7 +314,8 @@ if not st.session_state['logged_in']:
                                     if log_response.data:
                                         st.session_state['log_id'] = log_response.data[0]['id'] 
                                         
-                                    st.toast(f"Welcome, {db_name}!", icon="👋")
+                                    # This handles the exact pop-up formatting you asked for!
+                                    st.toast(f"Welcome! {db_name}!", icon="👋")
                                     time.sleep(1)
                                     st.rerun()
                                 else:
