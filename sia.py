@@ -267,19 +267,22 @@ if not st.session_state['logged_in']:
                             stored_hash = user_data.get('password_hash', '')
                             db_role = user_data.get('role', '')
                             
-                            # Enforce RHU selection for non-admins
-                            if db_role != "System Admin" and viewer_rhu == "Select Municipality...":
+                            # Identify if the user is a guest/viewer (checking both role and username just in case)
+                            is_guest = "guest" in db_role.lower() or "viewer" in db_role.lower() or input_username.lower() == "guest"
+                            
+                            # Enforce RHU selection ONLY for standard visitors (not admins, not guests)
+                            if db_role != "System Admin" and not is_guest and viewer_rhu == "Select Municipality...":
                                 st.error("🚨 You must select your Municipality to log in.")
                             else:
                                 if check_hashes(input_password, stored_hash):
                                     
-                                    # Override name and muni for visitors based on their dropdown selection
-                                    if db_role != "System Admin":
+                                    # Override name and muni based on role
+                                    if db_role == "System Admin" or is_guest:
+                                        db_name = user_data['name']
+                                        db_muni = "Abra Province" # Gives them the full provincial view!
+                                    else:
                                         db_name = f"RHU Visitor ({viewer_rhu})"
                                         db_muni = viewer_rhu
-                                    else:
-                                        db_name = user_data['name']
-                                        db_muni = "Abra Province"
                                     
                                     manila_tz = pytz.timezone('Asia/Manila')
                                     current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
