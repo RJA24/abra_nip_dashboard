@@ -714,8 +714,9 @@ try:
                 mr_geo_targets.rename(columns={'Location': geo_col, mr_target_col_geo_active: 'MR Target'}, inplace=True)
                 
                 df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
-                df_geo_summary['MR Coverage %'] = (df_geo_summary['MR Administered'] / df_geo_summary['MR Target'] * 100).fillna(0)
-                
+                # Prevent division by zero if target is 0
+                df_geo_summary['MR Coverage %'] = df_geo_summary.apply(lambda row: (row['MR Administered'] / row['MR Target'] * 100) if row['MR Target'] > 0 else 0, axis=1
+)                
                 # Do the same for Vit A
                 if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
                     va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
