@@ -747,14 +747,16 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     vars_to_melt = ['MR Coverage %', 'Vit A Coverage %']
                     color_seq = ['#1E88E5', '#F4511E']
+                    bar_multiplier = 70  # Taller height to fit 2 bars
                 else:
                     vars_to_melt = ['MR Coverage %']
                     color_seq = ['#1E88E5']
+                    bar_multiplier = 35  # Shorter height since it's only 1 bar
                     
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
-                # Dynamic height: 70 pixels per location guarantees thick bars and room for labels
-                chart_height = max(500, len(df_geo_summary) * 70)
+                # Dynamic height: Adjusts based on whether we have 1 or 2 programs showing
+                chart_height = max(400, len(df_geo_summary) * bar_multiplier)
                 
                 fig_geo_cov = px.bar(
                     df_melt_geo, 
