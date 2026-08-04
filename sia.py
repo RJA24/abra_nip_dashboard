@@ -796,17 +796,7 @@ try:
                         'PEÑARRUBIA': 'PEŃARRUBIA',  # Map uses a weird Ń character
                         'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
                     })
-                    
-                    # --- NEW: MAP DIAGNOSTIC TOOL ---
-                    map_names = sorted([f['properties'].get('Standard_Name', 'UNKNOWN') for f in abra_geo['features']])
-                    db_names = sorted(df_geo_summary['Map_Location'].tolist())
-                    
-                    with st.expander("🛠️ Map Diagnostic - Check for spelling mismatches"):
-                        st.write("**Names hidden in the Map File:**", map_names)
-                        st.write("**Names in your Google Sheet:**", db_names)
-                        st.caption("If a town isn't coloring in, compare its spelling in these two lists. They must match exactly!")
-                    # --------------------------------
-                    
+                                                      
                     map_c1, map_c2 = st.columns(2)
                     
                     with map_c1:
