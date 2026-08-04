@@ -1534,7 +1534,7 @@ try:
                 tally_grid_va = tally_grid_va.replace(0, "")
                 
                 # Force the height to 1050 pixels so all 27 rows show without vertical scrolling
-                st.table
+                st.table(tally_grid_va, use_container_width=True, height=1050)
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
