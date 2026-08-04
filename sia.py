@@ -267,22 +267,26 @@ if not st.session_state['logged_in']:
                             stored_hash = user_data.get('password_hash', '')
                             db_role = user_data.get('role', '')
                             
-                            # Identify if the user is a guest/viewer
+                            # Identify if the user is using the guest account
                             is_guest = "guest" in db_role.lower() or "viewer" in db_role.lower() or input_username.lower() == "guest"
                             
-                            # Enforce RHU selection ONLY for standard visitors
+                            # Enforce RHU selection ONLY for standard visitors (not admins, not guests)
                             if db_role != "System Admin" and not is_guest and viewer_rhu == "Select Municipality...":
                                 st.error("🚨 You must select your Municipality to log in.")
                             else:
                                 if check_hashes(input_password, stored_hash):
                                     
-                                    # Override name and muni based on exact role
+                                    # 1. Admin gets their DB name
                                     if db_role == "System Admin":
                                         db_name = user_data['name']
                                         db_muni = "Abra Province"
+                                        
+                                    # 2. Guest strictly gets "Visitor"
                                     elif is_guest:
-                                        db_name = "Visitor" # Forces it to just say "Visitor"
+                                        db_name = "Visitor"
                                         db_muni = "Abra Province"
+                                        
+                                    # 3. RHU gets your exact original format
                                     else:
                                         db_name = f"RHU Visitor ({viewer_rhu})"
                                         db_muni = viewer_rhu
