@@ -1,3 +1,4 @@
+from streamlit_autorefresh import st_autorefresh
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
@@ -328,6 +329,9 @@ def get_last_updated_time():
 last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
 
+# Automatically refresh the dashboard every 1 hour (3,600,000 ms)
+st_autorefresh(interval=3600000, limit=None, key="hourly_data_refresh")
+
 # ==========================================
 # CONTINUOUS SESSION TRACKING
 # ==========================================
@@ -429,7 +433,7 @@ def clean_and_process_car_data(df, col_names):
     df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
     return df
 
-@st.cache_data(ttl="15s")
+@st.cache_data(ttl="1h")
 def fetch_targets_from_supabase():
     res = supabase.table('targets').select('*').execute()
     if not res.data: return pd.DataFrame()
@@ -482,7 +486,7 @@ def fetch_targets_from_supabase():
 
     return df
 
-@st.cache_data(ttl="10m")
+@st.cache_data(ttl="1h")
 def fetch_live_accomplishments():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
