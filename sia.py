@@ -267,19 +267,22 @@ if not st.session_state['logged_in']:
                             stored_hash = user_data.get('password_hash', '')
                             db_role = user_data.get('role', '')
                             
-                            # Identify if the user is a guest/viewer (checking both role and username just in case)
+                            # Identify if the user is a guest/viewer
                             is_guest = "guest" in db_role.lower() or "viewer" in db_role.lower() or input_username.lower() == "guest"
                             
-                            # Enforce RHU selection ONLY for standard visitors (not admins, not guests)
+                            # Enforce RHU selection ONLY for standard visitors
                             if db_role != "System Admin" and not is_guest and viewer_rhu == "Select Municipality...":
                                 st.error("🚨 You must select your Municipality to log in.")
                             else:
                                 if check_hashes(input_password, stored_hash):
                                     
-                                    # Override name and muni based on role
-                                    if db_role == "System Admin" or is_guest:
+                                    # Override name and muni based on exact role
+                                    if db_role == "System Admin":
                                         db_name = user_data['name']
-                                        db_muni = "Abra Province" # Gives them the full provincial view!
+                                        db_muni = "Abra Province"
+                                    elif is_guest:
+                                        db_name = "Visitor" # Forces it to just say "Visitor"
+                                        db_muni = "Abra Province"
                                     else:
                                         db_name = f"RHU Visitor ({viewer_rhu})"
                                         db_muni = viewer_rhu
