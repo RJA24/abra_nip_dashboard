@@ -785,80 +785,83 @@ try:
                 # ==========================================
                 # 🗺️ CHOROPLETH COVERAGE MAP
                 # ==========================================
-                st.divider()
-                st.markdown(f"#### 🗺️ Provincial Coverage Map")
-                
-                abra_geo = fetch_abra_geojson()
-                
-                if abra_geo and not df_geo_summary.empty:
+                # ONLY show the map if looking at the whole province
+                if view_mode == "All Municipalities (Abra)":
+
+                    st.divider()
+                    st.markdown(f"#### 🗺️ Provincial Coverage Map")
                     
-                    df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
+                    abra_geo = fetch_abra_geojson()
                     
-                    # Force our Google Sheet names to perfectly match the Map File's hidden names
-                    df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
-                        'SALAPADAN': 'SALLAPADAN',
-                        'PENARRUBIA': 'PEŃARRUBIA',  
-                        'PEÑARRUBIA': 'PEŃARRUBIA',  # Map uses a weird Ń character
-                        'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
-                    })
-                                                      
-                    map_c1, map_c2 = st.columns(2)
-                    
-                    with map_c1:
-                        st.markdown("**Measles-Rubella (MR) Coverage**")
-                        fig_map_mr = px.choropleth_mapbox(
-                            df_geo_summary,
-                            geojson=abra_geo,
-                            locations='Map_Location',
-                            featureidkey="properties.Standard_Name", # Look specifically at the name we cleaned
-                            color='MR Coverage %',
-                            color_continuous_scale="RdYlGn", 
-                            range_color=[0, 100],
-                            mapbox_style="carto-positron",
-                            zoom=8.5,
-                            center={"lat": 17.58, "lon": 120.80},
-                            opacity=0.7,
-                            hover_name=geo_col,
-                            hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,'}
-                        )
-                        fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
-                        st.plotly_chart(fig_map_mr, use_container_width=True)
+                    if abra_geo and not df_geo_summary.empty:
                         
-                    with map_c2:
-                        st.markdown("**Vitamin A Coverage**")
-                        if 'Vit A Coverage %' in df_geo_summary.columns:
-                            fig_map_va = px.choropleth_mapbox(
+                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
+                        
+                        # Force our Google Sheet names to perfectly match the Map File's hidden names
+                        df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
+                            'SALAPADAN': 'SALLAPADAN',
+                            'PENARRUBIA': 'PEŃARRUBIA',  
+                            'PEÑARRUBIA': 'PEŃARRUBIA',  # Map uses a weird Ń character
+                            'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
+                        })
+                                                        
+                        map_c1, map_c2 = st.columns(2)
+                        
+                        with map_c1:
+                            st.markdown("**Measles-Rubella (MR) Coverage**")
+                            fig_map_mr = px.choropleth_mapbox(
                                 df_geo_summary,
                                 geojson=abra_geo,
                                 locations='Map_Location',
-                                featureidkey="properties.Standard_Name", 
-                                color='Vit A Coverage %',
-                                color_continuous_scale="RdYlGn",
+                                featureidkey="properties.Standard_Name", # Look specifically at the name we cleaned
+                                color='MR Coverage %',
+                                color_continuous_scale="RdYlGn", 
                                 range_color=[0, 100],
                                 mapbox_style="carto-positron",
                                 zoom=8.5,
                                 center={"lat": 17.58, "lon": 120.80},
                                 opacity=0.7,
                                 hover_name=geo_col,
-                                hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,'}
+                                hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,'}
                             )
-                            fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
-                            st.plotly_chart(fig_map_va, use_container_width=True)
-                else:
-                    st.warning("Map boundary data could not be loaded or dataset is empty.")
-                
-                with st.expander("View Full Geographic Coverage Data"):
-                    # Format to remove decimals and add comma separators
-                    format_dict = {
-                        "MR Coverage %": "{:.1f}%",
-                        "MR Target": "{:,.0f}",
-                        "MR Administered": "{:,.0f}",
-                        "Vit A Coverage %": "{:.1f}%",
-                        "Vit A Target": "{:,.0f}",
-                        "Vit A Administered": "{:,.0f}"
-                    }
-                    # Reverse sort again for the raw data table so best is at the top row
-                    st.dataframe(df_geo_summary.sort_values('MR Coverage %', ascending=False).style.format(format_dict), use_container_width=True, hide_index=True)
+                            fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
+                            st.plotly_chart(fig_map_mr, use_container_width=True)
+                            
+                        with map_c2:
+                            st.markdown("**Vitamin A Coverage**")
+                            if 'Vit A Coverage %' in df_geo_summary.columns and view_mode == "All Municipalities (Abra)":
+                                fig_map_va = px.choropleth_mapbox(
+                                    df_geo_summary,
+                                    geojson=abra_geo,
+                                    locations='Map_Location',
+                                    featureidkey="properties.Standard_Name", 
+                                    color='Vit A Coverage %',
+                                    color_continuous_scale="RdYlGn",
+                                    range_color=[0, 100],
+                                    mapbox_style="carto-positron",
+                                    zoom=8.5,
+                                    center={"lat": 17.58, "lon": 120.80},
+                                    opacity=0.7,
+                                    hover_name=geo_col,
+                                    hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,'}
+                                )
+                                fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
+                                st.plotly_chart(fig_map_va, use_container_width=True)
+                    else:
+                        st.warning("Map boundary data could not be loaded or dataset is empty.")
+                    
+                    with st.expander("View Full Geographic Coverage Data"):
+                        # Format to remove decimals and add comma separators
+                        format_dict = {
+                            "MR Coverage %": "{:.1f}%",
+                            "MR Target": "{:,.0f}",
+                            "MR Administered": "{:,.0f}",
+                            "Vit A Coverage %": "{:.1f}%",
+                            "Vit A Target": "{:,.0f}",
+                            "Vit A Administered": "{:,.0f}"
+                        }
+                        # Reverse sort again for the raw data table so best is at the top row
+                        st.dataframe(df_geo_summary.sort_values('MR Coverage %', ascending=False).style.format(format_dict), use_container_width=True, hide_index=True)
 
             else:
                 # ==============================
