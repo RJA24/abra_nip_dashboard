@@ -1663,26 +1663,24 @@ try:
                     df_va_filtered = df_va_filtered[df_va_filtered['Municipality'] == selected_muni]
                 
                 # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
-                # *If you add more columns to your Google Sheet later, just add them to the tuples below!*
                 va_def_prefixes = ('VIT1 ', 'VIT3 ', 'VIT4 ', 'VIT5 ')
                 va_ref_prefixes = ('VIT2 ')
                 
                 reason_cols_va_def = [col for col in df_va_filtered.columns if str(col).startswith(va_def_prefixes)]
                 reason_cols_va_ref = [col for col in df_va_filtered.columns if str(col).startswith(va_ref_prefixes)]
                 
-                # Catch any extra VIT columns (like VIT6+) and throw them into Refusals just in case
+                # Catch any extra VIT columns
                 all_vit = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
                 missed = [c for c in all_vit if c not in reason_cols_va_def and c not in reason_cols_va_ref]
                 if missed:
                     reason_cols_va_ref.extend(missed) 
                 
                 # Plot Full Width Charts
-                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') # Teal for Deferral
+                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') 
                 st.markdown("<br>", unsafe_allow_html=True)
-                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  # Purple for Refusal
-            else:
-                st.info("Awaiting VaccTrack Sync to populate analytics.")
+                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  
 
+                # Moved the Export block INSIDE the if-statement so it doesn't crash on empty data!
                 st.divider()
                 st.markdown("#### Raw Data Export")
                 with st.expander("View & Download Raw Vit A Deferral/Refusal Data"):
@@ -1695,6 +1693,8 @@ try:
                         mime="text/csv",
                         key="dl_va_def"
                     )
+            else:
+                st.info("Awaiting VaccTrack Sync to populate analytics.")
 
     # ==========================================
     # ADMIN PANEL
