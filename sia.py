@@ -1350,8 +1350,6 @@ try:
                 fig_gender.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_gender, use_container_width=True)
                 
-            st.divider()
-
             # ==========================================
             # 📅 DAILY TALLY SHEET GRID (MR)
             # ==========================================
@@ -1499,8 +1497,6 @@ try:
                 fig_gender_va = px.pie(df_gender_va, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
                 fig_gender_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig_gender_va, use_container_width=True)
-
-            st.divider()
 
             # ==========================================
             # 📅 DAILY TALLY SHEET GRID (VIT A)
