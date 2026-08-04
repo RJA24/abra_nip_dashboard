@@ -788,10 +788,13 @@ try:
                 if abra_geo and not df_geo_summary.empty:
                     
                     df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
+                    
+                    # Force our Google Sheet names to perfectly match the Map File's hidden names
                     df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
-                        'PEÑARRUBIA': 'PENARRUBIA',
-                        'LICUAN-BAAY': 'LICUAN-BAAY (LICUAN)',
-                        'SALLAPADAN': 'SALAPADAN'
+                        'SALAPADAN': 'SALLAPADAN',
+                        'PENARRUBIA': 'PEŃARRUBIA',  
+                        'PEÑARRUBIA': 'PEŃARRUBIA',  # Map uses a weird Ń character
+                        'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
                     })
                     
                     # --- NEW: MAP DIAGNOSTIC TOOL ---
