@@ -15,28 +15,41 @@ import json
 def fetch_abra_geojson():
     """
     Fetches the Philippine municipalities GeoJSON and filters it for Abra.
-    Using the faeldon/philippines-json-maps repository data.
+    Uses multiple fallbacks and standardizes the property keys.
     """
     try:
-        # Fetching a reliable, low-resolution GeoJSON for fast loading
-        url = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
+        # Primary URL
+        url = "https://raw.githubusercontent.com/macabeus/philippines-json-maps/master/2015/geojson/municities.json"
         response = requests.get(url)
+        
+        if response.status_code != 200:
+            # Fallback URL if the first is down
+            url = "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
+            response = requests.get(url)
+            
         data = response.json()
+        abra_features = []
         
-        # Filter the GeoJSON features to ONLY include municipalities in Abra
-        abra_features = [
-            feature for feature in data['features'] 
-            if feature['properties'].get('ADM2_EN', '').upper() == 'ABRA'
-        ]
+        # Loop through map shapes and extract Abra
+        for feature in data.get('features', []):
+            props = feature.get('properties', {})
+            # Different map files use different labels for Province
+            prov_name = props.get('ADM2_EN') or props.get('NAME_2') or props.get('PROV') or ""
+            
+            if str(prov_name).upper() == 'ABRA':
+                # Force a standard municipality name property so Plotly doesn't get confused
+                muni_name = props.get('ADM3_EN') or props.get('NAME_3') or props.get('MUN_NAME') or ""
+                feature['properties']['Standard_Name'] = str(muni_name).upper()
+                abra_features.append(feature)
+                
+        if not abra_features:
+            st.error("Map loaded, but could not find 'Abra' in the dataset.")
+            return None
+            
+        return {"type": "FeatureCollection", "features": abra_features}
         
-        # Reconstruct a clean GeoJSON object just for our province
-        abra_geojson = {
-            "type": "FeatureCollection",
-            "features": abra_features
-        }
-        return abra_geojson
     except Exception as e:
-        print(f"Error loading map data: {e}")
+        st.error(f"Map Fetch Error: {e}")
         return None
 
 # # ==========================================
@@ -266,8 +279,13 @@ if not st.session_state['logged_in']:
                                     manila_tz = pytz.timezone('Asia/Manila')
                                     current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
                                     
-                                    # Added 'action' column to track it was a Login
-                                    supabase.table('access_logs').insert({'timestamp': current_time_str, 'name': db_name, 'role': db_role, 'action': 'Login'}).execute()
+                                    # Insert the login record AND capture the response
+                                    log_response = supabase.table('access_logs').insert({
+                                        'timestamp': current_time_str, 
+                                        'name': db_name, 
+                                        'role': db_role, 
+                                        'action': 'Active Session'
+                                    }).execute()
                                     
                                     st.session_state['logged_in'] = True
                                     st.session_state['username'] = input_username 
@@ -276,9 +294,11 @@ if not st.session_state['logged_in']:
                                     st.session_state['assigned_muni'] = db_muni
                                     st.session_state['last_active'] = time.time()
                                     
-                                    # --- NEW: RECORD EXACT LOGIN TIME ---
+                                    # Capture exact login time AND the database Row ID
                                     st.session_state['login_time'] = time.time()
-                                    
+                                    if log_response.data:
+                                        st.session_state['log_id'] = log_response.data[0]['id'] 
+                                        
                                     st.toast(f"Welcome, {db_name}!", icon="👋")
                                     time.sleep(1)
                                     st.rerun()
@@ -303,6 +323,24 @@ def get_last_updated_time():
 
 last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
+
+# ==========================================
+# CONTINUOUS SESSION TRACKING
+# ==========================================
+if 'login_time' in st.session_state and 'log_id' in st.session_state:
+    try:
+        # Calculate duration so far
+        session_duration_seconds = time.time() - st.session_state['login_time']
+        minutes, seconds = divmod(int(session_duration_seconds), 60)
+        hours, minutes = divmod(minutes, 60)
+        formatted_duration = f"{hours}h {minutes}m {seconds}s"
+        
+        # Continuously update the existing row in Supabase
+        supabase.table('access_logs').update({
+            'action': f'Session Duration: {formatted_duration}'
+        }).eq('id', st.session_state['log_id']).execute()
+    except Exception as e:
+        pass # Silently fail if Supabase connection blips so it doesn't crash the app
 
 with st.sidebar:
     # 1. PROFILE CARD
@@ -340,7 +378,7 @@ with st.sidebar:
         # Universal Gender Filter
         gender_filter = st.selectbox("Target Gender:", ["Total (Both)", "Male", "Female"])
         
-    # 3. # 3. System Actions
+    # 3. System Actions
     with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
         if st.button("🔄 Refresh Data", use_container_width=True):
             st.cache_data.clear()
@@ -350,31 +388,19 @@ with st.sidebar:
             
         if st.button("🚪 Logout", type="primary", use_container_width=True):
             
-            # --- NEW: CALCULATE SESSION DURATION ---
-            if 'login_time' in st.session_state:
-                session_duration_seconds = time.time() - st.session_state['login_time']
-                minutes, seconds = divmod(int(session_duration_seconds), 60)
-                hours, minutes = divmod(minutes, 60)
-                formatted_duration = f"{hours}h {minutes}m {seconds}s"
-                
-                # Push Logout Duration to Supabase
-                try:
-                    manila_tz = pytz.timezone('Asia/Manila')
-                    current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-                    supabase.table('access_logs').insert({
-                        'timestamp': current_time_str, 
-                        'name': st.session_state['user_name'], 
-                        'role': st.session_state['user_role'],
-                        'action': f'Logout (Duration: {formatted_duration})'
-                    }).execute()
-                except Exception as e:
-                    print(f"Log Error: {e}")
-            
+            # The continuous tracker handles the logging now, so we just clear the session variables
             st.session_state['logged_in'] = False
             st.session_state['username'] = ""
             st.session_state['user_name'] = ""
             st.session_state['user_role'] = ""
             st.session_state['assigned_muni'] = ""
+            
+            # Optional cleanup: remove the tracking variables as well
+            if 'login_time' in st.session_state:
+                del st.session_state['login_time']
+            if 'log_id' in st.session_state:
+                del st.session_state['log_id']
+                
             st.rerun()
             
         st.caption(f"🕒 Last Sync: {last_updated}")
@@ -772,7 +798,7 @@ try:
                             df_geo_summary,
                             geojson=abra_geo,
                             locations='Map_Location',
-                            featureidkey="properties.ADM3_EN", # This targets the municipality name in the GeoJSON
+                            featureidkey="properties.Standard_Name", # This targets the municipality name in the GeoJSON
                             color='MR Coverage %',
                             color_continuous_scale="RdYlGn", # Red -> Yellow -> Green
                             range_color=[0, 100],
@@ -793,7 +819,7 @@ try:
                                 df_geo_summary,
                                 geojson=abra_geo,
                                 locations='Map_Location',
-                                featureidkey="properties.ADM3_EN", 
+                                featureidkey="properties.Standard_Name", 
                                 color='Vit A Coverage %',
                                 color_continuous_scale="RdYlGn",
                                 range_color=[0, 100],
