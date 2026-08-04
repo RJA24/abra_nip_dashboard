@@ -13,49 +13,47 @@ import json
 
 @st.cache_data(ttl="24h")
 def fetch_abra_geojson():
-    # A list of the most reliable open-source Philippine GeoJSON repositories
     urls = [
         "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json",
-        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2015/geojson/municities.json"
+        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
     ]
     
-    # This header prevents GitHub from blocking the request
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'} 
     
     for url in urls:
         try:
             response = requests.get(url, headers=headers, timeout=10)
-            
-            # Only try to read the JSON if we successfully got the file
             if response.status_code == 200:
                 data = response.json()
                 abra_features = []
                 
                 for feature in data.get('features', []):
                     props = feature.get('properties', {})
+                    # Convert all property values to uppercase to easily search them
+                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
                     
-                    # Different maps use different property tags for Province
-                    prov = str(props.get('ADM2_EN', '') or props.get('NAME_2', '') or props.get('PROV', '')).upper()
-                    
-                    if 'ABRA' in prov:
-                        muni = props.get('ADM3_EN', '') or props.get('NAME_3', '') or props.get('MUN_NAME', '')
+                    # If ANY of the properties say "ABRA", this shape belongs to us
+                    if 'ABRA' in props_upper.values():
+                        # Standard keys where municipality names are usually hidden
+                        muni_keys = ['ADM3_EN', 'NAME_3', 'MUN_NAME', 'NAME_2', 'MUNICIPALITY']
+                        muni_name = ""
                         
-                        # Clean the name to ensure perfect matching
-                        clean_name = str(muni).strip().upper()
+                        for k in muni_keys:
+                            if k in props_upper and props_upper[k] not in ['ABRA', 'PHILIPPINES']:
+                                muni_name = props_upper[k]
+                                break
+                                
+                        clean_name = str(muni_name).strip().upper()
                         
+                        # Inject the clean name explicitly into properties so Plotly can guarantee a match
                         feature['properties']['Standard_Name'] = clean_name
-                        # IMPORTANT: Plotly natively looks for a root 'id' field
-                        feature['id'] = clean_name 
-                        
                         abra_features.append(feature)
                 
                 if abra_features:
                     return {"type": "FeatureCollection", "features": abra_features}
-                    
         except Exception:
-            continue # If this URL fails, silently move to the next one
+            continue 
             
-    # If all URLs fail, return None so the app doesn't crash
     return None
 
 # # ==========================================
@@ -783,16 +781,12 @@ try:
                 # 🗺️ CHOROPLETH COVERAGE MAP
                 # ==========================================
                 st.divider()
-                st.markdown(f"#### 🗺️ Provincial Coverage Map: {comp_prog if 'comp_prog' in locals() else 'MR & Vit A'}")
+                st.markdown(f"#### 🗺️ Provincial Coverage Map")
                 
-                # Fetch the boundaries
                 abra_geo = fetch_abra_geojson()
                 
                 if abra_geo and not df_geo_summary.empty:
-                    # Plotly Maps require a specific Mapbox token if using satellite imagery, 
-                    # but 'carto-positron' is a clean, free, light-themed map style we can use without an API key.
                     
-                    # Ensure municipality names are uppercase and handle common map spelling differences
                     df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
                     df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
                         'PEÑARRUBIA': 'PENARRUBIA',
@@ -800,7 +794,16 @@ try:
                         'SALLAPADAN': 'SALAPADAN'
                     })
                     
-                    # Create two columns so we can show MR on the left and Vit A on the right
+                    # --- NEW: MAP DIAGNOSTIC TOOL ---
+                    map_names = sorted([f['properties'].get('Standard_Name', 'UNKNOWN') for f in abra_geo['features']])
+                    db_names = sorted(df_geo_summary['Map_Location'].tolist())
+                    
+                    with st.expander("🛠️ Map Diagnostic - Check for spelling mismatches"):
+                        st.write("**Names hidden in the Map File:**", map_names)
+                        st.write("**Names in your Google Sheet:**", db_names)
+                        st.caption("If a town isn't coloring in, compare its spelling in these two lists. They must match exactly!")
+                    # --------------------------------
+                    
                     map_c1, map_c2 = st.columns(2)
                     
                     with map_c1:
@@ -809,7 +812,7 @@ try:
                             df_geo_summary,
                             geojson=abra_geo,
                             locations='Map_Location',
-                            featureidkey="id", # Changed this to look for our new root ID
+                            featureidkey="properties.Standard_Name", # Look specifically at the name we cleaned
                             color='MR Coverage %',
                             color_continuous_scale="RdYlGn", 
                             range_color=[0, 100],
@@ -830,7 +833,7 @@ try:
                                 df_geo_summary,
                                 geojson=abra_geo,
                                 locations='Map_Location',
-                                featureidkey="id", # Changed this to look for our new root ID
+                                featureidkey="properties.Standard_Name", 
                                 color='Vit A Coverage %',
                                 color_continuous_scale="RdYlGn",
                                 range_color=[0, 100],
@@ -843,8 +846,6 @@ try:
                             )
                             fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                             st.plotly_chart(fig_map_va, use_container_width=True)
-                        else:
-                            st.info("Vitamin A map data currently unavailable at this geographic level.")
                 else:
                     st.warning("Map boundary data could not be loaded or dataset is empty.")
                 
