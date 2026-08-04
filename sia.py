@@ -517,7 +517,7 @@ try:
     # EXECUTIVE SUMMARY TAB
     # ==========================================
     with tab_total:
-        st.markdown("### Executive Summary (Dummy data for now)")
+        st.markdown("### Executive Summary")
         
         df_targets = fetch_targets_from_supabase()
         df_mr_live, df_vita_live = fetch_live_accomplishments()
