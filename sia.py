@@ -1403,7 +1403,7 @@ try:
                     mime="text/csv"
                 )
         else:
-            st.info("Awaiting VaccTrack Sync to populate analytics.")
+            st.info("Awaiting Gsheet Sync to populate analytics.")
 
     # ==========================================
     # VITAMIN A ACCOMPLISHMENT TAB
@@ -1551,7 +1551,7 @@ try:
                     mime="text/csv"
                 )
         else:
-            st.info("Awaiting VaccTrack Sync to populate analytics.")
+            st.info("Awaiting Gsheet Sync to populate analytics.")
         
     # ==========================================
     # DEFERRAL & REFUSAL ANALYSIS TAB
@@ -1610,7 +1610,7 @@ try:
                 plot_reasons(df_mr_filtered, reason_cols_mr_ref, "MR Refusals (C7 - C23)", '#E53935') # Red for Refusal
                     
             else:
-                st.info("Awaiting VaccTrack Sync to populate analytics.")
+                st.info("Awaiting Gsheet Sync to populate analytics.")
 
         # ==========================================
         # RAW DATA EXPORT: DEFERRALS & REFUSALS
@@ -1729,7 +1729,7 @@ try:
                         key="dl_va_def"
                     )
             else:
-                st.info("Awaiting VaccTrack Sync to populate analytics.")
+                st.info("Awaiting Gsheet Sync to populate analytics.")
 
     # ==========================================
     # ADMIN PANEL
