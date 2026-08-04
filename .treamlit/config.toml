@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#1E88E5" # Professional Medical Blue
+backgroundColor = "#F8F9FA" # Very light gray/off-white for contrast
+secondaryBackgroundColor = "#FFFFFF" # Pure white for sidebars and text inputs
+textColor = "#212529" # Dark slate for high readability
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal" # Hides the messy Streamlit options at the top right
