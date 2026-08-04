@@ -719,8 +719,8 @@ try:
                 
                 df_geo_summary = pd.merge(mr_geo_targets, mr_geo_doses, on=geo_col, how='left').fillna(0)
                 # Prevent division by zero if target is 0
-                df_geo_summary['MR Coverage %'] = df_geo_summary.apply(lambda row: (row['MR Administered'] / row['MR Target'] * 100) if row['MR Target'] > 0 else 0, axis=1
-)                
+                df_geo_summary['MR Coverage %'] = df_geo_summary.apply(lambda row: (row['MR Administered'] / row['MR Target'] * 100) if row['MR Target'] > 0 else 0, axis=1)                
+                
                 # Do the same for Vit A
                 if not df_vita_live.empty and geo_col in df_vita_filtered.columns:
                     va_geo_doses = df_vita_filtered.groupby(geo_col)['Total Doses'].sum().reset_index()
@@ -743,7 +743,15 @@ try:
                 df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=True)
                 
                 # --- MELT FOR GROUPED BAR CHART (MR vs Vit A) ---
-                df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
+                # dynamically remove Vit A from the chart if specific municipality is chosen
+                if view_mode == "All Municipalities (Abra)":
+                    vars_to_melt = ['MR Coverage %', 'Vit A Coverage %']
+                    color_seq = ['#1E88E5', '#F4511E']
+                else:
+                    vars_to_melt = ['MR Coverage %']
+                    color_seq = ['#1E88E5']
+                    
+                df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
                 # Dynamic height: 70 pixels per location guarantees thick bars and room for labels
                 chart_height = max(500, len(df_geo_summary) * 70)
@@ -757,7 +765,7 @@ try:
                     orientation='h', 
                     text_auto='.1f', 
                     title=f"Coverage % by {geo_col}", 
-                    color_discrete_sequence=['#1E88E5', '#F4511E']
+                    color_discrete_sequence=color_seq
                 )
                 
                 # Force large labels on the outside of the bars
@@ -850,8 +858,20 @@ try:
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
                     
-                    with st.expander("View Full Geographic Coverage Data"):
-                        # Format to remove decimals and add comma separators
+                with st.expander("View Full Geographic Coverage Data"):
+                    # Format to remove decimals and add comma separators
+                    # Dynamically drop Vit A for specific municipality views
+                    df_display = df_geo_summary.copy()
+                    
+                    if view_mode == "Specific Municipality":
+                        cols_to_drop = [c for c in df_display.columns if 'Vit A' in c]
+                        df_display = df_display.drop(columns=cols_to_drop, errors='ignore')
+                        format_dict = {
+                            "MR Coverage %": "{:.1f}%",
+                            "MR Target": "{:,.0f}",
+                            "MR Administered": "{:,.0f}"
+                        }
+                    else:
                         format_dict = {
                             "MR Coverage %": "{:.1f}%",
                             "MR Target": "{:,.0f}",
@@ -860,8 +880,9 @@ try:
                             "Vit A Target": "{:,.0f}",
                             "Vit A Administered": "{:,.0f}"
                         }
-                        # Reverse sort again for the raw data table so best is at the top row
-                        st.dataframe(df_geo_summary.sort_values('MR Coverage %', ascending=False).style.format(format_dict), use_container_width=True, hide_index=True)
+                        
+                    # Reverse sort again for the raw data table so best is at the top row
+                    st.dataframe(df_display.sort_values('MR Coverage %', ascending=False).style.format(format_dict), use_container_width=True, hide_index=True)
 
             else:
                 # ==============================
@@ -918,8 +939,13 @@ try:
                 df_comp_geo = pd.merge(mr_geo_nat, mr_geo_act, on=geo_col, how='left').fillna(0)
                 df_comp_geo = pd.merge(df_comp_geo, mr_geo_doses, on=geo_col, how='left').fillna(0)
                 
-                df_comp_geo['Proj Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Proj Target'] * 100).fillna(0)
-                df_comp_geo['Act Coverage %'] = (df_comp_geo['Doses'] / df_comp_geo['Act Target'] * 100).fillna(0)
+                # Zero-division fix applied here for the Comparison logic!
+                df_comp_geo['Proj Coverage %'] = df_comp_geo.apply(
+                    lambda row: (row['Doses'] / row['Proj Target'] * 100) if row['Proj Target'] > 0 else 0, axis=1
+                )
+                df_comp_geo['Act Coverage %'] = df_comp_geo.apply(
+                    lambda row: (row['Doses'] / row['Act Target'] * 100) if row['Act Target'] > 0 else 0, axis=1
+                )
                 
                 # Sort ascending for horizontal bar chart
                 df_comp_geo = df_comp_geo.sort_values('Proj Coverage %', ascending=True)
