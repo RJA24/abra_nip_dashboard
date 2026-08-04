@@ -1388,7 +1388,8 @@ try:
                 # Replace zeros with empty strings to make it look exactly like a blank paper tally sheet
                 tally_grid_mr = tally_grid_mr.replace(0, "")
                 
-                st.dataframe(tally_grid_mr, use_container_width=True)
+                # Force the height to 1050 pixels so all 27 rows show without vertical scrolling
+                st.dataframe(tally_grid_mr, use_container_width=True, height=1050)
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
@@ -1536,7 +1537,8 @@ try:
                 # Replace zeros with empty strings 
                 tally_grid_va = tally_grid_va.replace(0, "")
                 
-                st.dataframe(tally_grid_va, use_container_width=True)
+                # Force the height to 1050 pixels so all 27 rows show without vertical scrolling
+                st.dataframe(tally_grid_va, use_container_width=True, height=1050)
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
