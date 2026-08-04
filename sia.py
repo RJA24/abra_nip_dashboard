@@ -1315,6 +1315,46 @@ try:
                 st.plotly_chart(fig_gender, use_container_width=True)
                 
             st.divider()
+
+            # ==========================================
+            # 📅 DAILY TALLY SHEET GRID (MR)
+            # ==========================================
+            st.divider()
+            st.markdown("#### 📅 Daily Tally Sheet Grid")
+            st.write("Use this grid to easily copy daily totals to your physical office tally board.")
+            
+            if not df_mr_filtered.empty and 'Vaccination Date' in df_mr_filtered.columns:
+                df_tally_mr = df_mr_filtered.copy()
+                
+                # Convert to datetime and extract just the day number
+                df_tally_mr['Vaccination Date'] = pd.to_datetime(df_tally_mr['Vaccination Date'], errors='coerce')
+                df_tally_mr = df_tally_mr.dropna(subset=['Vaccination Date'])
+                df_tally_mr['Day'] = df_tally_mr['Vaccination Date'].dt.day.astype(int)
+                
+                # Create the pivot table
+                tally_grid_mr = pd.pivot_table(
+                    df_tally_mr, 
+                    values='Total Doses', 
+                    index='Municipality', 
+                    columns='Day', 
+                    aggfunc='sum',
+                    fill_value=0
+                )
+                
+                # Force all 27 Abra Municipalities to display as rows, even if they have 0 doses
+                tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
+                
+                # Force columns 1 through 31 to display for the days of the month
+                # (Change 32 to 29 if you strictly only want 28 days showing)
+                days_cols = list(range(1, 32))
+                tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
+                
+                # Replace zeros with empty strings to make it look exactly like a blank paper tally sheet
+                tally_grid_mr = tally_grid_mr.replace(0, "")
+                
+                st.dataframe(tally_grid_mr, use_container_width=True)
+            else:
+                st.info("Awaiting vaccination date records to generate the tally board.")
             
             st.markdown("#### 📥 Raw Data Export")
             with st.expander("View & Download Raw MR Accomplishment Data"):
@@ -1424,6 +1464,45 @@ try:
                 st.plotly_chart(fig_gender_va, use_container_width=True)
 
             st.divider()
+
+            # ==========================================
+            # 📅 DAILY TALLY SHEET GRID (VIT A)
+            # ==========================================
+            st.divider()
+            st.markdown("#### 📅 Daily Tally Sheet Grid")
+            st.write("Use this grid to easily copy daily totals to your physical office tally board.")
+            
+            if not df_vita_filtered.empty and 'Vaccination Date' in df_vita_filtered.columns:
+                df_tally_va = df_vita_filtered.copy()
+                
+                # Convert to datetime and extract just the day number
+                df_tally_va['Vaccination Date'] = pd.to_datetime(df_tally_va['Vaccination Date'], errors='coerce')
+                df_tally_va = df_tally_va.dropna(subset=['Vaccination Date'])
+                df_tally_va['Day'] = df_tally_va['Vaccination Date'].dt.day.astype(int)
+                
+                # Create the pivot table
+                tally_grid_va = pd.pivot_table(
+                    df_tally_va, 
+                    values='Total Doses', 
+                    index='Municipality', 
+                    columns='Day', 
+                    aggfunc='sum',
+                    fill_value=0
+                )
+                
+                # Force all 27 Abra Municipalities to display as rows
+                tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
+                
+                # Force columns 1 through 31 
+                days_cols = list(range(1, 32))
+                tally_grid_va = tally_grid_va.reindex(columns=days_cols, fill_value=0)
+                
+                # Replace zeros with empty strings 
+                tally_grid_va = tally_grid_va.replace(0, "")
+                
+                st.dataframe(tally_grid_va, use_container_width=True)
+            else:
+                st.info("Awaiting vaccination date records to generate the tally board.")
             
             st.markdown("#### 📥 Raw Data Export")
             with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
