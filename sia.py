@@ -250,39 +250,7 @@ if st.session_state['logged_in']:
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
 if not st.session_state['logged_in']:
-    # ---------------------------------------------------------
-    # 🎨 BACKGROUND IMAGE INJECTION
-    # ---------------------------------------------------------
-    bg_css = """
-    <style>
-    /* Target the main app container directly */
-    .stApp {
-        position: relative;
-    }
     
-    .stApp::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-image: url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true");
-        background-size: cover;
-        background-position: center;
-        opacity: 0.3; /* Sets the image to 30% opacity */
-        z-index: -1;  /* Keeps the image behind your form */
-    }
-    
-    /* Ensure the header is transparent so it doesn't block the image */
-    header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0) !important;
-    }
-    </style>
-    """
-    st.markdown(bg_css, unsafe_allow_html=True)
-    # ---------------------------------------------------------
-
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
