@@ -254,11 +254,11 @@ if not st.session_state['logged_in']:
     
     with col2:
         # Centered, official-looking headers
-        st.markdown("<h1 style='text-align: center;'>🏥 Abra SIA 2026</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Abra SIA 2026</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: gray; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
         # A welcoming banner that clearly explains what guests need to do
-        st.info("👋 **Welcome!** Please log in to access the dashboard. If you are viewing as a guest, use the username **guest** and enter your name below.", icon="ℹ️")
+        st.info("👋 **Welcome!** Please log in to access the dashboard. If you are viewing as a guest, use the username **Guest** and enter your name below.", icon="ℹ️")
         
         with st.form("login_form", border=True):
             st.markdown("### 🔐 System Authentication")
