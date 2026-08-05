@@ -251,12 +251,16 @@ abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "
 
 if not st.session_state['logged_in']:
     # ---------------------------------------------------------
-    # 🎨 BACKGROUND IMAGE INJECTION (From GitHub)
-    # Replace the URL inside the url("...") with your actual RAW GitHub image link!
+    # 🎨 BACKGROUND IMAGE INJECTION
     # ---------------------------------------------------------
     bg_css = """
     <style>
-    [data-testid="stAppViewContainer"]::before {
+    /* Target the main app container directly */
+    .stApp {
+        position: relative;
+    }
+    
+    .stApp::before {
         content: "";
         position: absolute;
         top: 0;
@@ -269,8 +273,10 @@ if not st.session_state['logged_in']:
         opacity: 0.3; /* Sets the image to 30% opacity */
         z-index: -1;  /* Keeps the image behind your form */
     }
-    [data-testid="stHeader"] {
-        background: rgba(0,0,0,0); /* Makes the top header transparent */
+    
+    /* Ensure the header is transparent so it doesn't block the image */
+    header[data-testid="stHeader"] {
+        background: rgba(0,0,0,0) !important;
     }
     </style>
     """
