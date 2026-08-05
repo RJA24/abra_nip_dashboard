@@ -9,8 +9,13 @@ import pytz
 import time
 import hashlib
 from supabase import create_client, Client
+import base64
 import requests
 import json
+
+def get_base64_image(image_path):
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
 @st.cache_data(ttl="24h")
 def fetch_abra_geojson():
@@ -249,7 +254,37 @@ if st.session_state['logged_in']:
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
 if not st.session_state['logged_in']:
-    # Adding a bit more breathing room on the sides for a sleeker central column
+    # ---------------------------------------------------------
+    # 🎨 BACKGROUND IMAGE INJECTION
+    # Change "background.jpg" to your actual image file name!
+    # ---------------------------------------------------------
+    try:
+        img_base64 = get_base64_image("Abra.jpg")
+        bg_css = f"""
+        <style>
+        [data-testid="stAppViewContainer"]::before {{
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/jpeg;base64,{img_base64}");
+            background-size: cover;
+            background-position: center;
+            opacity: 0.3; /* Sets the image to 30% opacity */
+            z-index: -1;  /* Keeps the image behind your form */
+        }}
+        [data-testid="stHeader"] {{
+            background: rgba(0,0,0,0); /* Makes the top header transparent */
+        }}
+        </style>
+        """
+        st.markdown(bg_css, unsafe_allow_html=True)
+    except FileNotFoundError:
+        pass # If the image isn't found, it just loads the normal blank background safely
+    # ---------------------------------------------------------
+
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
