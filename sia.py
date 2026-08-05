@@ -249,9 +249,17 @@ if not st.session_state['logged_in']:
             input_password = st.text_input("Password", type="password")
             
             st.markdown("<br>", unsafe_allow_html=True)
-            st.caption("📌 **For RHU Viewers Only:** Please select your municipality so we can log your visit.")
-            viewer_rhu = st.selectbox("Your Municipality", ["Select Municipality..."] + abra_munis)
             
+            # Place the RHU dropdown and Guest Name input side-by-side
+            c_muni, c_guest = st.columns(2)
+            with c_muni:
+                st.caption("📌 **RHU Encoders**")
+                viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
+            with c_guest:
+                st.caption("📌 **Guest Accounts**")
+                guest_name_input = st.text_input("Enter your name", placeholder="Your Name", label_visibility="collapsed").strip()
+            
+            st.markdown("<br>", unsafe_allow_html=True)
             submit_login = st.form_submit_button("Log In", type="primary", use_container_width=True)
             
             if submit_login:
@@ -267,12 +275,14 @@ if not st.session_state['logged_in']:
                             stored_hash = user_data.get('password_hash', '')
                             db_role = user_data.get('role', '')
                             
-                            # Identify the specific guest account strictly by username to avoid false positives
+                            # Identify the specific guest account strictly by username
                             is_guest = input_username.lower() == "guest"
                             
-                            # Enforce RHU selection ONLY for standard RHU visitors
+                            # Enforce selection/entry based on who is logging in
                             if db_role != "System Admin" and not is_guest and viewer_rhu == "Select Municipality...":
                                 st.error("🚨 You must select your Municipality to log in.")
+                            elif is_guest and not guest_name_input:
+                                st.error("🚨 Please enter your name in the Guest section to log in.")
                             else:
                                 if check_hashes(input_password, stored_hash):
                                     
@@ -281,9 +291,9 @@ if not st.session_state['logged_in']:
                                         db_name = user_data['name']
                                         db_muni = "Abra Province"
                                         
-                                    # 2. Guest Settings
+                                    # 2. Guest Settings (Now uses their dynamically inputted name!)
                                     elif is_guest:
-                                        db_name = "Visitor"
+                                        db_name = f"Visitor ({guest_name_input})"
                                         db_muni = "Abra Province"
                                         
                                     # 3. RHU Settings
@@ -314,6 +324,7 @@ if not st.session_state['logged_in']:
                                     if log_response.data:
                                         st.session_state['log_id'] = log_response.data[0]['id'] 
                                         
+                                    # This handles the exact pop-up formatting!
                                     st.toast(f"Welcome! {db_name}!", icon="👋")
                                     time.sleep(1)
                                     st.rerun()
