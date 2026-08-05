@@ -263,7 +263,7 @@ if not st.session_state['logged_in']:
         left: 0;
         width: 100%;
         height: 100%;
-        background-image: url("https://github.com/RJA24/abra_sia_2026/blob/02c403b3eaa77ae7d6daaa3f4de303178c245092/img/Abra%20(2).png");
+        background-image: url("https://github.com/RJA24/abra_sia_2026/blob/main/img/Abra%20(2).png?raw=true");
         background-size: cover;
         background-position: center;
         opacity: 0.3; /* Sets the image to 30% opacity */
