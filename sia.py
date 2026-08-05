@@ -274,7 +274,7 @@ if not st.session_state['logged_in']:
             c_muni, c_guest = st.columns(2)
             
             with c_muni:
-                st.caption("🏢 **RHU Encoders**")
+                st.caption("🏢 **RHU Visitors**")
                 viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
             
             with c_guest:
@@ -284,7 +284,7 @@ if not st.session_state['logged_in']:
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Make the button text a bit more exciting!
-            submit_login = st.form_submit_button("Log In to Command Center 🚀", type="primary", use_container_width=True)
+            submit_login = st.form_submit_button("Log In to Command Center", type="primary", use_container_width=True)
             
             if submit_login:
                 if not input_username or not input_password:
