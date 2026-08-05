@@ -251,6 +251,36 @@ abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "
 
 if not st.session_state['logged_in']:
     
+    # ---------------------------------------------------------
+    # 🎨 BACKGROUND IMAGE INJECTION (Bypassing .toml theme)
+    # ---------------------------------------------------------
+    bg_css = """
+    <style>
+    .stApp {
+        /* The linear-gradient acts as a color overlay to fade the image.
+           Use rgba(255, 255, 255, 0.7) for a Light Theme (white fade)
+           Use rgba(14, 17, 23, 0.7) for a Dark Theme (dark fade) 
+        */
+        background: linear-gradient(
+            rgba(240, 242, 246, 0.7), 
+            rgba(240, 242, 246, 0.7)
+        ), 
+        url("https://github.com/username/repo/blob/main/image.png?raw=true") !important;
+        
+        background-size: cover !important;
+        background-position: center !important;
+        background-attachment: fixed !important;
+    }
+    
+    header[data-testid="stHeader"] {
+        background: rgba(0,0,0,0) !important;
+    }
+    </style>
+    """
+    st.markdown(bg_css, unsafe_allow_html=True)
+    # ---------------------------------------------------------
+
+
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
