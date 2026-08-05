@@ -243,7 +243,7 @@ if st.session_state['logged_in']:
     else:
         st.session_state['last_active'] = current_time
 
-# # ==========================================
+# ==========================================
 # 4. THE GATEWAY (Simplified Login)
 # ==========================================
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
@@ -265,7 +265,7 @@ if not st.session_state['logged_in']:
             # Place the RHU dropdown and Guest Name input side-by-side
             c_muni, c_guest = st.columns(2)
             with c_muni:
-                st.caption("📌 **RHU Encoders**")
+                st.caption("📌 **RHU Viewers**")
                 viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
             with c_guest:
                 st.caption("📌 **Guest Accounts**")
@@ -303,14 +303,14 @@ if not st.session_state['logged_in']:
                                         db_name = user_data['name']
                                         db_muni = "Abra Province"
                                         
-                                    # 2. Guest Settings 
+                                    # 2. Guest Settings (Now uses their dynamically inputted name!)
                                     elif is_guest:
                                         db_name = f"Visitor ({guest_name_input})"
                                         db_muni = "Abra Province"
                                         
-                                    # 3. RHU Settings (Removed the redundant municipality from the name!)
+                                    # 3. RHU Settings
                                     else:
-                                        db_name = "RHU Visitor"
+                                        db_name = f"RHU Visitor ({viewer_rhu})"
                                         db_muni = viewer_rhu
                                     
                                     manila_tz = pytz.timezone('Asia/Manila')
