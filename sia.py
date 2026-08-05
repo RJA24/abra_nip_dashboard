@@ -265,7 +265,7 @@ if not st.session_state['logged_in']:
             rgba(240, 242, 246, 0.7), 
             rgba(240, 242, 246, 0.7)
         ), 
-        url("https://github.com/username/repo/blob/main/image.png?raw=true") !important;
+        url("https://github.com/RJA24/abra_sia_2026/blob/6ce5d3039f3038c67d7c08d2a63506d22aafd18b/Abra%20(2).png") !important;
         
         background-size: cover !important;
         background-position: center !important;
