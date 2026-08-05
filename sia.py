@@ -774,6 +774,15 @@ try:
                 df_geo_summary['Vit A Coverage %'] = df_geo_summary.apply(
                     lambda row: (row['Vit A Administered'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1
                 )
+
+                # ==========================================
+                # 🛑 THE FIX: Force Left Merge to Prevent Missing Data 
+                # ==========================================
+                if view_mode == "All Municipalities (Abra)":
+                    abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
+                    df_base = pd.DataFrame({geo_col: abra_munis})
+                    df_geo_summary = pd.merge(df_base, df_geo_summary, on=geo_col, how="left").fillna(0)
+                # ==========================================
                 
                 # Sort ascending so highest coverage sits at the top of the portrait chart
                 df_geo_summary = df_geo_summary.sort_values('MR Coverage %', ascending=True)
