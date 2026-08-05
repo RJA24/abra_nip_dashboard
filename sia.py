@@ -57,6 +57,18 @@ def fetch_abra_geojson():
             
     return None
 
+def render_footer():
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; color: #888888; padding: 10px;'>
+            <p>Developed by <strong>JangTV</strong></p>
+            <img src="https://github.com/RJA24/abra-sbi-dashboard/blob/main/357094382_2458785624282603_4372984338912374777_n.png?raw=true" width="80" style="margin-top: -10px; opacity: 0.8;">
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
@@ -1930,3 +1942,5 @@ try:
 
 except Exception as e:
     st.error(f"Dashboard Error: {e}")
+
+render_footer()
