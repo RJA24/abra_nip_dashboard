@@ -265,7 +265,7 @@ if not st.session_state['logged_in']:
             # Place the RHU dropdown and Guest Name input side-by-side
             c_muni, c_guest = st.columns(2)
             with c_muni:
-                st.caption("📌 **RHU Viewers**")
+                st.caption("📌 **RHU Encoders**")
                 viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
             with c_guest:
                 st.caption("📌 **Guest Accounts**")
@@ -301,22 +301,25 @@ if not st.session_state['logged_in']:
                                     # 1. Admin Settings
                                     if db_role == "System Admin":
                                         db_name = user_data['name']
+                                        display_name = db_name  # Sidebar name
                                         db_muni = "Abra Province"
                                         
-                                    # 2. Guest Settings (Now uses their dynamically inputted name!)
+                                    # 2. Guest Settings 
                                     elif is_guest:
                                         db_name = f"Visitor ({guest_name_input})"
+                                        display_name = db_name  # Sidebar name
                                         db_muni = "Abra Province"
                                         
-                                    # 3. RHU Settings
+                                    # 3. RHU Settings 
                                     else:
-                                        db_name = f"RHU Visitor ({viewer_rhu})"
+                                        db_name = f"RHU Visitor ({viewer_rhu})" # Keeps the detailed name for the DB and toast
+                                        display_name = "RHU Visitor"            # Uses the clean, shortened name for the sidebar
                                         db_muni = viewer_rhu
                                     
                                     manila_tz = pytz.timezone('Asia/Manila')
                                     current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
                                     
-                                    # Insert the login record AND capture the response
+                                    # Insert the login record using the full detailed db_name
                                     log_response = supabase.table('access_logs').insert({
                                         'timestamp': current_time_str, 
                                         'name': db_name, 
@@ -326,7 +329,7 @@ if not st.session_state['logged_in']:
                                     
                                     st.session_state['logged_in'] = True
                                     st.session_state['username'] = input_username 
-                                    st.session_state['user_name'] = db_name
+                                    st.session_state['user_name'] = display_name  # Passes only the clean display name to the sidebar
                                     st.session_state['user_role'] = db_role
                                     st.session_state['assigned_muni'] = db_muni
                                     st.session_state['last_active'] = time.time()
@@ -336,7 +339,7 @@ if not st.session_state['logged_in']:
                                     if log_response.data:
                                         st.session_state['log_id'] = log_response.data[0]['id'] 
                                         
-                                    # This handles the exact pop-up formatting!
+                                    # This handles the exact pop-up formatting using the detailed db_name!
                                     st.toast(f"Welcome! {db_name}!", icon="👋")
                                     time.sleep(5)
                                     st.rerun()
