@@ -9,13 +9,9 @@ import pytz
 import time
 import hashlib
 from supabase import create_client, Client
-import base64
 import requests
 import json
 
-def get_base64_image(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
 
 @st.cache_data(ttl="24h")
 def fetch_abra_geojson():
@@ -255,34 +251,30 @@ abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "
 
 if not st.session_state['logged_in']:
     # ---------------------------------------------------------
-    # 🎨 BACKGROUND IMAGE INJECTION
-    # Change "background.jpg" to your actual image file name!
+    # 🎨 BACKGROUND IMAGE INJECTION (From GitHub)
+    # Replace the URL inside the url("...") with your actual RAW GitHub image link!
     # ---------------------------------------------------------
-    try:
-        img_base64 = get_base64_image("Abra.jpg")
-        bg_css = f"""
-        <style>
-        [data-testid="stAppViewContainer"]::before {{
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: url("data:image/jpeg;base64,{img_base64}");
-            background-size: cover;
-            background-position: center;
-            opacity: 0.3; /* Sets the image to 30% opacity */
-            z-index: -1;  /* Keeps the image behind your form */
-        }}
-        [data-testid="stHeader"] {{
-            background: rgba(0,0,0,0); /* Makes the top header transparent */
-        }}
-        </style>
-        """
-        st.markdown(bg_css, unsafe_allow_html=True)
-    except FileNotFoundError:
-        pass # If the image isn't found, it just loads the normal blank background safely
+    bg_css = """
+    <style>
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: url("https://github.com/RJA24/abra_sia_2026/blob/02c403b3eaa77ae7d6daaa3f4de303178c245092/img/Abra%20(2).png");
+        background-size: cover;
+        background-position: center;
+        opacity: 0.3; /* Sets the image to 30% opacity */
+        z-index: -1;  /* Keeps the image behind your form */
+    }
+    [data-testid="stHeader"] {
+        background: rgba(0,0,0,0); /* Makes the top header transparent */
+    }
+    </style>
+    """
+    st.markdown(bg_css, unsafe_allow_html=True)
     # ---------------------------------------------------------
 
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
