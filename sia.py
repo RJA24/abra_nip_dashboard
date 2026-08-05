@@ -326,7 +326,7 @@ if not st.session_state['logged_in']:
                                         
                                     # This handles the exact pop-up formatting!
                                     st.toast(f"Welcome! {db_name}!", icon="👋")
-                                    time.sleep(1)
+                                    time.sleep(2)
                                     st.rerun()
                                 else:
                                     st.error("❌ Incorrect Password.")
