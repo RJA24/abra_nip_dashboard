@@ -1053,7 +1053,7 @@ try:
 
             # 2. Create 5 Distinct Sub-Tabs
             tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
-                "💉 Nat. MR Targets", "💊 Nat. Vit A Targets", 
+                "💉  MR Targets", "💊 Nat. Vit A Targets", 
                 "📊 Act. MR Targets", "📈 Act. Vit A Targets", 
                 "⚖️ Target Comparison"
             ])
@@ -1399,7 +1399,7 @@ try:
             # 📅 DAILY TALLY SHEET GRID (MR)
             # ==========================================
             st.divider()
-            st.markdown("#### 📅 Daily Tally Sheet Grid")
+            st.markdown("#### 📅 Daily Tally Sheet")
             st.write("Use this grid to easily copy daily totals to your physical office tally board.")
             
             if not df_mr_filtered.empty and 'Vaccination Date' in df_mr_filtered.columns:
@@ -1547,7 +1547,7 @@ try:
             # 📅 DAILY TALLY SHEET GRID (VIT A)
             # ==========================================
             st.divider()
-            st.markdown("#### 📅 Daily Tally Sheet Grid")
+            st.markdown("#### 📅 Daily Tally Sheet")
             st.write("Use this grid to easily copy daily totals to your physical office tally board.")
             
             if not df_vita_filtered.empty and 'Vaccination Date' in df_vita_filtered.columns:
