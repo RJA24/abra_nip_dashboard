@@ -253,7 +253,7 @@ if not st.session_state['logged_in']:
             # Place the RHU dropdown and Guest Name input side-by-side
             c_muni, c_guest = st.columns(2)
             with c_muni:
-                st.caption("📌 **RHU Encoders**")
+                st.caption("📌 **RHU Viewers**")
                 viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
             with c_guest:
                 st.caption("📌 **Guest Accounts**")
