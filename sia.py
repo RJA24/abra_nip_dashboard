@@ -249,30 +249,42 @@ if st.session_state['logged_in']:
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
 if not st.session_state['logged_in']:
-    col1, col2, col3 = st.columns([1, 2, 1])
+    # Adding a bit more breathing room on the sides for a sleeker central column
+    col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
-        st.title("Abra SIA 2026")
-        st.markdown("##### Secure Provincial Command Center")
-        st.divider()
+        # Centered, official-looking headers
+        st.markdown("<h1 style='text-align: center;'>🏥 Abra SIA 2026</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: gray; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
-        with st.form("login_form"):
-            input_username = st.text_input("Username").strip()
-            input_password = st.text_input("Password", type="password")
+        # A welcoming banner that clearly explains what guests need to do
+        st.info("👋 **Welcome!** Please log in to access the dashboard. If you are viewing as a guest, use the username **guest** and enter your name below.", icon="ℹ️")
+        
+        with st.form("login_form", border=True):
+            st.markdown("### 🔐 System Authentication")
             
-            st.markdown("<br>", unsafe_allow_html=True)
+            # Added placeholders so the boxes don't look completely empty
+            input_username = st.text_input("Username", placeholder="Enter your assigned username").strip()
+            input_password = st.text_input("Password", type="password", placeholder="••••••••")
             
+            st.divider()
+            
+            st.markdown("#### 📍 Access Details")
             # Place the RHU dropdown and Guest Name input side-by-side
             c_muni, c_guest = st.columns(2)
+            
             with c_muni:
-                st.caption("📌 **RHU Encoders**")
+                st.caption("🏢 **RHU Encoders**")
                 viewer_rhu = st.selectbox("Select Municipality", ["Select Municipality..."] + abra_munis, label_visibility="collapsed")
+            
             with c_guest:
-                st.caption("📌 **Guest Accounts**")
-                guest_name_input = st.text_input("Enter your name", placeholder="Your Name", label_visibility="collapsed").strip()
+                st.caption("👤 **Guest Accounts**")
+                guest_name_input = st.text_input("Enter your name", placeholder="e.g., Dr. Cruz / DOH Rep", label_visibility="collapsed").strip()
             
             st.markdown("<br>", unsafe_allow_html=True)
-            submit_login = st.form_submit_button("Log In", type="primary", use_container_width=True)
+            
+            # Make the button text a bit more exciting!
+            submit_login = st.form_submit_button("Log In to Command Center 🚀", type="primary", use_container_width=True)
             
             if submit_login:
                 if not input_username or not input_password:
@@ -329,7 +341,7 @@ if not st.session_state['logged_in']:
                                     
                                     st.session_state['logged_in'] = True
                                     st.session_state['username'] = input_username 
-                                    st.session_state['user_name'] = display_name  # Passes only the clean display name to the sidebar
+                                    st.session_state['user_name'] = display_name 
                                     st.session_state['user_role'] = db_role
                                     st.session_state['assigned_muni'] = db_muni
                                     st.session_state['last_active'] = time.time()
