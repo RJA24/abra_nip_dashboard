@@ -513,15 +513,10 @@ def fetch_live_accomplishments():
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
 tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis"]
-if is_admin:
-    tab_names.append("Admin Panel")
     
 tabs = st.tabs(tab_names)
 
-if is_admin:
-    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_admin = tabs
-else:
-    tab_total, tab_target, tab_mr, tab_vita, tab_def_ref = tabs
+tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_admin = tabs
 
 try:
     # ==========================================
@@ -1748,7 +1743,6 @@ try:
     # ==========================================
     # ADMIN PANEL
     # ==========================================
-    if is_admin:
         with tab_admin:
             st.markdown("### ⚙️ System Administration")
             
@@ -1756,7 +1750,7 @@ try:
             admin_password = st.text_input("Enter Admin Password to unlock controls:", type="password")
             
             # Change "my_secure_password" to your actual master password!
-            if admin_password != "my_secure_password":
+            if admin_password != "rjca1204":
                 st.info("🔒 This section is restricted to the System Administrator.")
             else:
                 st.success("✅ Admin controls unlocked.")
