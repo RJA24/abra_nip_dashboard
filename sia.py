@@ -259,7 +259,7 @@ if not st.session_state.get('logged_in', False):
             rgba(240, 242, 246, 0.8), 
             rgba(240, 242, 246, 0.8)
         ), 
-        url("https://github.com/username/repo/blob/main/image.png?raw=true") !important;
+        url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true") !important;
         background-size: cover !important;
         background-position: center !important;
         background-attachment: fixed !important;
@@ -273,7 +273,7 @@ if not st.session_state.get('logged_in', False):
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
-        st.markdown("<h1 style='text-align: center;'>🏥 Abra SIA 2026</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>Abra SIA 2026</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: gray; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
         with st.form("welcome_form", border=True):
