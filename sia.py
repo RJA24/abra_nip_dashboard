@@ -486,7 +486,7 @@ def fetch_targets_from_supabase():
     df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
     df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
 
-    # RE-CALCULATE NATIONAL VITAMIN A TOTALS
+    # RE-CALCULATE PROJECTED VITAMIN A TOTALS
     df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
     df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
     df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
@@ -1027,10 +1027,10 @@ try:
             ])
             
             # ==========================================
-            # SUB-TAB 1: NATIONAL MR
+            # SUB-TAB 1: PROJECTED MR
             # ==========================================
             with tab_nat_mr:
-                st.markdown(f"#### National MR Breakdown: {location_label} ({gender_filter})")
+                st.markdown(f"#### PROJECTED MR Breakdown: {location_label} ({gender_filter})")
                 
                 t_col = 'MR_6-59m_Total' if gender_filter == "Total (Both)" else 'MR_6-59m_M' if gender_filter == "Male" else 'MR_6-59m_F'
                 c1_col = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
@@ -1077,10 +1077,10 @@ try:
                         st.plotly_chart(fig_donut_mr, use_container_width=True)
 
             # ==========================================
-            # SUB-TAB 2: NATIONAL VITAMIN A
+            # SUB-TAB 2: PROJECTED VITAMIN A
             # ==========================================
             with tab_nat_va:
-                st.markdown(f"#### National Vitamin A Breakdown: {location_label} ({gender_filter})")
+                st.markdown(f"#### Projected Vitamin A Breakdown: {location_label} ({gender_filter})")
                 if va_warning:
                     st.warning("⚠️ The official database does not contain Barangay-level targets for Vitamin A. Displaying the overall Municipal target instead.")
                     
@@ -1221,11 +1221,11 @@ try:
                         st.plotly_chart(fig_donut_act_va, use_container_width=True)
 
             # ==========================================
-            # SUB-TAB 5: COMPARISON (NATIONAL VS ACTUAL)
+            # SUB-TAB 5: COMPARISON (PROJECTED VS ACTUAL)
             # ==========================================
             with tab_compare:
                 st.markdown(f"#### ⚖️ Target Variance Analysis: {location_label}")
-                st.write("Compare the baseline National allocations against the Actual RHU reported census to identify geographic shortfalls or over-allocations.")
+                st.write("Compare the baseline Projected population against the Actual RHU reported census to identify geographic shortfalls or over-allocations.")
                 
                 comp_prog = st.radio("Select Program for Comparison:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
                 
@@ -1248,14 +1248,14 @@ try:
                     total_variance = total_act_comp - total_nat_comp
                     
                     c1, c2, c3 = st.columns(3)
-                    c1.metric("Sum: National Target", f"{total_nat_comp:,.0f}")
+                    c1.metric("Sum: Projected Target", f"{total_nat_comp:,.0f}")
                     c2.metric("Sum: Actual Target", f"{total_act_comp:,.0f}")
                     c3.metric("Net Variance", f"{total_variance:,.0f}", delta_color="inverse")
                     
                     st.write("")
                     
                     df_melt = df_comp.melt(id_vars=['Location'], value_vars=[nat_col, act_col], var_name='Target Type', value_name='Target Count')
-                    df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'National Target', act_col: 'Actual RHU Target'})
+                    df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'Projected Target', act_col: 'Actual RHU Target'})
                     
                     fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
                     fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, legend_title_text="")
@@ -1263,7 +1263,7 @@ try:
                     
                     st.markdown("##### Detailed Breakdown")
                     df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
-                        nat_col: 'National Target',
+                        nat_col: 'Projected Target',
                         act_col: 'Actual Target'
                     })
                     st.dataframe(df_table, use_container_width=True, hide_index=True)
@@ -1305,7 +1305,7 @@ try:
 
         col_mr1, col_mr2, col_mr3, col_mr4 = st.columns(4)
         col_mr1.metric("Total Doses Administered", f"{total_mr_doses:,.0f}")
-        col_mr2.metric("National Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Nat. Target", delta_color="off")
+        col_mr2.metric("Projected Coverage %", f"{nat_cov:.1f}%", f"{nat_target:,.0f} Proj. Target", delta_color="off")
         
         if act_target > 0:
             col_mr3.metric("Actual RHU Coverage %", f"{act_cov:.1f}%", f"{act_target:,.0f} Act. Target", delta_color="off")
@@ -1313,8 +1313,8 @@ try:
             col_mr3.metric("Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
             
         variance = act_target - nat_target
-        var_label = "More than National" if variance > 0 else "Less than National"
-        col_mr4.metric("Variance (Act vs Nat)", f"{variance:,.0f}", var_label, delta_color="inverse")
+        var_label = "More than Projected" if variance > 0 else "Less than Projected"
+        col_mr4.metric("Variance (Act vs Proj)", f"{variance:,.0f}", var_label, delta_color="inverse")
         
         st.divider()
         
@@ -1503,7 +1503,7 @@ try:
 
         col_va1, col_va2, col_va3, col_va4 = st.columns(4)
         col_va1.metric("Total Doses Administered", f"{total_vita_doses:,.0f}")
-        col_va2.metric("National Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Nat. Target", delta_color="off")
+        col_va2.metric("Projected Coverage %", f"{nat_cov_va:.1f}%", f"{nat_target_va:,.0f} Proj. Target", delta_color="off")
         
         if act_target_va > 0:
             col_va3.metric("Actual RHU Coverage %", f"{act_cov_va:.1f}%", f"{act_target_va:,.0f} Act. Target", delta_color="off")
@@ -1511,8 +1511,8 @@ try:
             col_va3.metric("Actual RHU Coverage %", "Awaiting Data", "RHU Sheet Empty", delta_color="off")
             
         variance_va = act_target_va - nat_target_va
-        var_label_va = "More than National" if variance_va > 0 else "Less than National"
-        col_va4.metric("Variance (Act vs Nat)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
+        var_label_va = "More than Projected" if variance_va > 0 else "Less than Projected"
+        col_va4.metric("Variance (Act vs Proj)", f"{variance_va:,.0f}", var_label_va, delta_color="inverse")
         
         st.divider()
 
@@ -1862,7 +1862,7 @@ try:
                 st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
                 
                 if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading National & Actual Targets from 4 Sheets..."):
+                    with st.spinner("Downloading Projected & Actual Targets from 4 Sheets..."):
                         try:
                             conn = st.connection("gsheets", type=GSheetsConnection)
                             
