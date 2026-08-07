@@ -247,10 +247,29 @@ if st.session_state['logged_in']:
 # ==========================================
 # 4. THE WELCOME PAGE
 # ==========================================
-abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
-
-if not st.session_state['logged_in']:
+if not st.session_state.get('logged_in', False):
     
+    # ---------------------------------------------------------
+    # 🎨 BACKGROUND IMAGE INJECTION
+    # ---------------------------------------------------------
+    bg_css = """
+    <style>
+    .stApp {
+        background: linear-gradient(
+            rgba(240, 242, 246, 0.8), 
+            rgba(240, 242, 246, 0.8)
+        ), 
+        url("https://github.com/username/repo/blob/main/image.png?raw=true") !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-attachment: fixed !important;
+    }
+    header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
+    </style>
+    """
+    st.markdown(bg_css, unsafe_allow_html=True)
+    # ---------------------------------------------------------
+
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
@@ -259,38 +278,21 @@ if not st.session_state['logged_in']:
         
         with st.form("welcome_form", border=True):
             st.markdown("### 👋 Welcome")
-            st.caption("Please identify yourself to enter the dashboard.")
+            st.caption("Please enter your name to access the dashboard.")
             
-            visitor_type = st.radio("I am accessing the system as a:", ["Guest / Official Viewer", "RHU Encoder"], horizontal=True)
-            
-            st.divider()
-            
-            if visitor_type == "Guest / Official Viewer":
-                guest_name_input = st.text_input("Your Name", placeholder="e.g., Dr. Cruz / DOH Rep").strip()
-                viewer_rhu = "Select Municipality..."
-            else:
-                viewer_rhu = st.selectbox("Your Municipality", ["Select Municipality..."] + abra_munis)
-                guest_name_input = ""
+            visitor_name = st.text_input("Your Name", placeholder="e.g., Dr. Cruz / DOH Rep", label_visibility="collapsed").strip()
             
             st.markdown("<br>", unsafe_allow_html=True)
             submit_login = st.form_submit_button("Enter Command Center 🚀", type="primary", use_container_width=True)
             
             if submit_login:
-                if visitor_type == "Guest / Official Viewer" and not guest_name_input:
+                if not visitor_name:
                     st.error("🚨 Please enter your name to continue.")
-                elif visitor_type == "RHU Encoder" and viewer_rhu == "Select Municipality...":
-                    st.error("🚨 Please select your Municipality.")
                 else:
-                    if visitor_type == "Guest / Official Viewer":
-                        db_name = f"Visitor ({guest_name_input})"
-                        display_name = db_name 
-                        db_muni = "Abra Province"
-                        db_role = "Guest"
-                    else:
-                        db_name = f"RHU Visitor ({viewer_rhu})" 
-                        display_name = "RHU Visitor"            
-                        db_muni = viewer_rhu
-                        db_role = "RHU Encoder"
+                    db_name = f"Visitor ({visitor_name})"
+                    display_name = db_name 
+                    db_muni = "Abra Province"
+                    db_role = "Guest"
                     
                     try:
                         manila_tz = pytz.timezone('Asia/Manila')
