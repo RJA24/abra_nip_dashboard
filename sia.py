@@ -249,29 +249,8 @@ if st.session_state['logged_in']:
 # ==========================================
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
-if not st.session_state.get('logged_in', False):
+if not st.session_state['logged_in']:
     
-    # ---------------------------------------------------------
-    # 🎨 BACKGROUND IMAGE INJECTION
-    # ---------------------------------------------------------
-    bg_css = """
-    <style>
-    .stApp {
-        background: linear-gradient(
-            rgba(240, 242, 246, 0.8), 
-            rgba(240, 242, 246, 0.8)
-        ), 
-        url("https://github.com/username/repo/blob/main/image.png?raw=true") !important;
-        background-size: cover !important;
-        background-position: center !important;
-        background-attachment: fixed !important;
-    }
-    header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
-    </style>
-    """
-    st.markdown(bg_css, unsafe_allow_html=True)
-    # ---------------------------------------------------------
-
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
