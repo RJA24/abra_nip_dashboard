@@ -1021,8 +1021,8 @@ try:
 
             # 2. Create 5 Distinct Sub-Tabs
             tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
-                "💉  MR Targets", "💊 Nat. Vit A Targets", 
-                "📊 Act. MR Targets", "📈 Act. Vit A Targets", 
+                "💉  Projected MR Targets", "💊 Projected Vit A Targets", 
+                "📊 Actual MR Targets", "📈 Actual Vit A Targets", 
                 "⚖️ Target Comparison"
             ])
             
