@@ -774,11 +774,11 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     vars_to_melt = ['MR Coverage %', 'Vit A Coverage %']
                     color_seq = ['#1E88E5', '#F4511E']
-                    bar_multiplier = 70  # Taller height to fit 2 bars
+                    bar_multiplier = 40  # 📉 REDUCED: Was 70. This makes the overall chart much shorter!
                 else:
                     vars_to_melt = ['MR Coverage %']
                     color_seq = ['#1E88E5']
-                    bar_multiplier = 35  # Shorter height since it's only 1 bar
+                    bar_multiplier = 25  # 📉 REDUCED: Was 35. 
                     
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
@@ -797,11 +797,11 @@ try:
                     color_discrete_sequence=color_seq
                 )
                 
-                # Force large labels on the outside of the bars
+                # 📉 REDUCED: Shrunk fonts from 16 to 11 so they fit beautifully on the thinner bars
                 fig_geo_cov.update_traces(
-                    textfont=dict(size=16),
-                    insidetextfont=dict(size=16),
-                    outsidetextfont=dict(size=16),
+                    textfont=dict(size=11),
+                    insidetextfont=dict(size=11),
+                    outsidetextfont=dict(size=11),
                     textposition="outside", 
                     cliponaxis=False 
                 )
