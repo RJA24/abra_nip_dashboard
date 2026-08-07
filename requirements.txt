@@ -5,3 +5,4 @@ plotly
 pytz
 supabase
 streamlit-autorefresh
+streamlit-aggrid
