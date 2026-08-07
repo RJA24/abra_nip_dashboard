@@ -1447,7 +1447,7 @@ try:
                     data=csv_tally_mr,
                     file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
-                    key="download_mr_tally" # Ensures this button doesn't conflict with others
+                    key=f"dl_mr_tally_{location_label}" # <--- DYNAMIC KEY HERE
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
@@ -1635,16 +1635,16 @@ try:
                     fit_columns_on_grid_load=False  
                 )
 
-                # --- MR TALLY SHEET DOWNLOAD BUTTON ---
+                # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                csv_tally_mr = tally_grid_mr.to_csv(index=False).encode('utf-8')
+                csv_tally_va = tally_grid_va.to_csv(index=False).encode('utf-8')
                 
                 st.download_button(
-                    label="📥 Download MR Tally Sheet (CSV)",
-                    data=csv_tally_mr,
-                    file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
+                    label="📥 Download Vit A Tally Sheet (CSV)",
+                    data=csv_tally_va,
+                    file_name=f"VitA_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
-                    key="download_mr_tally" # Ensures this button doesn't conflict with others
+                    key=f"dl_va_tally_{location_label}" # <--- DYNAMIC KEY HERE
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
