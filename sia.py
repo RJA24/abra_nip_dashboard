@@ -13,6 +13,7 @@ import requests
 import json
 from st_aggrid import AgGrid, GridOptionsBuilder
 
+abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
 @st.cache_data(ttl="24h")
 def fetch_abra_geojson():
