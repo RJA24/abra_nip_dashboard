@@ -11,6 +11,7 @@ import hashlib
 from supabase import create_client, Client
 import requests
 import json
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 
 @st.cache_data(ttl="24h")
@@ -1362,7 +1363,7 @@ try:
                 st.plotly_chart(fig_gender, use_container_width=True)
                 
             # ==========================================
-            # 📅 DAILY TALLY SHEET GRID (MR)
+            # 📅 DAILY TALLY SHEET GRID (MR) - AGGRID
             # ==========================================
             st.divider()
             st.markdown("#### 📅 Daily Tally Sheet")
@@ -1389,15 +1390,34 @@ try:
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
                 
                 # Force columns 1 through 31 to display for the days of the month
-                # (Change 32 to 29 if you strictly only want 28 days showing)
                 days_cols = list(range(1, 32))
                 tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
                 
                 # Replace zeros with empty strings to make it look exactly like a blank paper tally sheet
                 tally_grid_mr = tally_grid_mr.replace(0, "")
                 
-                # Force the height to 1050 pixels so all 27 rows show without vertical scrolling
-                st.dataframe(tally_grid_mr, use_container_width=True, height=1000)
+                # Reset index to make 'Municipality' a standard column for AgGrid
+                tally_grid_mr = tally_grid_mr.reset_index()
+                
+                # Convert all column names to strings to avoid AgGrid errors
+                tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
+                
+                # Configure AgGrid
+                gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
+                gb_mr.configure_default_column(sortable=True, filter=True, resizable=True)
+                
+                # Pin the Municipality column to the left so it stays visible when scrolling days horizontally
+                gb_mr.configure_column("Municipality", pinned='left')
+                
+                gridOptions_mr = gb_mr.build()
+                gridOptions_mr['rowHeight'] = 60  # Force 60px row height
+                
+                AgGrid(
+                    tally_grid_mr,
+                    gridOptions=gridOptions_mr,
+                    height=800,  # Adjusted height for 27 rows + header
+                    theme="streamlit"
+                )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
@@ -1509,7 +1529,7 @@ try:
                 st.plotly_chart(fig_gender_va, use_container_width=True)
 
             # ==========================================
-            # 📅 DAILY TALLY SHEET GRID (VIT A)
+            # 📅 DAILY TALLY SHEET GRID (VIT A) - AGGRID
             # ==========================================
             st.divider()
             st.markdown("#### 📅 Daily Tally Sheet")
@@ -1542,8 +1562,28 @@ try:
                 # Replace zeros with empty strings 
                 tally_grid_va = tally_grid_va.replace(0, "")
                 
-                # Force the height to 1050 pixels so all 27 rows show without vertical scrolling
-                st.dataframe(tally_grid_va, use_container_width=True, height=1000)
+                # Reset index to make 'Municipality' a standard column for AgGrid
+                tally_grid_va = tally_grid_va.reset_index()
+                
+                # Convert all column names to strings to avoid AgGrid errors
+                tally_grid_va.columns = tally_grid_va.columns.astype(str)
+                
+                # Configure AgGrid
+                gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
+                gb_va.configure_default_column(sortable=True, filter=True, resizable=True)
+                
+                # Pin the Municipality column to the left so it stays visible when scrolling days horizontally
+                gb_va.configure_column("Municipality", pinned='left')
+                
+                gridOptions_va = gb_va.build()
+                gridOptions_va['rowHeight'] = 60  # Force 60px row height
+                
+                AgGrid(
+                    tally_grid_va,
+                    gridOptions=gridOptions_va,
+                    height=800,  # Adjusted height for 27 rows + header
+                    theme="streamlit"
+                )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
