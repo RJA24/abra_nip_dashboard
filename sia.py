@@ -1402,21 +1402,26 @@ try:
                 # Convert all column names to strings to avoid AgGrid errors
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
                 
-                # Configure AgGrid
+                # ==========================================
+                # MR AGGRID CONFIGURATION FIX
+                # ==========================================
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
-                gb_mr.configure_default_column(sortable=True, filter=True, resizable=True)
                 
-                # Pin the Municipality column to the left so it stays visible when scrolling days horizontally
-                gb_mr.configure_column("Municipality", pinned='left')
+                # Default settings for the 31 "Day" columns (Narrow, no flex)
+                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=55)
+                
+                # Special settings just for the Municipality column
+                gb_mr.configure_column("Municipality", pinned='left', width=180, sortable=True, filter=True)
                 
                 gridOptions_mr = gb_mr.build()
-                gridOptions_mr['rowHeight'] = 60  # Force 60px row height
+                gridOptions_mr['rowHeight'] = 35  # Reduced to normal compact height
                 
                 AgGrid(
                     tally_grid_mr,
                     gridOptions=gridOptions_mr,
-                    height=800,  # Adjusted height for 27 rows + header
-                    theme="streamlit"
+                    height=600,
+                    theme="balham",                 # Forces classic spreadsheet grid lines
+                    fit_columns_on_grid_load=False  # Stops the extreme stretching
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
@@ -1568,21 +1573,26 @@ try:
                 # Convert all column names to strings to avoid AgGrid errors
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
                 
-                # Configure AgGrid
+                # ==========================================
+                # VIT A AGGRID CONFIGURATION FIX
+                # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
-                gb_va.configure_default_column(sortable=True, filter=True, resizable=True)
                 
-                # Pin the Municipality column to the left so it stays visible when scrolling days horizontally
-                gb_va.configure_column("Municipality", pinned='left')
+                # Default settings for the 31 "Day" columns (Narrow, no flex)
+                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=55)
+                
+                # Special settings just for the Municipality column
+                gb_va.configure_column("Municipality", pinned='left', width=180, sortable=True, filter=True)
                 
                 gridOptions_va = gb_va.build()
-                gridOptions_va['rowHeight'] = 60  # Force 60px row height
+                gridOptions_va['rowHeight'] = 35  # Reduced to normal compact height
                 
                 AgGrid(
                     tally_grid_va,
                     gridOptions=gridOptions_va,
-                    height=800,  # Adjusted height for 27 rows + header
-                    theme="streamlit"
+                    height=600,  
+                    theme="balham",                 # Forces classic spreadsheet grid lines
+                    fit_columns_on_grid_load=False  # Stops the extreme stretching
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
