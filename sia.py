@@ -1434,7 +1434,7 @@ try:
                 AgGrid(
                     tally_grid_mr,
                     gridOptions=gridOptions_mr,
-                    height=600,
+                    height=610,
                     theme="balham",                 
                     fit_columns_on_grid_load=False  
                 )
