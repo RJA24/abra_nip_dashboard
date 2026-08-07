@@ -444,56 +444,63 @@ def clean_and_process_car_data(df, col_names):
 
 @st.cache_data(ttl="1h")
 def fetch_targets_from_supabase():
-    res = supabase.table('targets').select('*').execute()
-    if not res.data: return pd.DataFrame()
-    df = pd.DataFrame(res.data)
-    
-    col_mapping = {
-        'code': 'Code', 'location': 'Location', 'level': 'Level',
-        'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-        'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
-        'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
-        'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
-        'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
-        'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
-        'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
-        'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
-        # ACTUALS TARGETS
-        'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
-        'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
-        'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
-        'actual_mr_24_59m_total': 'Act_MR_24-59m_Total', 'actual_mr_24_59m_m': 'Act_MR_24-59m_M', 'actual_mr_24_59m_f': 'Act_MR_24-59m_F',
-        'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_6_11m_m': 'Act_VitA_6-11m_M', 'actual_vita_6_11m_f': 'Act_VitA_6-11m_F',
-        'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total', 'actual_vita_12_59m_m': 'Act_VitA_12-59m_M', 'actual_vita_12_59m_f': 'Act_VitA_12-59m_F',
-        'actual_vita_total': 'Act_VitA_Total', 'actual_vita_total_m': 'Act_VitA_Total_M', 'actual_vita_total_f': 'Act_VitA_Total_F'
-    }
-    
-    for db_col in col_mapping.keys():
-        if db_col not in df.columns:
-            df[db_col] = 0
+    try:
+        res = supabase.table('targets').select('*').execute()
+        
+        # 🛑 SAFETY NET: If data is missing or incomplete, clear cache and reject it!
+        if not res.data or len(res.data) < 27: 
+            st.cache_data.clear()
+            return pd.DataFrame()
             
-    df = df.rename(columns=col_mapping)
-    
-    # Ensure all numeric columns are floats/ints
-    num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
-    for c in num_cols:
-        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        df = pd.DataFrame(res.data)
+        
+        col_mapping = {
+            'code': 'Code', 'location': 'Location', 'level': 'Level',
+            'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
+            'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
+            'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
+            'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
+            'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
+            'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
+            'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
+            'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
+            # ACTUALS TARGETS
+            'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
+            'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
+            'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
+            'actual_mr_24_59m_total': 'Act_MR_24-59m_Total', 'actual_mr_24_59m_m': 'Act_MR_24-59m_M', 'actual_mr_24_59m_f': 'Act_MR_24-59m_F',
+            'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_6_11m_m': 'Act_VitA_6-11m_M', 'actual_vita_6_11m_f': 'Act_VitA_6-11m_F',
+            'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total', 'actual_vita_12_59m_m': 'Act_VitA_12-59m_M', 'actual_vita_12_59m_f': 'Act_VitA_12-59m_F',
+            'actual_vita_total': 'Act_VitA_Total', 'actual_vita_total_m': 'Act_VitA_Total_M', 'actual_vita_total_f': 'Act_VitA_Total_F'
+        }
+        
+        for db_col in col_mapping.keys():
+            if db_col not in df.columns:
+                df[db_col] = 0
+                
+        df = df.rename(columns=col_mapping)
+        
+        num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
+        for c in num_cols:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
 
-    # RE-CALCULATE ACTUAL VITAMIN A TOTALS (Male + Female) TO ENSURE ACCURACY
-    df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
-    df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
-    df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
-    df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
-    df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
+        df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
+        df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
+        df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
+        df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
+        df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
 
-    # RE-CALCULATE PROJECTED VITAMIN A TOTALS
-    df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
-    df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
-    df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
-    df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
-    df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
+        df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
+        df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
+        df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
+        df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
+        df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
 
-    return df
+        return df
+    except Exception as e:
+        # 🛑 SAFETY NET: Do not cache a database crash!
+        st.cache_data.clear()
+        return pd.DataFrame()
 
 @st.cache_data(ttl="1h")
 def fetch_live_accomplishments():
@@ -502,6 +509,11 @@ def fetch_live_accomplishments():
         df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
         df_vita = conn.read(spreadsheet=sheet_url, worksheet="VitA", skiprows=1)
         
+        # 🛑 SAFETY NET: If Google Sheets glitches and returns nothing, clear the cache!
+        if df_mr.empty or df_vita.empty:
+            st.cache_data.clear()
+            return pd.DataFrame(), pd.DataFrame()
+            
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
         if 'Barangay' in df_vita.columns:
@@ -509,6 +521,8 @@ def fetch_live_accomplishments():
             
         return df_mr, df_vita
     except Exception as e:
+        # 🛑 SAFETY NET: Do not cache a connection error!
+        st.cache_data.clear()
         return pd.DataFrame(), pd.DataFrame()
 
 # ==========================================
