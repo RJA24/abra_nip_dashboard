@@ -1593,35 +1593,34 @@ try:
                 # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
                 
-                # Give columns breathing room and disable the hidden menu icon
                 gb_va.configure_default_column(
-                    sortable=False, 
-                    filter=False, 
-                    resizable=True, 
-                    width=80, 
-                    minWidth=80,
-                    suppressMenu=True 
+                    sortable=False, filter=False, resizable=True, 
+                    width=60, minWidth=60, suppressMenu=True 
                 )
                 
-                # Ensure the pinned column is wide enough for the longest name
                 gb_va.configure_column(
-                    "Municipality", 
-                    pinned='left', 
-                    width=200, 
-                    minWidth=200, 
-                    sortable=True, 
-                    filter=True,
-                    suppressMenu=False
+                    "Municipality", pinned='left', 
+                    width=200, minWidth=200, 
+                    sortable=True, filter=True, suppressMenu=False
                 )
                 
                 gridOptions_va = gb_va.build()
-                gridOptions_va['rowHeight'] = 35  
+                gridOptions_va['rowHeight'] = 20
+                gridOptions_va['headerHeight'] = 40
+                
+                # 🛑 THE BRUTE FORCE CSS FIX 🛑
+                grid_css = {
+                    ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
+                    ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
+                    ".ag-row": {"border-bottom": "none !important"} 
+                }
                 
                 AgGrid(
                     tally_grid_va,
                     gridOptions=gridOptions_va,
                     height=600,  
-                    theme="balham",                 
+                    theme="streamlit",
+                    custom_css=grid_css,
                     fit_columns_on_grid_load=False  
                 )
             else:
