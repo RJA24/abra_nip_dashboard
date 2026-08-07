@@ -1414,7 +1414,7 @@ try:
                 
                 gb_mr.configure_column(
                     "Municipality", pinned='left', 
-                    width=200, minWidth=200, 
+                    width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
@@ -1594,12 +1594,12 @@ try:
                 
                 gb_va.configure_default_column(
                     sortable=False, filter=False, resizable=True, 
-                    width=60, minWidth=60, suppressMenu=True 
+                    width=40, minWidth=40, suppressMenu=True 
                 )
                 
                 gb_va.configure_column(
                     "Municipality", pinned='left', 
-                    width=200, minWidth=200, 
+                    width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
@@ -1617,7 +1617,7 @@ try:
                 AgGrid(
                     tally_grid_va,
                     gridOptions=gridOptions_va,
-                    height=600,  
+                    height=610,  
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False  
