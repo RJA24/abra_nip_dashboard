@@ -512,7 +512,7 @@ def fetch_live_accomplishments():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis"]
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "Admin Panel"]
     
 tabs = st.tabs(tab_names)
 
