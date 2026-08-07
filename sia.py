@@ -1429,7 +1429,7 @@ try:
                 )
                 
                 gridOptions_mr = gb_mr.build()
-                gridOptions_mr['rowHeight'] = 25  
+                gridOptions_mr['rowHeight'] = 20  
                 
                 AgGrid(
                     tally_grid_mr,
