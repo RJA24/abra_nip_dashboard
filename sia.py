@@ -1407,21 +1407,36 @@ try:
                 # ==========================================
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
                 
-                # Default settings for the 31 "Day" columns (Narrow, no flex)
-                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=55)
+                # Give columns breathing room and disable the hidden menu icon
+                gb_mr.configure_default_column(
+                    sortable=False, 
+                    filter=False, 
+                    resizable=True, 
+                    width=80, 
+                    minWidth=80,
+                    suppressMenu=True 
+                )
                 
-                # Special settings just for the Municipality column
-                gb_mr.configure_column("Municipality", pinned='left', width=180, sortable=True, filter=True)
+                # Ensure the pinned column is wide enough for the longest name
+                gb_mr.configure_column(
+                    "Municipality", 
+                    pinned='left', 
+                    width=200, 
+                    minWidth=200, 
+                    sortable=True, 
+                    filter=True,
+                    suppressMenu=False
+                )
                 
                 gridOptions_mr = gb_mr.build()
-                gridOptions_mr['rowHeight'] = 35  # Reduced to normal compact height
+                gridOptions_mr['rowHeight'] = 35  
                 
                 AgGrid(
                     tally_grid_mr,
                     gridOptions=gridOptions_mr,
                     height=600,
-                    theme="balham",                 # Forces classic spreadsheet grid lines
-                    fit_columns_on_grid_load=False  # Stops the extreme stretching
+                    theme="balham",                 
+                    fit_columns_on_grid_load=False  
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
@@ -1578,21 +1593,36 @@ try:
                 # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
                 
-                # Default settings for the 31 "Day" columns (Narrow, no flex)
-                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=55)
+                # Give columns breathing room and disable the hidden menu icon
+                gb_va.configure_default_column(
+                    sortable=False, 
+                    filter=False, 
+                    resizable=True, 
+                    width=80, 
+                    minWidth=80,
+                    suppressMenu=True 
+                )
                 
-                # Special settings just for the Municipality column
-                gb_va.configure_column("Municipality", pinned='left', width=180, sortable=True, filter=True)
+                # Ensure the pinned column is wide enough for the longest name
+                gb_va.configure_column(
+                    "Municipality", 
+                    pinned='left', 
+                    width=200, 
+                    minWidth=200, 
+                    sortable=True, 
+                    filter=True,
+                    suppressMenu=False
+                )
                 
                 gridOptions_va = gb_va.build()
-                gridOptions_va['rowHeight'] = 35  # Reduced to normal compact height
+                gridOptions_va['rowHeight'] = 35  
                 
                 AgGrid(
                     tally_grid_va,
                     gridOptions=gridOptions_va,
                     height=600,  
-                    theme="balham",                 # Forces classic spreadsheet grid lines
-                    fit_columns_on_grid_load=False  # Stops the extreme stretching
+                    theme="balham",                 
+                    fit_columns_on_grid_load=False  
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
