@@ -1437,6 +1437,18 @@ try:
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False  
                 )
+
+                # --- MR TALLY SHEET DOWNLOAD BUTTON ---
+                st.markdown("<br>", unsafe_allow_html=True)
+                csv_tally_mr = tally_grid_mr.to_csv(index=False).encode('utf-8')
+                
+                st.download_button(
+                    label="📥 Download MR Tally Sheet (CSV)",
+                    data=csv_tally_mr,
+                    file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
+                    mime="text/csv",
+                    key="download_mr_tally" # Ensures this button doesn't conflict with others
+                )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
@@ -1621,6 +1633,18 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False  
+                )
+
+                # --- MR TALLY SHEET DOWNLOAD BUTTON ---
+                st.markdown("<br>", unsafe_allow_html=True)
+                csv_tally_mr = tally_grid_mr.to_csv(index=False).encode('utf-8')
+                
+                st.download_button(
+                    label="📥 Download MR Tally Sheet (CSV)",
+                    data=csv_tally_mr,
+                    file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
+                    mime="text/csv",
+                    key="download_mr_tally" # Ensures this button doesn't conflict with others
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
