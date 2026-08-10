@@ -705,7 +705,7 @@ try:
                     st.plotly_chart(fig_gauge_va, use_container_width=True)
 
                 with c2:
-                    st.markdown("#### Daily Vaccination Trend")
+                    st.markdown("#### 🚀 Cumulative Campaign Burn-Up")
                     if not df_mr_trend.empty or not df_va_trend.empty:
                         if not df_mr_trend.empty and not df_va_trend.empty:
                             df_trend = pd.merge(df_mr_trend, df_va_trend, on='Vaccination Date', how='outer').fillna(0)
@@ -718,8 +718,22 @@ try:
                             
                         df_trend = df_trend.sort_values('Vaccination Date')
                         
-                        fig_trend = px.line(df_trend, x='Vaccination Date', y=['MR Doses', 'Vit A Doses'], markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
-                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses Administered", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
+                        # 🛑 NEW: Calculate cumulative totals instead of daily bounces
+                        df_trend['MR Cumulative'] = df_trend['MR Doses'].cumsum()
+                        df_trend['Vit A Cumulative'] = df_trend['Vit A Doses'].cumsum()
+                        
+                        fig_trend = px.line(df_trend, x='Vaccination Date', y=['MR Cumulative', 'Vit A Cumulative'], markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
+                        
+                        # 🛑 NEW: Add the 95% Target sprint lines
+                        mr_95 = active_target_mr * 0.95
+                        va_95 = active_target_va * 0.95
+                        
+                        if mr_95 > 0:
+                            fig_trend.add_hline(y=mr_95, line_dash="dash", line_color="rgba(30, 136, 229, 0.5)", annotation_text="95% MR Target")
+                        if va_95 > 0:
+                            fig_trend.add_hline(y=va_95, line_dash="dash", line_color="rgba(244, 81, 30, 0.5)", annotation_text="95% Vit A Target", annotation_position="bottom right")
+
+                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Cumulative Doses", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_trend, use_container_width=True)
                         
                 st.divider()
@@ -757,8 +771,15 @@ try:
                     lambda row: (row['Vit A Administered'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1
                 )
 
+                # 🛑 NEW: CALCULATE DOSE DEFICITS FOR CHART LABELS AND MAPS
+                df_geo_summary['MR Deficit (to 95%)'] = (df_geo_summary['MR Target'] * 0.95) - df_geo_summary['MR Administered']
+                df_geo_summary['MR Deficit (to 95%)'] = df_geo_summary['MR Deficit (to 95%)'].apply(lambda x: max(0, x)) # No negative deficits
+                
+                df_geo_summary['Vit A Deficit (to 95%)'] = (df_geo_summary['Vit A Target'] * 0.95) - df_geo_summary['Vit A Administered']
+                df_geo_summary['Vit A Deficit (to 95%)'] = df_geo_summary['Vit A Deficit (to 95%)'].apply(lambda x: max(0, x))
+
                 # ==========================================
-                # 🛑 THE FIX: Force Left Merge to Prevent Missing Data 
+                # 🛑 THE FIX: Force Left Merge to Prevent Missing Data
                 # ==========================================
                 if view_mode == "All Municipalities (Abra)":
                     abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
@@ -782,6 +803,13 @@ try:
                     
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
+                # 🛑 NEW: Map the correct deficit to the melted rows for the hover tooltip
+                def get_deficit(row):
+                    match_row = df_geo_summary[df_geo_summary[geo_col] == row[geo_col]].iloc[0]
+                    return match_row['MR Deficit (to 95%)'] if 'MR' in row['Program'] else match_row['Vit A Deficit (to 95%)']
+                    
+                df_melt_geo['Doses to hit 95% Target'] = df_melt_geo.apply(get_deficit, axis=1)
+                
                 # Dynamic height: Adjusts based on whether we have 1 or 2 programs showing
                 chart_height = max(400, len(df_geo_summary) * bar_multiplier)
                 
@@ -794,7 +822,8 @@ try:
                     orientation='h', 
                     text_auto='.1f', 
                     title=f"Coverage % by {geo_col}", 
-                    color_discrete_sequence=color_seq
+                    color_discrete_sequence=color_seq,
+                    hover_data={"Doses to hit 95% Target": ":,.0f"} # 🛑 ADDED DEFICIT TO HOVER
                 )
                 
                 # 📉 REDUCED: Shrunk fonts from 16 to 11 so they fit beautifully on the thinner bars
@@ -859,7 +888,7 @@ try:
                                 center={"lat": 17.58, "lon": 120.80},
                                 opacity=0.7,
                                 hover_name=geo_col,
-                                hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,'}
+                                hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                             )
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
                             st.plotly_chart(fig_map_mr, use_container_width=True)
@@ -880,7 +909,7 @@ try:
                                     center={"lat": 17.58, "lon": 120.80},
                                     opacity=0.7,
                                     hover_name=geo_col,
-                                    hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,'}
+                                    hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                                 )
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                                 st.plotly_chart(fig_map_va, use_container_width=True)
@@ -1401,6 +1430,9 @@ try:
                     aggfunc='sum',
                     fill_value=0
                 )
+
+                # 🛑 NEW: Calculate Total Row
+                tally_grid_mr.loc['TOTAL'] = tally_grid_mr.sum(numeric_only=True)
                 
                 # Force all 27 Abra Municipalities to display as rows, even if they have 0 doses
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
@@ -1599,6 +1631,9 @@ try:
                     aggfunc='sum',
                     fill_value=0
                 )
+
+                # 🛑 NEW: Calculate Total Row
+                tally_grid_va.loc['TOTAL'] = tally_grid_va.sum(numeric_only=True)
                 
                 # Force all 27 Abra Municipalities to display as rows
                 tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
