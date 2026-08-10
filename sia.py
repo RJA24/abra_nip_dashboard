@@ -1382,7 +1382,7 @@ try:
             # ==========================================
             st.divider()
             st.markdown("#### 📅 Daily Tally Sheet")
-            st.info("MR")  
+            st.caption("MR") 
                         
             if not df_mr_filtered.empty and 'Vaccination Date' in df_mr_filtered.columns:
                 df_tally_mr = df_mr_filtered.copy()
