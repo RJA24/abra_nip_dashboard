@@ -1580,7 +1580,7 @@ try:
             # ==========================================
             st.divider()
             st.markdown("#### 📅 Daily Tally Sheet")
-            st.info("Vitamin A")
+            st.caption("Vitamin A")
                         
             if not df_vita_filtered.empty and 'Vaccination Date' in df_vita_filtered.columns:
                 df_tally_va = df_vita_filtered.copy()
