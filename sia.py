@@ -1434,8 +1434,8 @@ try:
                 # 🛑 NEW: Calculate Total Row
                 tally_grid_mr.loc['TOTAL'] = tally_grid_mr.sum(numeric_only=True)
                 
-                # Force all 27 Abra Municipalities to display as rows, even if they have 0 doses
-                tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
+                # Force all 27 Abra Municipalities + TOTAL to display as rows
+                tally_grid_mr = tally_grid_mr.reindex(['TOTAL'] + abra_munis, fill_value=0)
                 
                 # Force columns 1 through 31 to display for the days of the month
                 days_cols = list(range(1, 32))
@@ -1635,8 +1635,8 @@ try:
                 # 🛑 NEW: Calculate Total Row
                 tally_grid_va.loc['TOTAL'] = tally_grid_va.sum(numeric_only=True)
                 
-                # Force all 27 Abra Municipalities to display as rows
-                tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
+                # Force all 27 Abra Municipalities + TOTAL to display as rows
+                tally_grid_va = tally_grid_va.reindex(['TOTAL'] + abra_munis, fill_value=0)
                 
                 # Force columns 1 through 31 
                 days_cols = list(range(1, 32))
