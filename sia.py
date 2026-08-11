@@ -687,6 +687,7 @@ try:
                 
                 with c1:
                     st.markdown("#### Campaign Progress")
+                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
                     # MR Gauge
                     fig_gauge_mr = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = mr_cov_pct, title = {'text': f"MR Coverage ({exec_target_mode.split()[0]})"},
@@ -695,8 +696,7 @@ try:
                     ))
                     fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_mr, use_container_width=True)
-                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
-
+                    
                     # Vit A Gauge
                     fig_gauge_va = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = va_cov_pct, title = {'text': f"Vit A Coverage ({exec_target_mode.split()[0]})"},
@@ -705,10 +705,10 @@ try:
                     ))
                     fig_gauge_va.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_va, use_container_width=True)
-                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
-
+                    
                 with c2:
-                    st.markdown("#### 🚀 Cumulative Campaign Burn-Up")
+                    st.markdown("#### Cumulative Campaign Burn-Up")
+                    st.caption(f"🎯 **Target lines based on:** {exec_target_mode}")
                     if not df_mr_trend.empty or not df_va_trend.empty:
                         if not df_mr_trend.empty and not df_va_trend.empty:
                             df_trend = pd.merge(df_mr_trend, df_va_trend, on='Vaccination Date', how='outer').fillna(0)
@@ -738,10 +738,11 @@ try:
 
                         fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Cumulative Doses", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_trend, use_container_width=True)
-                        st.caption(f"🎯 **Target lines based on:** {exec_target_mode}")
+                        
                         
                 st.divider()
                 st.markdown(f"#### Geographic Coverage Breakdown ({geo_col})")
+                st.caption(f"🎯 **Coverage % based on:** {exec_target_mode}")
                 
                 # Combine targets and doses for geographic table/chart
                 if not df_mr_live.empty and geo_col in df_mr_filtered.columns:
@@ -851,8 +852,7 @@ try:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
                 )
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
-                st.caption(f"🎯 **Coverage % based on:** {exec_target_mode}")
-
+                
                 # ==========================================
                 # 🗺️ CHOROPLETH COVERAGE MAP
                 # ==========================================
@@ -861,6 +861,7 @@ try:
 
                     st.divider()
                     st.markdown(f"#### 🗺️ Provincial Coverage Map")
+                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     
                     abra_geo = fetch_abra_geojson()
                     
@@ -897,8 +898,7 @@ try:
                             )
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
                             st.plotly_chart(fig_map_mr, use_container_width=True)
-                            st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
-                            
+                                                        
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
                             if 'Vit A Coverage %' in df_geo_summary.columns and view_mode == "All Municipalities (Abra)":
@@ -919,7 +919,7 @@ try:
                                 )
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                                 st.plotly_chart(fig_map_va, use_container_width=True)
-                                st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
+                            
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
                     
