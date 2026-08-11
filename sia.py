@@ -1480,7 +1480,7 @@ try:
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#0033A0'}
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}
                 )
                 
                 gridOptions_mr = gb_mr.build()
@@ -1703,7 +1703,7 @@ try:
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#F4511E'} # Vit A colored text
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"} # Vit A colored text
                 )
                 
                 gridOptions_va = gb_va.build()
