@@ -12,6 +12,7 @@ from supabase import create_client, Client
 import requests
 import json
 from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid.shared import JsCode
 
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
@@ -1470,6 +1471,16 @@ try:
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
                 
+                # 🛑 NEW: Make the TOTAL row bold with a slight background color
+                bold_total_row = JsCode("""
+                function(params) {
+                    if (params.data.Municipality === 'TOTAL') {
+                        return {'font-weight': 'bold', 'background-color': '#f0f2f6'};
+                    }
+                }
+                """)
+                gridOptions_mr['getRowStyle'] = bold_total_row
+                
                 # 🛑 THE BRUTE FORCE CSS FIX 🛑
                 grid_css = {
                     ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
@@ -1483,7 +1494,8 @@ try:
                     height=620,
                     theme="streamlit",
                     custom_css=grid_css,
-                    fit_columns_on_grid_load=False  
+                    fit_columns_on_grid_load=False,
+                    allow_unsafe_jscode=True  # 🛑 NEW: Required to run the bolding script!
                 )
 
                 # --- MR TALLY SHEET DOWNLOAD BUTTON ---
@@ -1671,6 +1683,16 @@ try:
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
                 
+                # 🛑 NEW: Make the TOTAL row bold with a slight background color
+                bold_total_row_va = JsCode("""
+                function(params) {
+                    if (params.data.Municipality === 'TOTAL') {
+                        return {'font-weight': 'bold', 'background-color': '#f0f2f6'};
+                    }
+                }
+                """)
+                gridOptions_va['getRowStyle'] = bold_total_row_va
+                
                 # 🛑 THE BRUTE FORCE CSS FIX 🛑
                 grid_css = {
                     ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
@@ -1684,7 +1706,8 @@ try:
                     height=620,  
                     theme="streamlit",
                     custom_css=grid_css,
-                    fit_columns_on_grid_load=False  
+                    fit_columns_on_grid_load=False,
+                    allow_unsafe_jscode=True  # 🛑 NEW: Required to run the bolding script!
                 )
 
                 # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
