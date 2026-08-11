@@ -2193,7 +2193,7 @@ try:
                 # ==========================================
                 st.divider()
                 st.markdown("#### ⚖️ Data Reconciliation: VaccTrack vs. RHU Tracker")
-                st.write("Compare the official VaccTrack database against your live RHU submitted Google Sheets data to identify encoding backlogs.")
+                st.write("Compare the official VaccTrack database against your live RHU submitted Google Sheets data to identify encoding backlogs by program.")
                 
                 # Fetch live tracker data
                 df_mr_live, df_vita_live = fetch_live_accomplishments()
@@ -2201,65 +2201,89 @@ try:
                 # Calculate Tracker Totals
                 df_tracker_comb = pd.DataFrame({'Municipality': abra_munis})
                 
-                mr_tracker_doses = 0
+                # --- Tracker MR ---
                 if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
                     mr_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
                     df_mr_temp = df_mr_live.copy()
                     for c in mr_cols:
                         if c in df_mr_temp.columns:
                             df_mr_temp[c] = pd.to_numeric(df_mr_temp[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
-                    df_mr_temp['Tracker_MR'] = df_mr_temp[[c for c in mr_cols if c in df_mr_temp.columns]].sum(axis=1)
-                    mr_summary = df_mr_temp.groupby('Municipality')['Tracker_MR'].sum().reset_index()
+                    df_mr_temp['Tracker MR'] = df_mr_temp[[c for c in mr_cols if c in df_mr_temp.columns]].sum(axis=1)
+                    mr_summary = df_mr_temp.groupby('Municipality')['Tracker MR'].sum().reset_index()
                     df_tracker_comb = pd.merge(df_tracker_comb, mr_summary, on='Municipality', how='left').fillna(0)
                 else:
-                    df_tracker_comb['Tracker_MR'] = 0
+                    df_tracker_comb['Tracker MR'] = 0
 
+                # --- Tracker Vit A ---
                 if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
                     va_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
                     df_va_temp = df_vita_live.copy()
                     for c in va_cols:
                         if c in df_va_temp.columns:
                             df_va_temp[c] = pd.to_numeric(df_va_temp[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
-                    df_va_temp['Tracker_VA'] = df_va_temp[[c for c in va_cols if c in df_va_temp.columns]].sum(axis=1)
-                    va_summary = df_va_temp.groupby('Municipality')['Tracker_VA'].sum().reset_index()
+                    df_va_temp['Tracker Vit A'] = df_va_temp[[c for c in va_cols if c in df_va_temp.columns]].sum(axis=1)
+                    va_summary = df_va_temp.groupby('Municipality')['Tracker Vit A'].sum().reset_index()
                     df_tracker_comb = pd.merge(df_tracker_comb, va_summary, on='Municipality', how='left').fillna(0)
                 else:
-                    df_tracker_comb['Tracker_VA'] = 0
-
-                df_tracker_comb['Total Tracker Doses'] = df_tracker_comb['Tracker_MR'] + df_tracker_comb['Tracker_VA']
+                    df_tracker_comb['Tracker Vit A'] = 0
                 
-                # Calculate VaccTrack Totals
-                if 'Municipality' in df_vt.columns:
-                    vt_summary = df_vt.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
-                    vt_summary.rename(columns={'Grand total doses administered': 'Total VaccTrack Doses'}, inplace=True)
+                # --- Calculate VaccTrack Totals by Program ---
+                if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns:
+                    # MR VaccTrack
+                    df_vt_mr_summary = df_vt[df_vt['Response Type'] == 'Measles-Rubella'].groupby('Municipality')['Grand total doses administered'].sum().reset_index()
+                    df_vt_mr_summary.rename(columns={'Grand total doses administered': 'VaccTrack MR'}, inplace=True)
+                    
+                    # Vit A VaccTrack
+                    df_vt_va_summary = df_vt[df_vt['Response Type'] == 'Vitamin A'].groupby('Municipality')['Grand total doses administered'].sum().reset_index()
+                    df_vt_va_summary.rename(columns={'Grand total doses administered': 'VaccTrack Vit A'}, inplace=True)
+                    
+                    df_vt_comb = pd.merge(pd.DataFrame({'Municipality': abra_munis}), df_vt_mr_summary, on='Municipality', how='left').fillna(0)
+                    df_vt_comb = pd.merge(df_vt_comb, df_vt_va_summary, on='Municipality', how='left').fillna(0)
                 else:
-                    vt_summary = pd.DataFrame({'Municipality': abra_munis, 'Total VaccTrack Doses': 0})
+                    df_vt_comb = pd.DataFrame({'Municipality': abra_munis, 'VaccTrack MR': 0, 'VaccTrack Vit A': 0})
                 
                 # Merge and Compare
-                df_recon = pd.merge(df_tracker_comb[['Municipality', 'Total Tracker Doses']], vt_summary, on='Municipality', how='left').fillna(0)
+                df_recon = pd.merge(df_tracker_comb, df_vt_comb, on='Municipality', how='left').fillna(0)
                 
                 # Filter by View Mode
                 if view_mode == "Specific Municipality":
                     df_recon = df_recon[df_recon['Municipality'] == selected_muni]
                 
-                df_recon['Unencoded Backlog'] = df_recon['Total Tracker Doses'] - df_recon['Total VaccTrack Doses']
+                # Calculate Backlogs
+                df_recon['MR Backlog'] = df_recon['Tracker MR'] - df_recon['VaccTrack MR']
+                df_recon['Vit A Backlog'] = df_recon['Tracker Vit A'] - df_recon['VaccTrack Vit A']
                 
                 # Formatting
-                df_recon['Total Tracker Doses'] = df_recon['Total Tracker Doses'].astype(int)
-                df_recon['Total VaccTrack Doses'] = df_recon['Total VaccTrack Doses'].astype(int)
-                df_recon['Unencoded Backlog'] = df_recon['Unencoded Backlog'].astype(int)
+                for col in ['Tracker MR', 'VaccTrack MR', 'MR Backlog', 'Tracker Vit A', 'VaccTrack Vit A', 'Vit A Backlog']:
+                    df_recon[col] = df_recon[col].astype(int)
                 
-                # Display Data
-                c_recon1, c_recon2, c_recon3 = st.columns(3)
-                c_recon1.metric("Total RHU Tracker Doses", f"{df_recon['Total Tracker Doses'].sum():,.0f}")
-                c_recon2.metric("Total VaccTrack Doses", f"{df_recon['Total VaccTrack Doses'].sum():,.0f}")
-                c_recon3.metric("Provincial Encoding Backlog", f"{df_recon['Unencoded Backlog'].sum():,.0f}", delta_color="inverse")
+                # Reorder columns for clean display
+                df_recon = df_recon[['Municipality', 'Tracker MR', 'VaccTrack MR', 'MR Backlog', 'Tracker Vit A', 'VaccTrack Vit A', 'Vit A Backlog']]
                 
-                # 🛑 FIX: Changed .applymap to .map for Pandas 2.1+ compatibility
+                # Display Data Metrics
+                c_recon_mr, c_recon_va = st.columns(2)
+                
+                with c_recon_mr:
+                    st.markdown("##### 💉 Measles-Rubella (MR) Metrics")
+                    cm1, cm2, cm3 = st.columns(3)
+                    cm1.metric("RHU MR Doses", f"{df_recon['Tracker MR'].sum():,.0f}")
+                    cm2.metric("VaccTrack MR Doses", f"{df_recon['VaccTrack MR'].sum():,.0f}")
+                    cm3.metric("MR Backlog", f"{df_recon['MR Backlog'].sum():,.0f}", delta_color="inverse")
+                    
+                with c_recon_va:
+                    st.markdown("##### 💊 Vitamin A Metrics")
+                    cv1, cv2, cv3 = st.columns(3)
+                    cv1.metric("RHU Vit A Doses", f"{df_recon['Tracker Vit A'].sum():,.0f}")
+                    cv2.metric("VaccTrack Vit A Doses", f"{df_recon['VaccTrack Vit A'].sum():,.0f}")
+                    cv3.metric("Vit A Backlog", f"{df_recon['Vit A Backlog'].sum():,.0f}", delta_color="inverse")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Display Data Table (Highlighting positive backlogs in red)
                 st.dataframe(
                     df_recon.style.map(
                         lambda x: 'color: red; font-weight: bold' if isinstance(x, (int, float)) and x > 0 else '', 
-                        subset=['Unencoded Backlog']
+                        subset=['MR Backlog', 'Vit A Backlog']
                     ),
                     use_container_width=True,
                     hide_index=True
