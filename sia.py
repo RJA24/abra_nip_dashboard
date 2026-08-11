@@ -321,7 +321,7 @@ if not st.session_state.get('logged_in', False):
                     st.session_state['last_active'] = time.time()
                     
                     st.toast(f"Welcome! {db_name}!", icon="👋")
-                    time.sleep(5)
+                    time.sleep(2)
                     st.rerun()
 
     st.stop()
