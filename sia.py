@@ -326,7 +326,7 @@ if not st.session_state.get('logged_in', False):
                         st.toast(f"Welcome, Master {visitor_name}!", icon="👑")
                     else:
                         st.toast(f"Welcome! {db_name}!", icon="👋")
-                        
+
                     time.sleep(2)
                     st.rerun()
 
@@ -531,6 +531,22 @@ def fetch_live_accomplishments():
         # 🛑 SAFETY NET: Do not cache a connection error!
         st.cache_data.clear()
         return pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl="1h")
+def fetch_vacctrack_data():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_vt = conn.read(spreadsheet=sheet_url, worksheet="VaccTrack", ttl="1h")
+        
+        # 🛑 SAFETY NET: If the sheet is empty or glitches, clear cache so it retries
+        if df_vt.empty:
+            st.cache_data.clear()
+            return pd.DataFrame()
+            
+        return df_vt
+    except Exception as e:
+        st.cache_data.clear()
+        return pd.DataFrame()
 
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
@@ -1989,6 +2005,172 @@ try:
                     )
             else:
                 st.info("Awaiting Gsheet Sync to populate analytics.")
+
+    # ==========================================
+    # VACCTRACK DATA TAB
+    # ==========================================
+    with tab_vacctrack:
+        st.markdown(f"### 📈 VaccTrack Analytics: {location_label}")
+        
+        df_vt_raw = fetch_vacctrack_data()
+        
+        if df_vt_raw.empty:
+            st.info("Awaiting VaccTrack data sync. Please ensure records are pasted into the 'VaccTrack' tab in Google Sheets.")
+        else:
+            df_vt = df_vt_raw.copy()
+            
+            # Clean column headers
+            df_vt.columns = [str(c).strip() for c in df_vt.columns]
+            
+            # 1. Filter for Abra Province and Clean Municipality Names
+            if 'Province Name' in df_vt.columns:
+                df_vt = df_vt[df_vt['Province Name'].astype(str).str.upper() == 'ABRA'].copy()
+                
+            if 'City/Municipality Name' in df_vt.columns:
+                df_vt['Municipality'] = df_vt['City/Municipality Name'].astype(str).str.replace(' (CAPITAL)', '', regex=False).str.strip().str.title()
+                df_vt['Municipality'] = df_vt['Municipality'].replace({'Pe?Arrubia': 'Peñarrubia', 'Penarrubia': 'Peñarrubia'})
+            
+            # 2. Filter by Sidebar Geographic View
+            if view_mode == "Specific Municipality" and 'Municipality' in df_vt.columns:
+                df_vt = df_vt[df_vt['Municipality'] == selected_muni]
+            
+            if df_vt.empty:
+                st.warning(f"No VaccTrack data recorded yet for {location_label}.")
+            else:
+                # 3. Clean Numeric Columns
+                num_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos', 
+                            'Vit A 6-11mos', 'Vit A 12-59mos', 
+                            'Grand total doses administered', 'Total number of Deferral today', 'Total number of Refusal today']
+                for c in num_cols:
+                    if c in df_vt.columns:
+                        df_vt[c] = pd.to_numeric(df_vt[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                        
+                # Date parsing
+                if 'Vaccination Date' in df_vt.columns:
+                    df_vt['Vaccination Date'] = pd.to_datetime(df_vt['Vaccination Date'], errors='coerce')
+                    
+                # 4. Top KPI Cards
+                total_mr = df_vt[df_vt['Response Type'] == 'Measles-Rubella']['Grand total doses administered'].sum() if 'Response Type' in df_vt.columns else 0
+                total_va = df_vt[df_vt['Response Type'] == 'Vitamin A']['Grand total doses administered'].sum() if 'Response Type' in df_vt.columns else 0
+                total_def = df_vt['Total number of Deferral today'].sum() if 'Total number of Deferral today' in df_vt.columns else 0
+                total_ref = df_vt['Total number of Refusal today'].sum() if 'Total number of Refusal today' in df_vt.columns else 0
+                
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("💉 Total MR Administered", f"{total_mr:,.0f}")
+                k2.metric("💊 Total Vit A Administered", f"{total_va:,.0f}")
+                k3.metric("🟨 Total Deferrals", f"{total_def:,.0f}")
+                k4.metric("🟥 Total Refusals", f"{total_ref:,.0f}")
+                
+                st.divider()
+                
+                # 5. Visualizations
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("#### Daily Vaccination Trend")
+                    if 'Vaccination Date' in df_vt.columns and 'Response Type' in df_vt.columns:
+                        df_trend = df_vt.groupby(['Vaccination Date', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                        fig_trend = px.line(df_trend, x='Vaccination Date', y='Grand total doses administered', color='Response Type', markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
+                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Doses", height=400, margin=dict(l=0, r=0, t=10, b=0))
+                        st.plotly_chart(fig_trend, use_container_width=True)
+                    else:
+                        st.info("Insufficient date/type data for trend chart.")
+                    
+                with c2:
+                    st.markdown("#### Doses Administered by Municipality")
+                    if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns:
+                        df_muni = df_vt.groupby(['Municipality', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                        fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', color_discrete_sequence=['#1E88E5', '#F4511E'])
+                        fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=400, margin=dict(l=0, r=0, t=10, b=0), yaxis={'categoryorder':'total ascending'})
+                        st.plotly_chart(fig_muni, use_container_width=True)
+                    else:
+                        st.info("Insufficient municipality data for bar chart.")
+                    
+                # 6. AgGrid Daily Tally Sheet
+                st.divider()
+                st.markdown("#### 📅 VaccTrack Daily Tally Sheet")
+                st.caption("Combined Grand Total Doses Administered (MR + Vit A)")
+                
+                if 'Vaccination Date' in df_vt.columns and 'Municipality' in df_vt.columns:
+                    df_tally = df_vt.dropna(subset=['Vaccination Date']).copy()
+                    df_tally['Day'] = df_tally['Vaccination Date'].dt.day.astype(int)
+                    
+                    tally_grid = pd.pivot_table(
+                        df_tally, 
+                        values='Grand total doses administered', 
+                        index='Municipality', 
+                        columns='Day', 
+                        aggfunc='sum',
+                        fill_value=0
+                    )
+                    
+                    tally_grid = tally_grid.reindex(abra_munis, fill_value=0)
+                    days_cols = list(range(1, 32))
+                    tally_grid = tally_grid.reindex(columns=days_cols, fill_value=0)
+                    
+                    # Calculate Total Column
+                    tally_grid['Total'] = tally_grid[days_cols].sum(axis=1)
+                    
+                    # Extract Total Row
+                    total_series = tally_grid.sum(numeric_only=True)
+                    
+                    tally_grid = tally_grid[['Total'] + days_cols]
+                    tally_grid = tally_grid.reindex(abra_munis)
+                    tally_grid = tally_grid.replace(0, "")
+                    
+                    tally_grid = tally_grid.reset_index()
+                    tally_grid.columns = tally_grid.columns.astype(str)
+                    
+                    pinned_total = {"Municipality": "TOTAL"}
+                    for col in ['Total'] + days_cols:
+                        val = total_series.get(col, 0)
+                        pinned_total[str(col)] = "" if val == 0 else int(val)
+                        
+                    gb_vt = GridOptionsBuilder.from_dataframe(tally_grid)
+                    numeric_sort = JsCode("""
+                    function(a, b) {
+                        var numA = (a === "" || a === null) ? 0 : Number(a);
+                        var numB = (b === "" || b === null) ? 0 : Number(b);
+                        return numA - numB;
+                    }
+                    """)
+                    gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                    gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
+                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#2E7D32'}, comparator=numeric_sort)
+                    
+                    gridOptions_vt = gb_vt.build()
+                    gridOptions_vt['pinnedTopRowData'] = [pinned_total]
+                    gridOptions_vt['rowHeight'] = 20
+                    gridOptions_vt['headerHeight'] = 40
+                    
+                    grid_css = {
+                        ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
+                        ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
+                        ".ag-row": {"border-bottom": "none !important"} 
+                    }
+                    
+                    AgGrid(
+                        tally_grid,
+                        gridOptions=gridOptions_vt,
+                        height=650,
+                        theme="streamlit",
+                        custom_css=grid_css,
+                        fit_columns_on_grid_load=False,
+                        allow_unsafe_jscode=True
+                    )
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
+                    csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
+                    st.download_button(label="📥 Download VaccTrack Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_tally_{location_label}")
+                else:
+                    st.info("Awaiting date and municipality data to generate the tally sheet.")
+                
+                # 7. RAW DATA EXPORT
+                st.markdown("#### 📥 Cleaned Raw Data Export")
+                with st.expander("View & Download Cleaned VaccTrack Data"):
+                    st.dataframe(df_vt, use_container_width=True)
+                    csv_raw_vt = df_vt.to_csv(index=False).encode('utf-8')
+                    st.download_button(label="📥 Download Cleaned VaccTrack Data (CSV)", data=csv_raw_vt, file_name=f"VaccTrack_Cleaned_{location_label.replace(', ', '_')}.csv", mime="text/csv", key=f"dl_vt_raw_{location_label}")
 
     # ==========================================
     # ADMIN PANEL
