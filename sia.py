@@ -2279,6 +2279,63 @@ try:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
+                # ==========================================
+                # 📊 NEW: HD DOWNLOADABLE BACKLOG CHART
+                # ==========================================
+                st.markdown("##### 📊 Backlog Visualization")
+                
+                # Melt the dataframe to show MR and Vit A backlogs side-by-side
+                df_backlog_melt = df_recon.melt(
+                    id_vars=['Municipality'], 
+                    value_vars=['MR Backlog', 'Vit A Backlog'],
+                    var_name='Program', 
+                    value_name='Unencoded Doses'
+                )
+                
+                # Build the grouped bar chart
+                fig_backlog = px.bar(
+                    df_backlog_melt,
+                    x='Unencoded Doses',
+                    y='Municipality',
+                    color='Program',
+                    barmode='group',
+                    orientation='h',
+                    text_auto='.0f',
+                    color_discrete_map={'MR Backlog': '#0033A0', 'Vit A Backlog': '#F4511E'}
+                )
+                
+                # Adjust chart height based on the number of municipalities
+                chart_height = max(400, len(df_recon) * 50)
+                
+                fig_backlog.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Unencoded Doses (Tracker vs VaccTrack)", 
+                    yaxis_title="", 
+                    height=chart_height,
+                    margin=dict(l=0, r=40, t=10, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    yaxis={'categoryorder':'total ascending'}
+                )
+                
+                # 🛑 THE MAGIC CONFIG: Forces the Camera Icon to download in 1080p HD!
+                hd_config = {
+                    'toImageButtonOptions': {
+                        'format': 'png', 
+                        'filename': f"Backlog_Chart_{location_label.replace(', ', '_')}",
+                        'height': 1080,
+                        'width': 1920,
+                        'scale': 2 # Multiplies resolution for a crisp image
+                    },
+                    'displayModeBar': True # Ensures the toolbar is visible
+                }
+                
+                st.plotly_chart(fig_backlog, use_container_width=True, config=hd_config)
+                
+                # ==========================================
+                # 📋 DETAILED DATA TABLE
+                # ==========================================
+                st.markdown("##### 📋 Detailed Reconciliation Table")
+                
                 # Display Data Table (Highlighting positive backlogs in red)
                 st.dataframe(
                     df_recon.style.map(
