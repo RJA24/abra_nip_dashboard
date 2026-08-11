@@ -2301,7 +2301,7 @@ try:
                 
                 gb_recon.configure_column(
                     "Municipality", pinned='left', 
-                    width=150, minWidth=150, 
+                    width=160, minWidth=160, 
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
