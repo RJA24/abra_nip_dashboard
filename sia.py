@@ -1475,7 +1475,7 @@ try:
                 bold_total_row = JsCode("""
                 function(params) {
                     if (params.data.Municipality === 'TOTAL') {
-                        return {'font-weight': 'bold', 'background-color': '#f0f2f6'};
+                        return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'};
                     }
                 }
                 """)
