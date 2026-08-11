@@ -695,6 +695,7 @@ try:
                     ))
                     fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_mr, use_container_width=True)
+                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
 
                     # Vit A Gauge
                     fig_gauge_va = go.Figure(go.Indicator(
@@ -704,6 +705,7 @@ try:
                     ))
                     fig_gauge_va.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                     st.plotly_chart(fig_gauge_va, use_container_width=True)
+                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
 
                 with c2:
                     st.markdown("#### 🚀 Cumulative Campaign Burn-Up")
@@ -736,6 +738,7 @@ try:
 
                         fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Cumulative Doses", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
                         st.plotly_chart(fig_trend, use_container_width=True)
+                        st.caption(f"🎯 **Target lines based on:** {exec_target_mode}")
                         
                 st.divider()
                 st.markdown(f"#### Geographic Coverage Breakdown ({geo_col})")
@@ -848,6 +851,7 @@ try:
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
                 )
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
+                st.caption(f"🎯 **Coverage % based on:** {exec_target_mode}")
 
                 # ==========================================
                 # 🗺️ CHOROPLETH COVERAGE MAP
@@ -893,6 +897,7 @@ try:
                             )
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
                             st.plotly_chart(fig_map_mr, use_container_width=True)
+                            st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                             
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
@@ -914,6 +919,7 @@ try:
                                 )
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                                 st.plotly_chart(fig_map_va, use_container_width=True)
+                                st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
                     
