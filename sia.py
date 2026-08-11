@@ -1436,28 +1436,36 @@ try:
                     aggfunc='sum',
                     fill_value=0
                 )
-
-                # 🛑 NEW: Calculate the Total Column for each municipality
-                tally_grid_mr['Total'] = tally_grid_mr.sum(axis=1)
-
-                # 🛑 NEW: Calculate Total Row
-                tally_grid_mr.loc['TOTAL'] = tally_grid_mr.sum(numeric_only=True)
                 
-                # Force all 27 Abra Municipalities + TOTAL to display as rows
-                tally_grid_mr = tally_grid_mr.reindex(['TOTAL'] + abra_munis, fill_value=0)
-
-                # 🛑 NEW: Force 'Total' column first, then 1 through 31
+                # 1. Force all 27 Abra Municipalities
+                tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
+                
+                # 2. Force columns 1 through 31 for the days
                 days_cols = list(range(1, 32))
-                tally_grid_mr = tally_grid_mr.reindex(columns=['Total'] + days_cols, fill_value=0)
-                               
-                # Replace zeros with empty strings to make it look exactly like a blank paper tally sheet
+                tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
+                
+                # 3. Calculate the Total Column (Summing the 31 days)
+                tally_grid_mr['Total'] = tally_grid_mr[days_cols].sum(axis=1)
+                
+                # 4. Extract the TOTAL Row data BEFORE we finalize the grid
+                total_series_mr = tally_grid_mr.sum(numeric_only=True)
+                
+                # 5. Reorder Columns and keep ONLY municipalities in the main grid
+                tally_grid_mr = tally_grid_mr[['Total'] + days_cols]
+                tally_grid_mr = tally_grid_mr.reindex(abra_munis)
+                
+                # 6. Replace zeros with empty strings
                 tally_grid_mr = tally_grid_mr.replace(0, "")
                 
-                # Reset index to make 'Municipality' a standard column for AgGrid
+                # 7. Prep for AgGrid
                 tally_grid_mr = tally_grid_mr.reset_index()
-                
-                # Convert all column names to strings to avoid AgGrid errors
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
+                
+                # 8. 🛑 NEW: Format the Pinned Total Row so AgGrid can freeze it
+                pinned_total_mr = {"Municipality": "TOTAL"}
+                for col in ['Total'] + days_cols:
+                    val = total_series_mr.get(col, 0)
+                    pinned_total_mr[str(col)] = "" if val == 0 else int(val)
                 
                 # ==========================================
                 # MR AGGRID CONFIGURATION FIX
@@ -1474,16 +1482,16 @@ try:
                     width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
                 )
-
-                # 🛑 NEW: Pin the Total column next to Municipality, make it bold & 14px!
+                
                 gb_mr.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#0033A0'}
                 )
                 
                 gridOptions_mr = gb_mr.build()
+                gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] # 🛑 NEW: Freezes the row to the top!
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
                 
@@ -1516,14 +1524,16 @@ try:
 
                 # --- MR TALLY SHEET DOWNLOAD BUTTON ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                csv_tally_mr = tally_grid_mr.to_csv(index=False).encode('utf-8')
+                # 🛑 NEW: Stitch the pinned row back onto the data for the CSV export
+                df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
+                csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
                 st.download_button(
                     label="📥 Download MR Tally Sheet (CSV)",
                     data=csv_tally_mr,
                     file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
-                    key=f"dl_mr_tally_{location_label}" # <--- DYNAMIC KEY HERE
+                    key=f"dl_mr_tally_{location_label}"
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
@@ -1659,28 +1669,36 @@ try:
                     aggfunc='sum',
                     fill_value=0
                 )
-
-                # 🛑 NEW: Calculate the Total Column for each municipality
-                tally_grid_va['Total'] = tally_grid_va.sum(axis=1)
-
-                # 🛑 NEW: Calculate Total Row
-                tally_grid_va.loc['TOTAL'] = tally_grid_va.sum(numeric_only=True)
                 
-                # Force all 27 Abra Municipalities + TOTAL to display as rows
-                tally_grid_va = tally_grid_va.reindex(['TOTAL'] + abra_munis, fill_value=0)
-
-                # 🛑 NEW: Force 'Total' column first, then 1 through 31 
+                # 1. Force all 27 Abra Municipalities
+                tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
+                
+                # 2. Force columns 1 through 31 for the days
                 days_cols = list(range(1, 32))
-                tally_grid_va = tally_grid_va.reindex(columns=['Total'] + days_cols, fill_value=0)
+                tally_grid_va = tally_grid_va.reindex(columns=days_cols, fill_value=0)
                 
-                # Replace zeros with empty strings 
+                # 3. Calculate the Total Column (Summing the 31 days)
+                tally_grid_va['Total'] = tally_grid_va[days_cols].sum(axis=1)
+                
+                # 4. Extract the TOTAL Row data BEFORE we finalize the grid
+                total_series_va = tally_grid_va.sum(numeric_only=True)
+                
+                # 5. Reorder Columns and keep ONLY municipalities in the main grid
+                tally_grid_va = tally_grid_va[['Total'] + days_cols]
+                tally_grid_va = tally_grid_va.reindex(abra_munis)
+                
+                # 6. Replace zeros with empty strings
                 tally_grid_va = tally_grid_va.replace(0, "")
                 
-                # Reset index to make 'Municipality' a standard column for AgGrid
+                # 7. Prep for AgGrid
                 tally_grid_va = tally_grid_va.reset_index()
-                
-                # Convert all column names to strings to avoid AgGrid errors
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
+                
+                # 8. 🛑 NEW: Format the Pinned Total Row so AgGrid can freeze it
+                pinned_total_va = {"Municipality": "TOTAL"}
+                for col in ['Total'] + days_cols:
+                    val = total_series_va.get(col, 0)
+                    pinned_total_va[str(col)] = "" if val == 0 else int(val)
                 
                 # ==========================================
                 # VIT A AGGRID CONFIGURATION FIX
@@ -1697,16 +1715,16 @@ try:
                     width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
                 )
-
-                # 🛑 NEW: Pin the Total column next to Municipality, make it bold & 14px!
+                
                 gb_va.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"} # Vit A colored text
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#F4511E'} 
                 )
                 
                 gridOptions_va = gb_va.build()
+                gridOptions_va['pinnedTopRowData'] = [pinned_total_va] # 🛑 NEW: Freezes the row to the top!
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
                 
@@ -1739,14 +1757,16 @@ try:
 
                 # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                csv_tally_va = tally_grid_va.to_csv(index=False).encode('utf-8')
+                # 🛑 NEW: Stitch the pinned row back onto the data for the CSV export
+                df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
+                csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
                 st.download_button(
                     label="📥 Download Vit A Tally Sheet (CSV)",
                     data=csv_tally_va,
                     file_name=f"VitA_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
-                    key=f"dl_va_tally_{location_label}" # <--- DYNAMIC KEY HERE
+                    key=f"dl_va_tally_{location_label}"
                 )
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
