@@ -551,11 +551,11 @@ def fetch_vacctrack_data():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "Admin Panel"]
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Data", "Admin Panel"]
     
 tabs = st.tabs(tab_names)
 
-tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_admin = tabs
+tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vacctrack, tab_admin = tabs
 
 try:
     # ==========================================
