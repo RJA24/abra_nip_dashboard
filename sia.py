@@ -2255,8 +2255,9 @@ try:
                 c_recon2.metric("Total VaccTrack Doses", f"{df_recon['Total VaccTrack Doses'].sum():,.0f}")
                 c_recon3.metric("Provincial Encoding Backlog", f"{df_recon['Unencoded Backlog'].sum():,.0f}", delta_color="inverse")
                 
+                # 🛑 FIX: Changed .applymap to .map for Pandas 2.1+ compatibility
                 st.dataframe(
-                    df_recon.style.applymap(
+                    df_recon.style.map(
                         lambda x: 'color: red; font-weight: bold' if isinstance(x, (int, float)) and x > 0 else '', 
                         subset=['Unencoded Backlog']
                     ),
