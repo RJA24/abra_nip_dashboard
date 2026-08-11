@@ -1480,7 +1480,7 @@ try:
                 AgGrid(
                     tally_grid_mr,
                     gridOptions=gridOptions_mr,
-                    height=610,
+                    height=620,
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False  
@@ -1681,7 +1681,7 @@ try:
                 AgGrid(
                     tally_grid_va,
                     gridOptions=gridOptions_va,
-                    height=610,  
+                    height=620,  
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False  
