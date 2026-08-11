@@ -1497,7 +1497,7 @@ try:
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#0033A0'},
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"},
                     comparator=numeric_sort
                 )
                 
@@ -1741,7 +1741,7 @@ try:
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#F4511E'},
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"},
                     comparator=numeric_sort_va
                 )
                 
