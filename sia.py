@@ -1449,11 +1449,7 @@ try:
                 # 🛑 NEW: Force 'Total' column first, then 1 through 31
                 days_cols = list(range(1, 32))
                 tally_grid_mr = tally_grid_mr.reindex(columns=['Total'] + days_cols, fill_value=0)
-                
-                # Force columns 1 through 31 to display for the days of the month
-                days_cols = list(range(1, 32))
-                tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
-                
+                               
                 # Replace zeros with empty strings to make it look exactly like a blank paper tally sheet
                 tally_grid_mr = tally_grid_mr.replace(0, "")
                 
@@ -1676,10 +1672,6 @@ try:
                 # 🛑 NEW: Force 'Total' column first, then 1 through 31 
                 days_cols = list(range(1, 32))
                 tally_grid_va = tally_grid_va.reindex(columns=['Total'] + days_cols, fill_value=0)
-                
-                # Force columns 1 through 31 
-                days_cols = list(range(1, 32))
-                tally_grid_va = tally_grid_va.reindex(columns=days_cols, fill_value=0)
                 
                 # Replace zeros with empty strings 
                 tally_grid_va = tally_grid_va.replace(0, "")
