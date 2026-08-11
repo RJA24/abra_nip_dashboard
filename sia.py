@@ -320,7 +320,13 @@ if not st.session_state.get('logged_in', False):
                     st.session_state['assigned_muni'] = db_muni
                     st.session_state['last_active'] = time.time()
                     
-                    st.toast(f"Welcome! {db_name}!", icon="👋")
+                    master_aliases = ["ron jay c. ayup", "ron jay ayup", "ron jay", "ron", "jangtv", "pogi"]
+                    
+                    if visitor_name.strip().lower() in master_aliases:
+                        st.toast(f"Welcome, Master {visitor_name}!", icon="👑")
+                    else:
+                        st.toast(f"Welcome! {db_name}!", icon="👋")
+                        
                     time.sleep(2)
                     st.rerun()
 
