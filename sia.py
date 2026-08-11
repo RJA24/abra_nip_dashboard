@@ -1437,11 +1437,18 @@ try:
                     fill_value=0
                 )
 
+                # 🛑 NEW: Calculate the Total Column for each municipality
+                tally_grid_mr['Total'] = tally_grid_mr.sum(axis=1)
+
                 # 🛑 NEW: Calculate Total Row
                 tally_grid_mr.loc['TOTAL'] = tally_grid_mr.sum(numeric_only=True)
                 
                 # Force all 27 Abra Municipalities + TOTAL to display as rows
                 tally_grid_mr = tally_grid_mr.reindex(['TOTAL'] + abra_munis, fill_value=0)
+
+                # 🛑 NEW: Force 'Total' column first, then 1 through 31
+                days_cols = list(range(1, 32))
+                tally_grid_mr = tally_grid_mr.reindex(columns=['Total'] + days_cols, fill_value=0)
                 
                 # Force columns 1 through 31 to display for the days of the month
                 days_cols = list(range(1, 32))
@@ -1470,6 +1477,14 @@ try:
                     "Municipality", pinned='left', 
                     width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
+                )
+
+                # 🛑 NEW: Pin the Total column next to Municipality, make it bold & 14px!
+                gb_mr.configure_column(
+                    "Total", pinned='left', 
+                    width=65, minWidth=65, 
+                    sortable=True, filter=False, suppressMenu=True,
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#0033A0'}
                 )
                 
                 gridOptions_mr = gb_mr.build()
@@ -1649,11 +1664,18 @@ try:
                     fill_value=0
                 )
 
+                # 🛑 NEW: Calculate the Total Column for each municipality
+                tally_grid_va['Total'] = tally_grid_va.sum(axis=1)
+
                 # 🛑 NEW: Calculate Total Row
                 tally_grid_va.loc['TOTAL'] = tally_grid_va.sum(numeric_only=True)
                 
                 # Force all 27 Abra Municipalities + TOTAL to display as rows
                 tally_grid_va = tally_grid_va.reindex(['TOTAL'] + abra_munis, fill_value=0)
+
+                # 🛑 NEW: Force 'Total' column first, then 1 through 31 
+                days_cols = list(range(1, 32))
+                tally_grid_va = tally_grid_va.reindex(columns=['Total'] + days_cols, fill_value=0)
                 
                 # Force columns 1 through 31 
                 days_cols = list(range(1, 32))
@@ -1682,6 +1704,14 @@ try:
                     "Municipality", pinned='left', 
                     width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
+                )
+
+                # 🛑 NEW: Pin the Total column next to Municipality, make it bold & 14px!
+                gb_va.configure_column(
+                    "Total", pinned='left', 
+                    width=65, minWidth=65, 
+                    sortable=True, filter=False, suppressMenu=True,
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#F4511E'} # Vit A colored text
                 )
                 
                 gridOptions_va = gb_va.build()
