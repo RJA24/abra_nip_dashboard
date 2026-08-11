@@ -2063,35 +2063,44 @@ try:
                 
                 st.divider()
                 
-                # 5. Visualizations
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("#### Daily Vaccination Trend")
-                    if 'Vaccination Date' in df_vt.columns and 'Response Type' in df_vt.columns:
-                        df_trend = df_vt.groupby(['Vaccination Date', 'Response Type'])['Grand total doses administered'].sum().reset_index()
-                        fig_trend = px.line(df_trend, x='Vaccination Date', y='Grand total doses administered', color='Response Type', markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
-                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Doses", height=400, margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig_trend, use_container_width=True)
-                    else:
-                        st.info("Insufficient date/type data for trend chart.")
-                    
-                with c2:
-                    st.markdown("#### Doses Administered by Municipality")
-                    if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns:
-                        df_muni = df_vt.groupby(['Municipality', 'Response Type'])['Grand total doses administered'].sum().reset_index()
-                        fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', color_discrete_sequence=['#1E88E5', '#F4511E'])
-                        fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=400, margin=dict(l=0, r=0, t=10, b=0), yaxis={'categoryorder':'total ascending'})
-                        st.plotly_chart(fig_muni, use_container_width=True)
-                    else:
-                        st.info("Insufficient municipality data for bar chart.")
-                    
-                # 6. AgGrid Daily Tally Sheet
-                st.divider()
-                st.markdown("#### 📅 VaccTrack Daily Tally Sheet")
-                st.caption("Combined Grand Total Doses Administered (MR + Vit A)")
+                # 5. Visualizations (Full Width)
+                st.markdown("#### Daily Vaccination Trend")
+                if 'Vaccination Date' in df_vt.columns and 'Response Type' in df_vt.columns:
+                    df_trend = df_vt.groupby(['Vaccination Date', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                    fig_trend = px.line(df_trend, x='Vaccination Date', y='Grand total doses administered', color='Response Type', markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
+                    fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Doses", height=450, margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                else:
+                    st.info("Insufficient date/type data for trend chart.")
                 
-                if 'Vaccination Date' in df_vt.columns and 'Municipality' in df_vt.columns:
-                    df_tally = df_vt.dropna(subset=['Vaccination Date']).copy()
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                st.markdown("#### Doses Administered by Municipality")
+                if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns:
+                    df_muni = df_vt.groupby(['Municipality', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                    # Calculate total for sorting
+                    df_muni_total = df_muni.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
+                    df_muni_total = df_muni_total.sort_values('Grand total doses administered', ascending=True)
+                    
+                    fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', color_discrete_sequence=['#1E88E5', '#F4511E'])
+                    
+                    # Dynamic height to accommodate all municipalities comfortably
+                    chart_height = max(400, len(df_muni_total) * 40)
+                    fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=0, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
+                    st.plotly_chart(fig_muni, use_container_width=True)
+                else:
+                    st.info("Insufficient municipality data for bar chart.")
+                    
+                # 6. AgGrid Daily Tally Sheets (Separated MR and Vit A)
+                st.divider()
+                st.markdown("#### 📅 VaccTrack Daily Tally Sheets")
+                
+                def build_vt_tally(df_subset, prog_name, color_hex):
+                    if df_subset.empty:
+                        st.info(f"No {prog_name} data available for the tally sheet.")
+                        return
+                    
+                    df_tally = df_subset.copy()
                     df_tally['Day'] = df_tally['Vaccination Date'].dt.day.astype(int)
                     
                     tally_grid = pd.pivot_table(
@@ -2135,7 +2144,9 @@ try:
                     """)
                     gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                     gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#2E7D32'}, comparator=numeric_sort)
+                    
+                    # 🛑 Apply the specific program color (Blue for MR, Orange for Vit A)
+                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, comparator=numeric_sort)
                     
                     gridOptions_vt = gb_vt.build()
                     gridOptions_vt['pinnedTopRowData'] = [pinned_total]
@@ -2148,6 +2159,7 @@ try:
                         ".ag-row": {"border-bottom": "none !important"} 
                     }
                     
+                    st.caption(f"**{prog_name}**")
                     AgGrid(
                         tally_grid,
                         gridOptions=gridOptions_vt,
@@ -2155,15 +2167,102 @@ try:
                         theme="streamlit",
                         custom_css=grid_css,
                         fit_columns_on_grid_load=False,
-                        allow_unsafe_jscode=True
+                        allow_unsafe_jscode=True,
+                        key=f"vt_grid_{prog_name.replace(' ', '_')}" # Ensure unique keys for AgGrid
                     )
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
                     csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
-                    st.download_button(label="📥 Download VaccTrack Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_tally_{location_label}")
+                    st.download_button(label=f"📥 Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                if 'Vaccination Date' in df_vt.columns and 'Municipality' in df_vt.columns:
+                    # Generate MR Tally
+                    df_vt_mr = df_vt[df_vt['Response Type'] == 'Measles-Rubella'].dropna(subset=['Vaccination Date'])
+                    build_vt_tally(df_vt_mr, "Measles-Rubella", "#0033A0") # Blue text for Total
+                    
+                    # Generate Vit A Tally
+                    df_vt_va = df_vt[df_vt['Response Type'] == 'Vitamin A'].dropna(subset=['Vaccination Date'])
+                    build_vt_tally(df_vt_va, "Vitamin A", "#F4511E") # Orange text for Total
                 else:
-                    st.info("Awaiting date and municipality data to generate the tally sheet.")
+                    st.info("Awaiting date and municipality data to generate the tally sheets.")
+
+                # ==========================================
+                # ⚖️ VACCTRACK VS RHU TRACKER RECONCILIATION
+                # ==========================================
+                st.divider()
+                st.markdown("#### ⚖️ Data Reconciliation: VaccTrack vs. RHU Tracker")
+                st.write("Compare the official VaccTrack database against your live RHU submitted Google Sheets data to identify encoding backlogs.")
+                
+                # Fetch live tracker data
+                df_mr_live, df_vita_live = fetch_live_accomplishments()
+                
+                # Calculate Tracker Totals
+                df_tracker_comb = pd.DataFrame({'Municipality': abra_munis})
+                
+                mr_tracker_doses = 0
+                if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
+                    mr_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+                    df_mr_temp = df_mr_live.copy()
+                    for c in mr_cols:
+                        if c in df_mr_temp.columns:
+                            df_mr_temp[c] = pd.to_numeric(df_mr_temp[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                    df_mr_temp['Tracker_MR'] = df_mr_temp[[c for c in mr_cols if c in df_mr_temp.columns]].sum(axis=1)
+                    mr_summary = df_mr_temp.groupby('Municipality')['Tracker_MR'].sum().reset_index()
+                    df_tracker_comb = pd.merge(df_tracker_comb, mr_summary, on='Municipality', how='left').fillna(0)
+                else:
+                    df_tracker_comb['Tracker_MR'] = 0
+
+                if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+                    va_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
+                    df_va_temp = df_vita_live.copy()
+                    for c in va_cols:
+                        if c in df_va_temp.columns:
+                            df_va_temp[c] = pd.to_numeric(df_va_temp[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                    df_va_temp['Tracker_VA'] = df_va_temp[[c for c in va_cols if c in df_va_temp.columns]].sum(axis=1)
+                    va_summary = df_va_temp.groupby('Municipality')['Tracker_VA'].sum().reset_index()
+                    df_tracker_comb = pd.merge(df_tracker_comb, va_summary, on='Municipality', how='left').fillna(0)
+                else:
+                    df_tracker_comb['Tracker_VA'] = 0
+
+                df_tracker_comb['Total Tracker Doses'] = df_tracker_comb['Tracker_MR'] + df_tracker_comb['Tracker_VA']
+                
+                # Calculate VaccTrack Totals
+                if 'Municipality' in df_vt.columns:
+                    vt_summary = df_vt.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
+                    vt_summary.rename(columns={'Grand total doses administered': 'Total VaccTrack Doses'}, inplace=True)
+                else:
+                    vt_summary = pd.DataFrame({'Municipality': abra_munis, 'Total VaccTrack Doses': 0})
+                
+                # Merge and Compare
+                df_recon = pd.merge(df_tracker_comb[['Municipality', 'Total Tracker Doses']], vt_summary, on='Municipality', how='left').fillna(0)
+                
+                # Filter by View Mode
+                if view_mode == "Specific Municipality":
+                    df_recon = df_recon[df_recon['Municipality'] == selected_muni]
+                
+                df_recon['Unencoded Backlog'] = df_recon['Total Tracker Doses'] - df_recon['Total VaccTrack Doses']
+                
+                # Formatting
+                df_recon['Total Tracker Doses'] = df_recon['Total Tracker Doses'].astype(int)
+                df_recon['Total VaccTrack Doses'] = df_recon['Total VaccTrack Doses'].astype(int)
+                df_recon['Unencoded Backlog'] = df_recon['Unencoded Backlog'].astype(int)
+                
+                # Display Data
+                c_recon1, c_recon2, c_recon3 = st.columns(3)
+                c_recon1.metric("Total RHU Tracker Doses", f"{df_recon['Total Tracker Doses'].sum():,.0f}")
+                c_recon2.metric("Total VaccTrack Doses", f"{df_recon['Total VaccTrack Doses'].sum():,.0f}")
+                c_recon3.metric("Provincial Encoding Backlog", f"{df_recon['Unencoded Backlog'].sum():,.0f}", delta_color="inverse")
+                
+                st.dataframe(
+                    df_recon.style.applymap(
+                        lambda x: 'color: red; font-weight: bold' if isinstance(x, (int, float)) and x > 0 else '', 
+                        subset=['Unencoded Backlog']
+                    ),
+                    use_container_width=True,
+                    hide_index=True
+                )
                 
                 # 7. RAW DATA EXPORT
                 st.markdown("#### 📥 Cleaned Raw Data Export")
