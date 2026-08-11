@@ -687,7 +687,6 @@ try:
                 
                 with c1:
                     st.markdown("#### Campaign Progress")
-                    st.caption(f"🎯 **Calculated using:** {exec_target_mode}")
                     # MR Gauge
                     fig_gauge_mr = go.Figure(go.Indicator(
                         mode = "gauge+number+delta", value = mr_cov_pct, title = {'text': f"MR Coverage ({exec_target_mode.split()[0]})"},
