@@ -2342,7 +2342,7 @@ try:
                 AgGrid(
                     df_recon,
                     gridOptions=gridOptions_recon,
-                    height=500,
+                    height=620,
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=True, # Forces columns to stretch and fill the screen
