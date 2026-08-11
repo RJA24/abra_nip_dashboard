@@ -2279,14 +2279,87 @@ try:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # Display Data Table (Highlighting positive backlogs in red)
-                st.dataframe(
-                    df_recon.style.map(
-                        lambda x: 'color: red; font-weight: bold' if isinstance(x, (int, float)) and x > 0 else '', 
-                        subset=['MR Backlog', 'Vit A Backlog']
-                    ),
-                    use_container_width=True,
-                    hide_index=True
+                # ==========================================
+                # 📋 DETAILED RECONCILIATION GRID
+                # ==========================================
+                st.markdown("##### 📋 Detailed Reconciliation Table")
+                
+                # 1. Calculate the TOTAL row for the pinned top
+                total_recon_series = df_recon.sum(numeric_only=True)
+                pinned_recon_total = {"Municipality": "TOTAL"}
+                for col in df_recon.columns:
+                    if col != "Municipality":
+                        pinned_recon_total[col] = int(total_recon_series.get(col, 0))
+                
+                # 2. Build the AgGrid Configuration
+                gb_recon = GridOptionsBuilder.from_dataframe(df_recon)
+                
+                gb_recon.configure_default_column(
+                    sortable=True, filter=False, resizable=True, 
+                    width=130, suppressMenu=True 
+                )
+                
+                gb_recon.configure_column(
+                    "Municipality", pinned='left', 
+                    width=150, minWidth=150, 
+                    sortable=True, filter=True, suppressMenu=False
+                )
+                
+                # 🛑 NEW: JavaScript to turn the text red if there's a backlog
+                highlight_backlog = JsCode("""
+                function(params) {
+                    if (params.value > 0) {
+                        return {'color': '#D32F2F', 'font-weight': 'bold'};
+                    }
+                    return null;
+                }
+                """)
+                
+                gb_recon.configure_column("MR Backlog", cellStyle=highlight_backlog)
+                gb_recon.configure_column("Vit A Backlog", cellStyle=highlight_backlog)
+                
+                gridOptions_recon = gb_recon.build()
+                gridOptions_recon['pinnedTopRowData'] = [pinned_recon_total] 
+                gridOptions_recon['rowHeight'] = 30
+                gridOptions_recon['headerHeight'] = 40
+                
+                # Make the TOTAL row bold and slightly gray
+                bold_recon_total_row = JsCode("""
+                function(params) {
+                    if (params.data.Municipality === 'TOTAL') {
+                        return {'font-weight': 'bold', 'background-color': '#f0f2f6'};
+                    }
+                }
+                """)
+                gridOptions_recon['getRowStyle'] = bold_recon_total_row
+                
+                grid_css = {
+                    ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
+                    ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
+                    ".ag-row": {"border-bottom": "none !important"} 
+                }
+                
+                AgGrid(
+                    df_recon,
+                    gridOptions=gridOptions_recon,
+                    height=500,
+                    theme="streamlit",
+                    custom_css=grid_css,
+                    fit_columns_on_grid_load=True, # Forces columns to stretch and fill the screen
+                    allow_unsafe_jscode=True,
+                    key="recon_grid_final"
+                )
+                
+                # Export Button for the Reconciliation Data
+                st.markdown("<br>", unsafe_allow_html=True)
+                df_csv_recon = pd.concat([pd.DataFrame([pinned_recon_total]), df_recon], ignore_index=True)
+                csv_recon = df_csv_recon.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Reconciliation Report (CSV)", 
+                    data=csv_recon, 
+                    file_name=f"VaccTrack_Reconciliation_{location_label.replace(', ', '_')}.csv", 
+                    mime="text/csv", 
+                    key=f"dl_recon_{location_label}"
                 )
                 
                 # 7. RAW DATA EXPORT
