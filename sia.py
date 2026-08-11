@@ -1472,6 +1472,15 @@ try:
                 # ==========================================
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
                 
+                # 🛑 NEW: Custom sort function to force AgGrid to read text as numbers
+                numeric_sort = JsCode("""
+                function(a, b) {
+                    var numA = (a === "" || a === null) ? 0 : Number(a);
+                    var numB = (b === "" || b === null) ? 0 : Number(b);
+                    return numA - numB;
+                }
+                """)
+                
                 gb_mr.configure_default_column(
                     sortable=False, filter=False, resizable=True, 
                     width=40, minWidth=40, suppressMenu=True 
@@ -1483,15 +1492,17 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
+                # 🛑 NEW: Added the 'comparator' parameter to the Total column
                 gb_mr.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#0033A0'},
+                    comparator=numeric_sort
                 )
                 
                 gridOptions_mr = gb_mr.build()
-                gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] # 🛑 NEW: Freezes the row to the top!
+                gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] 
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
                 
@@ -1705,6 +1716,15 @@ try:
                 # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
                 
+                # 🛑 NEW: Custom sort function to force AgGrid to read text as numbers
+                numeric_sort_va = JsCode("""
+                function(a, b) {
+                    var numA = (a === "" || a === null) ? 0 : Number(a);
+                    var numB = (b === "" || b === null) ? 0 : Number(b);
+                    return numA - numB;
+                }
+                """)
+                
                 gb_va.configure_default_column(
                     sortable=False, filter=False, resizable=True, 
                     width=40, minWidth=40, suppressMenu=True 
@@ -1716,15 +1736,17 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
+                # 🛑 NEW: Added the 'comparator' parameter to the Total column
                 gb_va.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
                     sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"} 
+                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': '#F4511E'},
+                    comparator=numeric_sort_va
                 )
                 
                 gridOptions_va = gb_va.build()
-                gridOptions_va['pinnedTopRowData'] = [pinned_total_va] # 🛑 NEW: Freezes the row to the top!
+                gridOptions_va['pinnedTopRowData'] = [pinned_total_va] 
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
                 
