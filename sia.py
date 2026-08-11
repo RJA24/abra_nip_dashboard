@@ -2296,12 +2296,12 @@ try:
                 
                 gb_recon.configure_default_column(
                     sortable=True, filter=False, resizable=True, 
-                    width=130, suppressMenu=True 
+                    width=150, suppressMenu=True 
                 )
                 
                 gb_recon.configure_column(
                     "Municipality", pinned='left', 
-                    width=160, minWidth=160, 
+                    width=150, minWidth=150, 
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
