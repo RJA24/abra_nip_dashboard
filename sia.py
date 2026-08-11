@@ -2320,7 +2320,7 @@ try:
                 
                 gridOptions_recon = gb_recon.build()
                 gridOptions_recon['pinnedTopRowData'] = [pinned_recon_total] 
-                gridOptions_recon['rowHeight'] = 30
+                gridOptions_recon['rowHeight'] = 20
                 gridOptions_recon['headerHeight'] = 40
                 
                 # Make the TOTAL row bold and slightly gray
