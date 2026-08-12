@@ -2333,9 +2333,20 @@ try:
                 # 2. Build the AgGrid Configuration
                 gb_recon = GridOptionsBuilder.from_dataframe(df_recon)
                 
+                # 🛑 FIX: Apply bold styling directly to ALL cells in the TOTAL row
+                bold_total_cells = JsCode("""
+                function(params) {
+                    if (params.data && params.data.Municipality === 'TOTAL') {
+                        return {'font-weight': 'bold'};
+                    }
+                    return null;
+                }
+                """)
+                
                 gb_recon.configure_default_column(
                     sortable=True, filter=False, resizable=True, 
-                    width=150, suppressMenu=True 
+                    width=150, suppressMenu=True,
+                    cellStyle=bold_total_cells
                 )
                 
                 gb_recon.configure_column(
@@ -2344,14 +2355,17 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
-                # 🛑 NEW: JavaScript to turn the text red if there's a backlog
+                # 🛑 FIX: Make sure the backlog logic doesn't erase the bold font on the TOTAL row
                 highlight_backlog = JsCode("""
                 function(params) {
                     var val = Number(params.value);
+                    var isTotal = params.data && params.data.Municipality === 'TOTAL';
+                    
                     if (val > 0) {
                         return {'color': '#D32F2F', 'font-weight': 'bold'};
+                    } else if (isTotal) {
+                        return {'color': 'inherit', 'font-weight': 'bold'};
                     } else {
-                        // 🛑 FIX: Explicitly reset the style so AgGrid doesn't recycle the red color!
                         return {'color': 'inherit', 'font-weight': 'normal'};
                     }
                 }
