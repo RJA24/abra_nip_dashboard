@@ -2347,10 +2347,13 @@ try:
                 # 🛑 NEW: JavaScript to turn the text red if there's a backlog
                 highlight_backlog = JsCode("""
                 function(params) {
-                    if (params.value > 0) {
+                    var val = Number(params.value);
+                    if (val > 0) {
                         return {'color': '#D32F2F', 'font-weight': 'bold'};
+                    } else {
+                        // 🛑 FIX: Explicitly reset the style so AgGrid doesn't recycle the red color!
+                        return {'color': 'inherit', 'font-weight': 'normal'};
                     }
-                    return null;
                 }
                 """)
                 
