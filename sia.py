@@ -487,6 +487,19 @@ def fetch_targets_from_supabase():
                 
         df = df.rename(columns=col_mapping)
         
+        # ==========================================
+        # 🛑 FIX: CLEAN TARGET LOCATIONS
+        # Strips hidden spaces and standardizes spellings so it merges perfectly!
+        # ==========================================
+        if 'Location' in df.columns:
+            df['Location'] = df['Location'].astype(str).str.strip().str.title()
+            df['Location'] = df['Location'].replace({
+                'Penarrubia': 'Peñarrubia', 
+                'Salapadan': 'Sallapadan',
+                'Licuan-Baay (Licuan)': 'Licuan-Baay'
+            })
+        # ==========================================
+        
         num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
         for c in num_cols:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
