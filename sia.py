@@ -2343,9 +2343,10 @@ try:
                 }
                 """)
                 
+                # 🛑 FIX: Added 'flex=1' and 'minWidth=100' so columns dynamically stretch to fill blank space
                 gb_recon.configure_default_column(
                     sortable=True, filter=False, resizable=True, 
-                    width=150, suppressMenu=True,
+                    minWidth=100, flex=1, suppressMenu=True,
                     cellStyle=bold_total_cells
                 )
                 
