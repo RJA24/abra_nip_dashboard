@@ -2082,11 +2082,20 @@ try:
                     df_muni_total = df_muni.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
                     df_muni_total = df_muni_total.sort_values('Grand total doses administered', ascending=True)
                     
-                    fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', color_discrete_sequence=['#1E88E5', '#F4511E'])
+                    # 🛑 Added text_auto='.0f' here:
+                    fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', text_auto='.0f', color_discrete_sequence=['#1E88E5', '#F4511E'])
+                    
+                    # 🛑 Added this block to push the numbers outside the bars:
+                    fig_muni.update_traces(
+                        textfont=dict(size=12),
+                        textposition="outside", 
+                        cliponaxis=False 
+                    )
                     
                     # Dynamic height to accommodate all municipalities comfortably
                     chart_height = max(400, len(df_muni_total) * 40)
-                    fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=0, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
+                    # 🛑 Also increased the right margin (r=40) so labels don't get cut off
+                    fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=40, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
                     st.plotly_chart(fig_muni, use_container_width=True)
                 else:
                     st.info("Insufficient municipality data for bar chart.")
