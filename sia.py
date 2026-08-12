@@ -521,14 +521,21 @@ def fetch_live_accomplishments():
             st.cache_data.clear()
             return pd.DataFrame(), pd.DataFrame()
             
+        # ==========================================
+        # 🛑 CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
+        # ==========================================
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
+        if 'Vaccination Date' in df_mr.columns:
+            df_mr = df_mr.dropna(subset=['Vaccination Date'])
+            
         if 'Barangay' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Barangay'])
+        if 'Vaccination Date' in df_vita.columns:
+            df_vita = df_vita.dropna(subset=['Vaccination Date'])
             
         # ==========================================
         # 🛑 UNIVERSAL MATH CALCULATION
-        # (Forces all tabs to use the exact same totals)
         # ==========================================
         
         # MR Math: Sum all 6 demographic columns
@@ -663,7 +670,7 @@ try:
             if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
                 df_mr_filtered = df_mr_live.copy()
                 if view_mode == "All Municipalities (Abra)":
-                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(abra_munis)]
                 else:
                     df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
                 
@@ -684,7 +691,7 @@ try:
             if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
                 df_vita_filtered = df_vita_live.copy()
                 if view_mode == "All Municipalities (Abra)":
-                    df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                    df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(abra_munis)]
                 else:
                     df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'] == selected_muni]
                 
@@ -1376,7 +1383,7 @@ try:
             
             # Filter by Sidebar Geographic View
             if view_mode == "All Municipalities (Abra)":
-                df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(abra_munis)]
             elif view_mode == "Specific Municipality":
                 df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
             
@@ -1621,7 +1628,7 @@ try:
             
             # Filter by Sidebar Geographic View
             if view_mode == "All Municipalities (Abra)":
-                df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'].isin(abra_munis)]
             elif view_mode == "Specific Municipality":
                 df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'] == selected_muni]
             
@@ -1891,7 +1898,7 @@ try:
                 
                 # Apply Geographic Filter
                 if view_mode == "All Municipalities (Abra)":
-                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                    df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'].isin(abra_munis)]
                 elif view_mode == "Specific Municipality":
                     df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
                 
@@ -1923,7 +1930,7 @@ try:
             if not df_mr_live.empty:
                 # 1. Apply Location Filter
                 if view_mode == "All Municipalities (Abra)":
-                    df_mr_raw = df_mr_live[df_mr_live['Municipality'].isin(df_view['Location'].tolist())].copy()
+                    df_mr_raw = df_mr_live[df_mr_live['Municipality'].isin(abra_munis)].copy()
                 else:
                     df_mr_raw = df_mr_live[df_mr_live['Municipality'] == selected_muni].copy()
                 
@@ -1956,7 +1963,7 @@ try:
             if not df_vita_live.empty:
                 # 1. Apply Location Filter
                 if view_mode == "All Municipalities (Abra)":
-                    df_va_raw = df_vita_live[df_vita_live['Municipality'].isin(df_view['Location'].tolist())].copy()
+                    df_va_raw = df_vita_live[df_vita_live['Municipality'].isin(abra_munis)].copy()
                 else:
                     df_va_raw = df_vita_live[df_vita_live['Municipality'] == selected_muni].copy()
                 
@@ -1991,7 +1998,7 @@ try:
                 
                 # Apply Geographic Filter
                 if view_mode == "All Municipalities (Abra)":
-                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(df_view['Location'].tolist())]
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(abra_munis)]
                 elif view_mode == "Specific Municipality":
                     df_va_filtered = df_va_filtered[df_va_filtered['Municipality'] == selected_muni]
                 
