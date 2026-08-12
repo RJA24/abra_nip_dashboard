@@ -526,6 +526,29 @@ def fetch_live_accomplishments():
         if 'Barangay' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Barangay'])
             
+        # ==========================================
+        # 🛑 UNIVERSAL MATH CALCULATION
+        # (Forces all tabs to use the exact same totals)
+        # ==========================================
+        
+        # MR Math: Sum all 6 demographic columns
+        if not df_mr.empty:
+            mr_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+            for c in mr_cols:
+                if c in df_mr.columns:
+                    df_mr[c] = pd.to_numeric(df_mr[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+            # Inject the calculated Total Doses column
+            df_mr['Total Doses'] = df_mr[[c for c in mr_cols if c in df_mr.columns]].sum(axis=1)
+
+        # Vit A Math: Sum all 4 demographic columns
+        if not df_vita.empty:
+            va_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
+            for c in va_cols:
+                if c in df_vita.columns:
+                    df_vita[c] = pd.to_numeric(df_vita[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+            # Inject the calculated Total Doses column
+            df_vita['Total Doses'] = df_vita[[c for c in va_cols if c in df_vita.columns]].sum(axis=1)
+
         return df_mr, df_vita
     except Exception as e:
         # 🛑 SAFETY NET: Do not cache a connection error!
