@@ -2580,6 +2580,127 @@ try:
                         use_container_width=True, 
                         hide_index=True
                     )
+                # ==========================================
+                # 🖼️ DIGITAL CAMPAIGN POSTERS (INFOGRAPHIC VIEW)
+                # ==========================================
+                st.divider()
+                st.markdown("#### 🖼️ Live Regional Infographics")
+                st.write("Dynamically generated summaries matching the official DOH poster layouts.")
+                
+                poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
+                
+                if not df_targets.empty and not df_vt_reg.empty:
+                    # Prep target data
+                    df_prov_targets = df_targets[df_targets['Level'] == 'Province'].copy()
+                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title()
+                    
+                    # Create the CAR Total row
+                    car_target_row = df_targets[df_targets['Level'] == 'Region'].copy()
+                    car_target_row['Location'] = 'CAR (TOTAL)'
+                    df_poster_targets = pd.concat([car_target_row, df_prov_targets])
+                    
+                    # Prep Accomplishment data
+                    if poster_type == "Measles-Rubella (MR)":
+                        vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Measles-Rubella']
+                        vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+                    else:
+                        vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Vitamin A']
+                        vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
+                        
+                    # Group by Province and add CAR Total
+                    df_vt_grouped = vt_data.groupby('Province')[vt_cols].sum().reset_index().rename(columns={'Province': 'Location'})
+                    car_vt_row = vt_data[vt_cols].sum().to_frame().T
+                    car_vt_row['Location'] = 'CAR (TOTAL)'
+                    df_vt_grouped = pd.concat([car_vt_row, df_vt_grouped])
+                    
+                    # Merge Targets and Accomplishments
+                    df_poster = pd.merge(df_poster_targets, df_vt_grouped, on='Location', how='left').fillna(0)
+                    
+                    # Custom CSS for the Poster Cards
+                    st.markdown("""
+                    <style>
+                    .poster-card {
+                        background-color: #ffffff;
+                        border-radius: 12px;
+                        padding: 20px;
+                        margin-bottom: 20px;
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                        border-top: 8px solid #00ACC1;
+                    }
+                    .poster-card-mr { border-top: 8px solid #1E88E5; }
+                    .poster-title { font-size: 22px; font-weight: 900; color: #333; margin-bottom: -5px; text-transform: uppercase; }
+                    .poster-cov { font-size: 28px; font-weight: 900; float: right; color: #333; }
+                    .poster-metric { font-size: 14px; font-weight: 700; color: #555; line-height: 1.2; }
+                    .poster-val { color: #000; font-weight: 900; }
+                    .poster-unvax { color: #D32F2F; font-weight: 900; font-size: 16px; margin-top: 10px; }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display the CAR Total First (Centered)
+                    car_data = df_poster[df_poster['Location'] == 'CAR (TOTAL)'].iloc[0]
+                    target_col = 'MR_6-59m_Total' if poster_type == "Measles-Rubella (MR)" else 'VitA_Total'
+                    
+                    car_target = car_data[target_col]
+                    car_vax = car_data['Grand total doses administered']
+                    car_cov = (car_vax / car_target * 100) if car_target > 0 else 0
+                    car_unvax = max(0, car_target - car_vax)
+                    
+                    st.markdown(f"""
+                    <div style="background-color: #f8f9fa; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 30px; border: 2px solid #e2e8f0;">
+                        <h2 style="margin:0; font-weight: 900; font-size: 36px;">CAR: {car_vax:,.0f} ({car_cov:.1f}%)</h2>
+                        <p style="color: #666; font-size: 18px; margin-bottom: 10px;"><b>TARGET:</b> {car_target:,.0f} | <b style="color: #D32F2F;">UNVACCINATED: {car_unvax:,.0f}</b></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create a grid for the Provinces
+                    prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location')
+                    
+                    cols = st.columns(4) # 4 columns wide
+                    
+                    for index, row in prov_data.iterrows():
+                        loc = row['Location']
+                        target = row[target_col]
+                        vax = row['Grand total doses administered']
+                        cov = (vax / target * 100) if target > 0 else 0
+                        unvax = max(0, target - vax)
+                        
+                        card_class = "poster-card-mr" if poster_type == "Measles-Rubella (MR)" else "poster-card"
+                        
+                        if poster_type == "Measles-Rubella (MR)":
+                            age_breakdown = f"""
+                            <div style="margin-top: 10px;">
+                                <div class="poster-metric">6-12 months: <span class="poster-val">{row['MR 6-12mos']:,.0f}</span></div>
+                                <div class="poster-metric">13-23 months: <span class="poster-val">{row['MR 13-23mos']:,.0f}</span></div>
+                                <div class="poster-metric">24-59 months: <span class="poster-val">{row['MR 24-59mos']:,.0f}</span></div>
+                            </div>
+                            """
+                        else:
+                            age_breakdown = f"""
+                            <div style="margin-top: 10px;">
+                                <div class="poster-metric">6-11 months: <span class="poster-val">{row['Vit A 6-11mos']:,.0f}</span></div>
+                                <div class="poster-metric">12-59 months: <span class="poster-val">{row['Vit A 12-59mos']:,.0f}</span></div>
+                            </div>
+                            """
+                        
+                        html_card = f"""
+                        <div class="poster-card {card_class}">
+                            <div>
+                                <span class="poster-title">{loc}</span>
+                                <span class="poster-cov">{cov:.1f}%</span>
+                            </div>
+                            <hr style="margin: 10px 0;">
+                            <div class="poster-metric">TARGET: <span class="poster-val">{target:,.0f}</span></div>
+                            <div class="poster-metric">VACCINATED: <span class="poster-val">{vax:,.0f}</span></div>
+                            {age_breakdown}
+                            <div class="poster-unvax">UNVACCINATED: {unvax:,.0f}</div>
+                        </div>
+                        """
+                        
+                        # Distribute across the 4 columns
+                        col_idx = (index - 1) % 4
+                        with cols[col_idx]:
+                            st.markdown(html_card, unsafe_allow_html=True)
+
                 else:
                     st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
 
