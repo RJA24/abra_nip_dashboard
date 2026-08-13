@@ -2566,89 +2566,89 @@ try:
             st.divider()
             
             # 6. Regional Coverage by Province (Grouped Bar Chart)
-                st.markdown("#### 📊 Coverage % by Province")
-                if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns and not df_targets.empty:
-                    
-                    # Calculate raw doses by province first
-                    df_prov = df_vt_reg.groupby(['Province', 'Response Type'])['Grand total doses administered'].sum().reset_index()
-                    
-                    # Filter targets for CAR regions safely
-                    car_areas = ['Abra', 'Apayao', 'Benguet', 'Baguio City', 'City Of Baguio', 'Ifugao', 'Kalinga', 'Mountain Province', 'Mt. Province']
-                    df_prov_targets = df_targets[df_targets['Location'].str.title().isin(car_areas)].copy()
-                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title().replace({'City Of Baguio': 'Baguio City', 'Mt. Province': 'Mountain Province'})
-                    
-                    # Split Doses by Program
-                    prov_mr = df_prov[df_prov['Response Type'] == 'Measles-Rubella'].rename(columns={'Grand total doses administered': 'MR Doses', 'Province': 'Location'})[['Location', 'MR Doses']]
-                    prov_va = df_prov[df_prov['Response Type'] == 'Vitamin A'].rename(columns={'Grand total doses administered': 'Vit A Doses', 'Province': 'Location'})[['Location', 'Vit A Doses']]
-                    
-                    # Build the master table
-                    reg_table = df_prov_targets[['Location', 'MR_6-59m_Total', 'VitA_Total']].rename(columns={'MR_6-59m_Total': 'MR Target', 'VitA_Total': 'Vit A Target'})
-                    reg_table = pd.merge(reg_table, prov_mr, on='Location', how='left').fillna(0)
-                    reg_table = pd.merge(reg_table, prov_va, on='Location', how='left').fillna(0)
-                    
-                    # Calculate Coverages
-                    reg_table['MR Coverage %'] = (reg_table['MR Doses'] / reg_table['MR Target'] * 100).fillna(0).replace(np.inf, 0)
-                    reg_table['Vit A Coverage %'] = (reg_table['Vit A Doses'] / reg_table['Vit A Target'] * 100).fillna(0).replace(np.inf, 0)
-                    
-                    # Sort ascending so the highest coverage is at the top of the chart
-                    reg_table = reg_table.sort_values('MR Coverage %', ascending=True)
-                    
-                    # Melt the table for the Plotly grouped bar chart
-                    df_melt_reg = reg_table.melt(id_vars=['Location'], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
-                    
-                    fig_prov = px.bar(
-                        df_melt_reg, 
-                        x='Coverage %', 
-                        y='Location', 
-                        color='Program', 
-                        orientation='h', 
-                        barmode='group', 
-                        text_auto='.1f', 
-                        color_discrete_sequence=['#1E88E5', '#F4511E']
-                    )
-                    
-                    fig_prov.update_traces(
-                        textfont=dict(size=12),
-                        textposition="outside", 
-                        cliponaxis=False 
-                    )
-                    
-                    # Add the 95% Target Line
-                    fig_prov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
-                    
-                    chart_height_reg = max(400, len(reg_table) * 60)
-                    fig_prov.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)', 
-                        xaxis_title="Coverage (%)", 
-                        yaxis_title="", 
-                        height=chart_height_reg, 
-                        margin=dict(l=0, r=50, t=10, b=0), 
-                        legend_title_text="",
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-                    st.plotly_chart(fig_prov, use_container_width=True)
-                    
-                    # 7. Detailed Regional Coverage Table
-                    st.markdown("#### 📋 Regional Coverage Breakdown")
-                    
-                    # Re-sort descending for the table view and reorder columns
-                    reg_table_view = reg_table.sort_values('MR Coverage %', ascending=False)
-                    reg_table_view = reg_table_view[['Location', 'MR Target', 'MR Doses', 'MR Coverage %', 'Vit A Target', 'Vit A Doses', 'Vit A Coverage %']]
-                    
-                    st.dataframe(
-                        reg_table_view.style.format({
-                            'MR Target': "{:,.0f}", 
-                            'MR Doses': "{:,.0f}", 
-                            'MR Coverage %': "{:.1f}%",
-                            'Vit A Target': "{:,.0f}", 
-                            'Vit A Doses': "{:,.0f}", 
-                            'Vit A Coverage %': "{:.1f}%"
-                        }), 
-                        use_container_width=True, 
-                        hide_index=True
-                    )
-                else:
-                    st.warning("Insufficient data or targets missing to generate Regional Coverage.")
+            st.markdown("#### 📊 Coverage % by Province")
+            if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns and not df_targets.empty:
+                
+                # Calculate raw doses by province first
+                df_prov = df_vt_reg.groupby(['Province', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                
+                # Filter targets for CAR regions safely
+                car_areas = ['Abra', 'Apayao', 'Benguet', 'Baguio City', 'City Of Baguio', 'Ifugao', 'Kalinga', 'Mountain Province', 'Mt. Province']
+                df_prov_targets = df_targets[df_targets['Location'].str.title().isin(car_areas)].copy()
+                df_prov_targets['Location'] = df_prov_targets['Location'].str.title().replace({'City Of Baguio': 'Baguio City', 'Mt. Province': 'Mountain Province'})
+                
+                # Split Doses by Program
+                prov_mr = df_prov[df_prov['Response Type'] == 'Measles-Rubella'].rename(columns={'Grand total doses administered': 'MR Doses', 'Province': 'Location'})[['Location', 'MR Doses']]
+                prov_va = df_prov[df_prov['Response Type'] == 'Vitamin A'].rename(columns={'Grand total doses administered': 'Vit A Doses', 'Province': 'Location'})[['Location', 'Vit A Doses']]
+                
+                # Build the master table
+                reg_table = df_prov_targets[['Location', 'MR_6-59m_Total', 'VitA_Total']].rename(columns={'MR_6-59m_Total': 'MR Target', 'VitA_Total': 'Vit A Target'})
+                reg_table = pd.merge(reg_table, prov_mr, on='Location', how='left').fillna(0)
+                reg_table = pd.merge(reg_table, prov_va, on='Location', how='left').fillna(0)
+                
+                # Calculate Coverages
+                reg_table['MR Coverage %'] = (reg_table['MR Doses'] / reg_table['MR Target'] * 100).fillna(0).replace(np.inf, 0)
+                reg_table['Vit A Coverage %'] = (reg_table['Vit A Doses'] / reg_table['Vit A Target'] * 100).fillna(0).replace(np.inf, 0)
+                
+                # Sort ascending so the highest coverage is at the top of the chart
+                reg_table = reg_table.sort_values('MR Coverage %', ascending=True)
+                
+                # Melt the table for the Plotly grouped bar chart
+                df_melt_reg = reg_table.melt(id_vars=['Location'], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
+                
+                fig_prov = px.bar(
+                    df_melt_reg, 
+                    x='Coverage %', 
+                    y='Location', 
+                    color='Program', 
+                    orientation='h', 
+                    barmode='group', 
+                    text_auto='.1f', 
+                    color_discrete_sequence=['#1E88E5', '#F4511E']
+                )
+                
+                fig_prov.update_traces(
+                    textfont=dict(size=12),
+                    textposition="outside", 
+                    cliponaxis=False 
+                )
+                
+                # Add the 95% Target Line
+                fig_prov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                
+                chart_height_reg = max(400, len(reg_table) * 60)
+                fig_prov.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Coverage (%)", 
+                    yaxis_title="", 
+                    height=chart_height_reg, 
+                    margin=dict(l=0, r=50, t=10, b=0), 
+                    legend_title_text="",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_prov, use_container_width=True)
+                
+                # 7. Detailed Regional Coverage Table
+                st.markdown("#### 📋 Regional Coverage Breakdown")
+                
+                # Re-sort descending for the table view and reorder columns
+                reg_table_view = reg_table.sort_values('MR Coverage %', ascending=False)
+                reg_table_view = reg_table_view[['Location', 'MR Target', 'MR Doses', 'MR Coverage %', 'Vit A Target', 'Vit A Doses', 'Vit A Coverage %']]
+                
+                st.dataframe(
+                    reg_table_view.style.format({
+                        'MR Target': "{:,.0f}", 
+                        'MR Doses': "{:,.0f}", 
+                        'MR Coverage %': "{:.1f}%",
+                        'Vit A Target': "{:,.0f}", 
+                        'Vit A Doses': "{:,.0f}", 
+                        'Vit A Coverage %': "{:.1f}%"
+                    }), 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            else:
+                st.warning("Insufficient data or targets missing to generate Regional Coverage.")
 
                 # ==========================================
                 # 🖼️ DIGITAL CAMPAIGN POSTERS (INFOGRAPHIC VIEW)
