@@ -2904,7 +2904,7 @@ try:
     # VACCTRACK LGU TAB (MUNICIPALITIES & DISTRICTS)
     # ==========================================
     with tab_vt_lgu:
-        st.markdown("### 🏛️ LGU Level Infographics")
+        st.markdown("### LGU Level Infographics")
         st.write("Dynamically generated summaries per municipality or district under a selected Province/HUC.")
         
         c_prog, c_prov = st.columns(2)
@@ -3068,7 +3068,7 @@ try:
             st.divider()
             
             # Update title based on HUC vs Province
-            card_title_label = "City Overview" if selected_car_prov == 'Baguio City' else "Municipalities/Districts"
+            card_title_label = "City Overview" if selected_car_prov == 'Baguio City' else "Municipalities"
             st.markdown(f"#### 📍 {selected_car_prov} {card_title_label}")
             
             cols = st.columns(4)
