@@ -616,11 +616,17 @@ def fetch_live_accomplishments():
         # ==========================================
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
+            # 🛑 FIX: Apply Title Case to live MR data so it perfectly matches the Target database!
+            df_mr['Barangay'] = df_mr['Barangay'].astype(str).str.strip().str.title()
+            
         if 'Vaccination Date' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Vaccination Date'])
             
         if 'Barangay' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Barangay'])
+            # 🛑 FIX: Apply Title Case to live Vit A data so it perfectly matches the Target database!
+            df_vita['Barangay'] = df_vita['Barangay'].astype(str).str.strip().str.title()
+            
         if 'Vaccination Date' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Vaccination Date'])
             
