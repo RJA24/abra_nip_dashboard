@@ -2816,6 +2816,8 @@ try:
                 car_geo = fetch_car_geojson()
                 
                 if car_geo and prov_data:
+                    import plotly.graph_objects as go # 🛑 FIX: Guarantee 'go' is imported for this tab
+                    
                     # Convert the poster dictionary back into a DataFrame for Plotly
                     df_map = pd.DataFrame(prov_data)
                     
@@ -2827,7 +2829,7 @@ try:
                         lambda row: max(0, row[target_col] - row['Grand total doses administered']), axis=1
                     )
                     
-                    # 🛑 NEW: Approximate center coordinates for CAR regions
+                    # Approximate center coordinates for CAR regions
                     car_centroids = {
                         'Abra': {'lat': 17.58, 'lon': 120.80},
                         'Apayao': {'lat': 18.05, 'lon': 121.25},
@@ -2868,13 +2870,15 @@ try:
                         selector=dict(type='choroplethmapbox')
                     )
                     
-                    # 🛑 NEW: Add a Scattermapbox layer on top to display the text labels
+                    # 🛑 FIX: Use .tolist() and a safe universal font to force Plotly to render the text
                     fig_map_car.add_trace(go.Scattermapbox(
-                        lat=df_map['lat'],
-                        lon=df_map['lon'],
+                        lat=df_map['lat'].tolist(),
+                        lon=df_map['lon'].tolist(),
                         mode='text',
-                        text=df_map['LabelText'],
-                        textfont=dict(size=15, color='black', family="Arial Black"),
+                        text=df_map['LabelText'].tolist(),
+                        textfont=dict(size=16, color='black'), 
+                        textposition='middle center',
+                        showlegend=False, 
                         hoverinfo='skip'  
                     ))
                     
