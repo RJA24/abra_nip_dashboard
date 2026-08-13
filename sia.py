@@ -2546,9 +2546,13 @@ try:
                 # 7. Detailed Regional Coverage Table
                 st.markdown("#### 📋 Regional Coverage Breakdown")
                 if not df_targets.empty:
-                    # Filter targets for just the Provinces
-                    df_prov_targets = df_targets[df_targets['Level'] == 'Province'].copy()
-                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title()
+                    # 🛑 FIX: Baguio City is an HUC, not a Province. 
+                    # We will explicitly grab all 7 CAR locations by name instead of relying on the 'Level' column.
+                    car_areas = ['Abra', 'Apayao', 'Benguet', 'Baguio City', 'City Of Baguio', 'Ifugao', 'Kalinga', 'Mountain Province', 'Mt. Province']
+                    df_prov_targets = df_targets[df_targets['Location'].str.title().isin(car_areas)].copy()
+                    
+                    # Standardize Baguio City and Mt. Province names just in case
+                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title().replace({'City Of Baguio': 'Baguio City', 'Mt. Province': 'Mountain Province'})
                     
                     # Split Doses by Program
                     prov_mr = df_prov[df_prov['Response Type'] == 'Measles-Rubella'].rename(columns={'Grand total doses administered': 'MR Doses', 'Province': 'Location'})[['Location', 'MR Doses']]
@@ -2580,6 +2584,9 @@ try:
                         use_container_width=True, 
                         hide_index=True
                     )
+                else:
+                    st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
+
                 # ==========================================
                 # 🖼️ DIGITAL CAMPAIGN POSTERS (INFOGRAPHIC VIEW)
                 # ==========================================
@@ -2590,9 +2597,7 @@ try:
                 poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
                 
                 if not df_targets.empty and not df_vt_reg.empty:
-                    # Prep target data
-                    df_prov_targets = df_targets[df_targets['Level'] == 'Province'].copy()
-                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title()
+                    # Prep target data (Re-using the securely filtered df_prov_targets from above)
                     
                     # Create the CAR Total row
                     car_target_row = df_targets[df_targets['Level'] == 'Region'].copy()
@@ -2652,12 +2657,13 @@ try:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Create a grid for the Provinces
-                    prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location')
+                    # 🛑 FIX: Custom Row Centering Logic
+                    prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location').to_dict('records')
                     
-                    cols = st.columns(4) # 4 columns wide
-                    
-                    for index, row in prov_data.iterrows():
+                    # ROW 1: First 4 cards
+                    cols_r1 = st.columns(4)
+                    for i in range(min(4, len(prov_data))):
+                        row = prov_data[i]
                         loc = row['Location']
                         target = row[target_col]
                         vax = row['Grand total doses administered']
@@ -2682,7 +2688,6 @@ try:
                                 "</div>"
                             )
                         
-                        # 🛑 FIX: Removed all indentation so Streamlit renders it as HTML, not a code block
                         html_card = (
                             f"<div class='poster-card {card_class}'>"
                             f"<div><span class='poster-title'>{loc}</span><span class='poster-cov'>{cov:.1f}%</span></div>"
@@ -2694,10 +2699,53 @@ try:
                             "</div>"
                         )
                         
-                        # Distribute across the 4 columns
-                        col_idx = (index - 1) % 4
-                        with cols[col_idx]:
+                        with cols_r1[i]:
                             st.markdown(html_card, unsafe_allow_html=True)
+                            
+                    # ROW 2: Remaining cards (up to 3), centered using spacers [0.5, 1, 1, 1, 0.5]
+                    if len(prov_data) > 4:
+                        row2_items = prov_data[4:]
+                        cols_r2 = st.columns([0.5, 1, 1, 1, 0.5]) 
+                        
+                        for i, row in enumerate(row2_items):
+                            loc = row['Location']
+                            target = row[target_col]
+                            vax = row['Grand total doses administered']
+                            cov = (vax / target * 100) if target > 0 else 0
+                            unvax = max(0, target - vax)
+                            
+                            card_class = "poster-card-mr" if poster_type == "Measles-Rubella (MR)" else "poster-card"
+                            
+                            if poster_type == "Measles-Rubella (MR)":
+                                age_breakdown = (
+                                    "<div style='margin-top: 10px;'>"
+                                    f"<div class='poster-metric'>6-12 months: <span class='poster-val'>{row['MR 6-12mos']:,.0f}</span></div>"
+                                    f"<div class='poster-metric'>13-23 months: <span class='poster-val'>{row['MR 13-23mos']:,.0f}</span></div>"
+                                    f"<div class='poster-metric'>24-59 months: <span class='poster-val'>{row['MR 24-59mos']:,.0f}</span></div>"
+                                    "</div>"
+                                )
+                            else:
+                                age_breakdown = (
+                                    "<div style='margin-top: 10px;'>"
+                                    f"<div class='poster-metric'>6-11 months: <span class='poster-val'>{row['Vit A 6-11mos']:,.0f}</span></div>"
+                                    f"<div class='poster-metric'>12-59 months: <span class='poster-val'>{row['Vit A 12-59mos']:,.0f}</span></div>"
+                                    "</div>"
+                                )
+                            
+                            html_card = (
+                                f"<div class='poster-card {card_class}'>"
+                                f"<div><span class='poster-title'>{loc}</span><span class='poster-cov'>{cov:.1f}%</span></div>"
+                                "<hr style='margin: 10px 0;'>"
+                                f"<div class='poster-metric'>TARGET: <span class='poster-val'>{target:,.0f}</span></div>"
+                                f"<div class='poster-metric'>VACCINATED: <span class='poster-val'>{vax:,.0f}</span></div>"
+                                f"{age_breakdown}"
+                                f"<div class='poster-unvax'>UNVACCINATED: {unvax:,.0f}</div>"
+                                "</div>"
+                            )
+                            
+                            # Start at index 1 to skip the 0.5 spacer!
+                            with cols_r2[i + 1]: 
+                                st.markdown(html_card, unsafe_allow_html=True)
 
                 else:
                     st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
