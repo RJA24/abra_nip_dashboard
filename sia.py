@@ -2973,17 +2973,24 @@ try:
             else:
                 df_t_clean = pd.DataFrame()
 
-            # --- 1. DETERMINE EXPECTED LGU CARDS ---
+            ## --- 1. DETERMINE EXPECTED LGU CARDS ---
             if selected_car_prov == 'Baguio City':
                 # Force Baguio City into a single unified card for both programs
                 expected_locations = ['Baguio City']
             else:
                 if not df_t_clean.empty and 'Parent_Province' in df_t_clean.columns:
-                    # Relaxed filter: Grab all children matching the Parent Province
-                    # This fixes the bug where Apayao was only showing Calanasan!
-                    mask = (df_t_clean['Parent_Province'] == selected_car_prov)
-                    children = df_t_clean[mask & (df_t_clean['Location'] != selected_car_prov)]['Location'].unique().tolist()
+                    # 🛑 FIX: Exclude 'Barangay' level to prevent the 100+ barangays from showing, 
+                    # but avoid strict 'Municipality' matching so we don't accidentally drop Apayao towns!
+                    mask_prov = (df_t_clean['Parent_Province'] == selected_car_prov)
                     
+                    if 'Level' in df_t_clean.columns:
+                        # Exclude anything labeled as a Barangay
+                        mask_not_brgy = ~df_t_clean['Level'].astype(str).str.contains('Barangay', case=False, na=False)
+                        mask = mask_prov & mask_not_brgy
+                    else:
+                        mask = mask_prov
+                        
+                    children = df_t_clean[mask & (df_t_clean['Location'] != selected_car_prov)]['Location'].unique().tolist()
                     expected_locations = children if len(children) > 0 else [selected_car_prov]
                 else:
                     expected_locations = [selected_car_prov]
