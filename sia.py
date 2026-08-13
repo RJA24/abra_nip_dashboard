@@ -2656,7 +2656,7 @@ try:
             # ==========================================
             st.divider()
             st.markdown("#### Live Regional Infographics")
-            st.write("Dynamically generated summaries matching the official DOH poster layouts.")
+            st.write("VaccTrack Data")
             
             poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
             
