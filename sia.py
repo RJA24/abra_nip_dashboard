@@ -2667,34 +2667,32 @@ try:
                         card_class = "poster-card-mr" if poster_type == "Measles-Rubella (MR)" else "poster-card"
                         
                         if poster_type == "Measles-Rubella (MR)":
-                            age_breakdown = f"""
-                            <div style="margin-top: 10px;">
-                                <div class="poster-metric">6-12 months: <span class="poster-val">{row['MR 6-12mos']:,.0f}</span></div>
-                                <div class="poster-metric">13-23 months: <span class="poster-val">{row['MR 13-23mos']:,.0f}</span></div>
-                                <div class="poster-metric">24-59 months: <span class="poster-val">{row['MR 24-59mos']:,.0f}</span></div>
-                            </div>
-                            """
+                            age_breakdown = (
+                                "<div style='margin-top: 10px;'>"
+                                f"<div class='poster-metric'>6-12 months: <span class='poster-val'>{row['MR 6-12mos']:,.0f}</span></div>"
+                                f"<div class='poster-metric'>13-23 months: <span class='poster-val'>{row['MR 13-23mos']:,.0f}</span></div>"
+                                f"<div class='poster-metric'>24-59 months: <span class='poster-val'>{row['MR 24-59mos']:,.0f}</span></div>"
+                                "</div>"
+                            )
                         else:
-                            age_breakdown = f"""
-                            <div style="margin-top: 10px;">
-                                <div class="poster-metric">6-11 months: <span class="poster-val">{row['Vit A 6-11mos']:,.0f}</span></div>
-                                <div class="poster-metric">12-59 months: <span class="poster-val">{row['Vit A 12-59mos']:,.0f}</span></div>
-                            </div>
-                            """
+                            age_breakdown = (
+                                "<div style='margin-top: 10px;'>"
+                                f"<div class='poster-metric'>6-11 months: <span class='poster-val'>{row['Vit A 6-11mos']:,.0f}</span></div>"
+                                f"<div class='poster-metric'>12-59 months: <span class='poster-val'>{row['Vit A 12-59mos']:,.0f}</span></div>"
+                                "</div>"
+                            )
                         
-                        html_card = f"""
-                        <div class="poster-card {card_class}">
-                            <div>
-                                <span class="poster-title">{loc}</span>
-                                <span class="poster-cov">{cov:.1f}%</span>
-                            </div>
-                            <hr style="margin: 10px 0;">
-                            <div class="poster-metric">TARGET: <span class="poster-val">{target:,.0f}</span></div>
-                            <div class="poster-metric">VACCINATED: <span class="poster-val">{vax:,.0f}</span></div>
-                            {age_breakdown}
-                            <div class="poster-unvax">UNVACCINATED: {unvax:,.0f}</div>
-                        </div>
-                        """
+                        # 🛑 FIX: Removed all indentation so Streamlit renders it as HTML, not a code block
+                        html_card = (
+                            f"<div class='poster-card {card_class}'>"
+                            f"<div><span class='poster-title'>{loc}</span><span class='poster-cov'>{cov:.1f}%</span></div>"
+                            "<hr style='margin: 10px 0;'>"
+                            f"<div class='poster-metric'>TARGET: <span class='poster-val'>{target:,.0f}</span></div>"
+                            f"<div class='poster-metric'>VACCINATED: <span class='poster-val'>{vax:,.0f}</span></div>"
+                            f"{age_breakdown}"
+                            f"<div class='poster-unvax'>UNVACCINATED: {unvax:,.0f}</div>"
+                            "</div>"
+                        )
                         
                         # Distribute across the 4 columns
                         col_idx = (index - 1) % 4
