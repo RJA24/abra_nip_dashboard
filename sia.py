@@ -510,76 +510,78 @@ def clean_and_process_car_data(df, col_names):
 
 @st.cache_data(ttl="1h")
 def fetch_targets_from_supabase():
-    try:
-        res = supabase.table('targets').select('*').execute()
-        
-        #  SAFETY NET: If data is missing or incomplete, clear cache and reject it!
-        if not res.data or len(res.data) < 27: 
-            st.cache_data.clear()
-            return pd.DataFrame()
+    # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
+    for attempt in range(3):
+        try:
+            res = supabase.table('targets').select('*').execute()
             
-        df = pd.DataFrame(res.data)
-        
-        col_mapping = {
-            'code': 'Code', 'location': 'Location', 'level': 'Level',
-            'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-            'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
-            'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
-            'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
-            'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
-            'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
-            'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
-            'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
-            # ACTUALS TARGETS
-            'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
-            'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
-            'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
-            'actual_mr_24_59m_total': 'Act_MR_24-59m_Total', 'actual_mr_24_59m_m': 'Act_MR_24-59m_M', 'actual_mr_24_59m_f': 'Act_MR_24-59m_F',
-            'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_6_11m_m': 'Act_VitA_6-11m_M', 'actual_vita_6_11m_f': 'Act_VitA_6-11m_F',
-            'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total', 'actual_vita_12_59m_m': 'Act_VitA_12-59m_M', 'actual_vita_12_59m_f': 'Act_VitA_12-59m_F',
-            'actual_vita_total': 'Act_VitA_Total', 'actual_vita_total_m': 'Act_VitA_Total_M', 'actual_vita_total_f': 'Act_VitA_Total_F'
-        }
-        
-        for db_col in col_mapping.keys():
-            if db_col not in df.columns:
-                df[db_col] = 0
+            # SAFETY NET: If data is successfully retrieved, process it!
+            if res.data and len(res.data) >= 27: 
+                df = pd.DataFrame(res.data)
                 
-        df = df.rename(columns=col_mapping)
-        
-        # ==========================================
-        #  FIX: CLEAN TARGET LOCATIONS
-        # Strips hidden spaces and standardizes spellings so it merges perfectly!
-        # ==========================================
-        if 'Location' in df.columns:
-            df['Location'] = df['Location'].astype(str).str.strip().str.title()
-            df['Location'] = df['Location'].replace({
-                'Penarrubia': 'Peñarrubia', 
-                'Salapadan': 'Sallapadan',
-                'Licuan-Baay (Licuan)': 'Licuan-Baay'
-            })
-        # ==========================================
-        
-        num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
-        for c in num_cols:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+                col_mapping = {
+                    'code': 'Code', 'location': 'Location', 'level': 'Level',
+                    'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
+                    'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
+                    'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
+                    'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
+                    'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
+                    'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
+                    'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
+                    'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
+                    # ACTUALS TARGETS
+                    'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
+                    'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
+                    'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
+                    'actual_mr_24_59m_total': 'Act_MR_24-59m_Total', 'actual_mr_24_59m_m': 'Act_MR_24-59m_M', 'actual_mr_24_59m_f': 'Act_MR_24-59m_F',
+                    'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_6_11m_m': 'Act_VitA_6-11m_M', 'actual_vita_6_11m_f': 'Act_VitA_6-11m_F',
+                    'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total', 'actual_vita_12_59m_m': 'Act_VitA_12-59m_M', 'actual_vita_12_59m_f': 'Act_VitA_12-59m_F',
+                    'actual_vita_total': 'Act_VitA_Total', 'actual_vita_total_m': 'Act_VitA_Total_M', 'actual_vita_total_f': 'Act_VitA_Total_F'
+                }
+                
+                for db_col in col_mapping.keys():
+                    if db_col not in df.columns:
+                        df[db_col] = 0
+                        
+                df = df.rename(columns=col_mapping)
+                
+                # ==========================================
+                # FIX: CLEAN TARGET LOCATIONS
+                # ==========================================
+                if 'Location' in df.columns:
+                    df['Location'] = df['Location'].astype(str).str.strip().str.title()
+                    df['Location'] = df['Location'].replace({
+                        'Penarrubia': 'Peñarrubia', 
+                        'Salapadan': 'Sallapadan',
+                        'Licuan-Baay (Licuan)': 'Licuan-Baay'
+                    })
+                # ==========================================
+                
+                num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
+                for c in num_cols:
+                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
 
-        df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
-        df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
-        df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
-        df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
-        df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
+                df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
+                df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
+                df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
+                df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
+                df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
 
-        df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
-        df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
-        df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
-        df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
-        df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
+                df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
+                df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
+                df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
+                df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
+                df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
 
-        return df
-    except Exception as e:
-        #  SAFETY NET: Do not cache a database crash!
-        st.cache_data.clear()
-        return pd.DataFrame()
+                return df
+                
+        except Exception as e:
+            # Sleep for 1 second to give Supabase time to wake up, then try again
+            time.sleep(1) 
+
+    # If it fails 3 times completely, clear cache and return empty to prevent hard crash
+    st.cache_data.clear()
+    return pd.DataFrame()
 
 @st.cache_data(ttl="1h")
 def fetch_live_accomplishments():
@@ -817,7 +819,7 @@ try:
                         gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
                     ))
                     fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gauge_mr, use_container_width=True)
+                    st.plotly_chart(fig_gauge_mr, use_container_width=True, key="exec_gauge_mr")
                     
                     # Vit A Gauge
                     fig_gauge_va = go.Figure(go.Indicator(
@@ -826,7 +828,7 @@ try:
                         gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
                     ))
                     fig_gauge_va.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gauge_va, use_container_width=True)
+                    st.plotly_chart(fig_gauge_va, use_container_width=True, key="exec_gauge_va")
                     
                 with c2:
                     st.markdown("#### Cumulative Campaign Burn-Up")
@@ -1019,7 +1021,7 @@ try:
                                 hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                             )
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
-                            st.plotly_chart(fig_map_mr, use_container_width=True)
+                            st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                                                         
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
@@ -1040,7 +1042,7 @@ try:
                                     hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                                 )
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
-                                st.plotly_chart(fig_map_va, use_container_width=True)
+                                st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
                             
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
@@ -1097,19 +1099,19 @@ try:
                 with c1:
                     fig_gm1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_mr, title={'text': "MR (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gm1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gm1, use_container_width=True)
+                    st.plotly_chart(fig_gm1, use_container_width=True, key="comp_gauge_mr_proj")
                 with c2:
                     fig_gm2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_mr, title={'text': "MR (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gm2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gm2, use_container_width=True)
+                    st.plotly_chart(fig_gm2, use_container_width=True, key="comp_gauge_mr_act")
                 with c3:
                     fig_gv1 = go.Figure(go.Indicator(mode="gauge+number", value=nat_cov_va, title={'text': "Vit A (vs Projected)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#F4511E"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gv1.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gv1, use_container_width=True)
+                    st.plotly_chart(fig_gv1, use_container_width=True, key="comp_gauge_va_proj")
                 with c4:
                     fig_gv2 = go.Figure(go.Indicator(mode="gauge+number", value=act_cov_va, title={'text': "Vit A (vs Actual)"}, gauge={'axis': {'range': [None, 100]}, 'bar': {'color': "#8E24AA"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
                     fig_gv2.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig_gv2, use_container_width=True)
+                    st.plotly_chart(fig_gv2, use_container_width=True, key="comp_gauge_va_act")
                     
                 st.divider()
                 st.markdown(f"#### Geographic Coverage Comparison ({geo_col})")
@@ -1956,7 +1958,7 @@ try:
                 
                 fig = px.bar(df_sum, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title=title, color_discrete_sequence=[color])
                 fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(350, len(df_sum)*45), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=title)
             else:
                 st.info(f"✅ No {title.lower()} have been recorded for this location yet.")
 
