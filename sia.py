@@ -61,6 +61,42 @@ def fetch_abra_geojson():
             
     return None
 
+@st.cache_data(ttl="24h")
+def fetch_car_geojson():
+    urls = [
+        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/Province/Provinces.json",
+        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json"
+    ]
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    car_features = []
+    car_provinces = ['ABRA', 'APAYAO', 'BENGUET', 'IFUGAO', 'KALINGA', 'MOUNTAIN PROVINCE']
+    
+    try:
+        # 1. Fetch Standard Provinces
+        r1 = requests.get(urls[0], headers=headers, timeout=10)
+        if r1.status_code == 200:
+            for f in r1.json().get('features', []):
+                p_name = f.get('properties', {}).get('PROV_NAME', '').upper()
+                if p_name in car_provinces:
+                    f['properties']['Standard_Name'] = p_name.title()
+                    car_features.append(f)
+                    
+        # 2. Fetch Baguio City (HUC) from Municipalities file
+        r2 = requests.get(urls[1], headers=headers, timeout=10)
+        if r2.status_code == 200:
+            for f in r2.json().get('features', []):
+                m_name = f.get('properties', {}).get('MUN_NAME', '').upper()
+                if m_name == 'BAGUIO CITY':
+                    f['properties']['Standard_Name'] = 'Baguio City'
+                    car_features.append(f)
+                    
+        if car_features:
+            return {"type": "FeatureCollection", "features": car_features}
+    except Exception:
+        pass
+        
+    return None
+
 def render_footer():
     st.markdown("---")
     st.markdown(
@@ -2747,8 +2783,61 @@ try:
                             with cols_r2[i + 1]: 
                                 st.markdown(html_card, unsafe_allow_html=True)
 
+                # ==========================================
+                # 🗺️ REGIONAL CHOROPLETH MAP
+                # ==========================================
+                st.divider()
+                st.markdown("#### 🗺️ Regional Coverage Map")
+                st.caption(f"Visualizing {poster_type} coverage across CAR")
+                
+                car_geo = fetch_car_geojson()
+                
+                if car_geo and prov_data:
+                    # Convert the poster dictionary back into a DataFrame for Plotly
+                    df_map = pd.DataFrame(prov_data)
+                    
+                    # Calculate Coverage and Unvaccinated metrics for the map hover
+                    df_map['Coverage %'] = df_map.apply(
+                        lambda row: (row['Grand total doses administered'] / row[target_col] * 100) if row[target_col] > 0 else 0, axis=1
+                    )
+                    df_map['Unvaccinated'] = df_map.apply(
+                        lambda row: max(0, row[target_col] - row['Grand total doses administered']), axis=1
+                    )
+                    
+                    fig_map_car = px.choropleth_mapbox(
+                        df_map,
+                        geojson=car_geo,
+                        locations='Location',
+                        featureidkey="properties.Standard_Name",
+                        color='Coverage %',
+                        color_continuous_scale="RdYlGn", # Red to Green gradient
+                        range_color=[0, 100],
+                        mapbox_style="carto-positron",
+                        zoom=6.8,
+                        center={"lat": 17.35, "lon": 121.1}, # Centered perfectly over CAR
+                        opacity=0.75,
+                        hover_name='Location',
+                        hover_data={'Location': False, target_col: True, 'Grand total doses administered': True, 'Unvaccinated': True}
+                    )
+                    
+                    # Clean up the tooltip formatting to look professional
+                    fig_map_car.update_traces(
+                        hovertemplate="<b>%{hovertext}</b><br><br>" +
+                                      "Coverage: <b>%{z:.1f}%</b><br>" +
+                                      "Target: %{customdata[0]:,.0f}<br>" +
+                                      "Vaccinated: %{customdata[1]:,.0f}<br>" +
+                                      "Unvaccinated: %{customdata[2]:,.0f}<extra></extra>"
+                    )
+                    
+                    fig_map_car.update_layout(
+                        margin={"r":0,"t":0,"l":0,"b":0}, 
+                        coloraxis_colorbar=dict(title="Coverage %"),
+                        height=550
+                    )
+                    
+                    st.plotly_chart(fig_map_car, use_container_width=True)
                 else:
-                    st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
+                    st.warning("Regional map boundary data could not be loaded or processed.")
 
     # ==========================================
     # ADMIN PANEL
