@@ -2983,22 +2983,29 @@ try:
             # Safely find Column H (Barangay Name) ignoring trailing spaces in column headers
             brgy_col = next((c for c in vt_prog_data.columns if 'Barangay' in str(c)), None)
 
-            # --- 1. DETERMINE EXPECTED LGU CARDS (WITH VACCTRACK FALLBACK) ---
+            # --- 1. DETERMINE EXPECTED LGU CARDS (WITH ROBUST TARGET FETCHING) ---
             if selected_car_prov == 'Baguio City':
                 if lgu_poster_type == "Vitamin A (Vit A)":
                     expected_locations = ['Baguio City']
                 else:
                     children = []
                     if not df_t_clean.empty:
-                        # Check BOTH parent columns just in case the database is mapped weirdly
-                        p_prov = df_t_clean.get('Parent_Province', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
-                        p_muni = df_t_clean.get('Parent_Municipality', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
-                        children = df_t_clean[(p_prov | p_muni) & (~df_t_clean['Location'].str.contains('Baguio City', na=False, case=False))]['Location'].unique().tolist()
+                        # 🛑 FIX: Use the geographic Code (Baguio City prefix is 14303)
+                        if 'Code' in df_t_clean.columns:
+                            mask_code = df_t_clean['Code'].astype(str).str.startswith('14303')
+                            mask_not_parent = ~df_t_clean['Location'].str.contains('Baguio City', na=False, case=False)
+                            children = df_t_clean[mask_code & mask_not_parent]['Location'].unique().tolist()
+                        
+                        # Fallback to Parent columns if Code is missing
+                        if not children:
+                            p_prov = df_t_clean.get('Parent_Province', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
+                            p_muni = df_t_clean.get('Parent_Municipality', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
+                            children = df_t_clean[(p_prov | p_muni) & (~df_t_clean['Location'].str.contains('Baguio City', na=False, case=False))]['Location'].unique().tolist()
                     
                     if len(children) > 0:
                         expected_locations = children
                     elif brgy_col and not vt_prog_data.empty:
-                        # 🛑 BULLETPROOF FALLBACK: If targets are unlinked, force spawn cards using Column H from VaccTrack!
+                        # Emergency Fallback: Pull from VaccTrack if Targets fail entirely
                         expected_locations = vt_prog_data[brgy_col].astype(str).str.strip().str.title().unique().tolist()
                     else:
                         expected_locations = ['Baguio City']
