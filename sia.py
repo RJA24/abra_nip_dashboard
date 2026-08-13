@@ -2991,17 +2991,21 @@ try:
                 vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
                 
             if not vt_prog_data.empty:
-                # Default Location matching for all other provinces
+                # Default Location matching
                 vt_prog_data['Location'] = vt_prog_data['Municipality']
                 
-                if selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
+                # Auto-routing for Baguio City Districts (scans other columns for district names!)
+                if selected_car_prov == 'Baguio City' and lgu_poster_type == "Measles-Rubella (MR)":
+                    for test_col in ['Barangay Name', 'Barangay', 'Rural Health Unit', 'Facility Name', 'Health Facility']:
+                        if test_col in vt_prog_data.columns:
+                            matches = vt_prog_data[test_col].astype(str).str.strip().str.title().isin(expected_locations).sum()
+                            if matches > 0:
+                                vt_prog_data['Location'] = vt_prog_data[test_col].astype(str).str.strip().str.title()
+                                break
+                elif selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
                     # Force all Baguio Vit A doses into the single city card
                     vt_prog_data['Location'] = 'Baguio City'
-                elif selected_car_prov == 'Baguio City' and lgu_poster_type == "Measles-Rubella (MR)":
-                    # 🛑 FIX: Explicitly pull from Column H (Barangay Name) for Baguio City districts
-                    if 'Barangay Name' in vt_prog_data.columns:
-                        vt_prog_data['Location'] = vt_prog_data['Barangay Name'].astype(str).str.strip().str.title()
-                                    
+                    
                 df_vt_muni = vt_prog_data.groupby('Location')[vt_cols].sum().reset_index()
                 df_lgu_cards = pd.merge(df_lgu_cards, df_vt_muni, on='Location', how='left').fillna(0)
             else:
