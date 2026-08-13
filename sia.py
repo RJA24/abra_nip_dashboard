@@ -2453,9 +2453,23 @@ try:
             df_vt_reg = df_vt_raw.copy()
             df_vt_reg.columns = [str(c).strip() for c in df_vt_reg.columns]
             
-            # 1. Clean Province Names for Grouping
+            # 1. Clean Province Names for Grouping (Fixing VaccTrack ID Codes)
             if 'Province Name' in df_vt_reg.columns:
-                df_vt_reg['Province'] = df_vt_reg['Province Name'].astype(str).str.strip().str.title()
+                df_vt_reg['Province Name'] = df_vt_reg['Province Name'].astype(str).str.strip().str.upper()
+                
+                # Translation dictionary to map backend ID codes to real Province names
+                prov_map = {
+                    '14044': 'Mountain Province',
+                    '14011': 'Benguet',
+                    '14303': 'Baguio City',
+                    '14032': 'Kalinga',
+                    '14027': 'Ifugao',
+                    '14081': 'Apayao',
+                    'ABRA': 'Abra'
+                }
+                
+                # Apply the map, then force it to Title Case for a clean display
+                df_vt_reg['Province'] = df_vt_reg['Province Name'].replace(prov_map).str.title()
             else:
                 df_vt_reg['Province'] = "Unknown"
                 
