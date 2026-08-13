@@ -653,9 +653,10 @@ def fetch_vacctrack_data():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Province", "VaccTrack Region", "Admin Panel"]
+
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Province", "VaccTrack Region", "VaccTrack LGU", "Admin Panel"]
 tabs = st.tabs(tab_names)
-tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vt_prov, tab_vt_reg, tab_admin = tabs
+tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vt_prov, tab_vt_reg, tab_vt_lgu, tab_admin = tabs
 
 try:
     # ==========================================
@@ -2898,6 +2899,169 @@ try:
                 st.plotly_chart(fig_map_car, use_container_width=True)
             else:
                 st.warning("Regional map boundary data could not be loaded or processed.")
+
+    # ==========================================
+    # VACCTRACK LGU TAB (MUNICIPALITIES & DISTRICTS)
+    # ==========================================
+    with tab_vt_lgu:
+        st.markdown("### 🏛️ LGU Level Infographics")
+        st.write("Dynamically generated summaries per municipality or district under a selected Province/HUC.")
+        
+        c_prog, c_prov = st.columns(2)
+        with c_prog:
+            lgu_poster_type = st.radio("Select Campaign Poster (LGU):", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True, key="lgu_poster_radio")
+        with c_prov:
+            car_areas = ['Abra', 'Apayao', 'Baguio City', 'Benguet', 'Ifugao', 'Kalinga', 'Mountain Province']
+            selected_car_prov = st.selectbox("Select Province / HUC:", car_areas, key="lgu_prov_select")
+            
+        df_vt_raw = fetch_vacctrack_data()
+        df_targets = fetch_targets_from_supabase()
+        
+        if df_vt_raw.empty:
+            st.info("Awaiting VaccTrack data sync. Please ensure records are pasted into the 'VaccTrack' tab in Google Sheets.")
+        else:
+            df_vt_lgu = df_vt_raw.copy()
+            df_vt_lgu.columns = [str(c).strip() for c in df_vt_lgu.columns]
+            
+            # Clean Provinces (Applying the ID fix globally)
+            if 'Province Name' in df_vt_lgu.columns:
+                df_vt_lgu['Province Name'] = df_vt_lgu['Province Name'].astype(str).str.strip().str.upper()
+                prov_map = {
+                    '14044': 'Mountain Province', '14011': 'Benguet', '14303': 'Baguio City',
+                    '14032': 'Kalinga', '14027': 'Ifugao', '14081': 'Apayao', 'ABRA': 'Abra'
+                }
+                df_vt_lgu['Province'] = df_vt_lgu['Province Name'].replace(prov_map).str.title()
+                df_vt_lgu['Province'] = df_vt_lgu['Province'].replace({'Mt. Province': 'Mountain Province', 'City Of Baguio': 'Baguio City'})
+            else:
+                df_vt_lgu['Province'] = "Unknown"
+                
+            # Clean Municipalities
+            if 'City/Municipality Name' in df_vt_lgu.columns:
+                df_vt_lgu['Municipality'] = df_vt_lgu['City/Municipality Name'].astype(str).str.replace(' (CAPITAL)', '', regex=False).str.strip().str.title()
+                df_vt_lgu['Municipality'] = df_vt_lgu['Municipality'].replace({'Pe?Arrubia': 'Peñarrubia', 'Penarrubia': 'Peñarrubia'})
+            
+            # Filter VaccTrack Data to the selected province
+            df_vt_filtered = df_vt_lgu[df_vt_lgu['Province'] == selected_car_prov].copy()
+            
+            if df_vt_filtered.empty:
+                st.warning(f"No VaccTrack data found for {selected_car_prov}.")
+            else:
+                # Convert numeric columns safely
+                num_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos', 'Vit A 6-11mos', 'Vit A 12-59mos', 'Grand total doses administered']
+                for c in num_cols:
+                    if c in df_vt_filtered.columns:
+                        df_vt_filtered[c] = pd.to_numeric(df_vt_filtered[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                
+                # Target Selection based on radio button
+                target_col = 'MR_6-59m_Total' if lgu_poster_type == "Measles-Rubella (MR)" else 'VitA_Total'
+                
+                # Extract all unique LGUs recorded in this province
+                all_lgus = pd.DataFrame({'Location': df_vt_filtered['Municipality'].unique()})
+                
+                # Filter data by specific program
+                if lgu_poster_type == "Measles-Rubella (MR)":
+                    vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Measles-Rubella']
+                    vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+                else:
+                    vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Vitamin A']
+                    vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
+                    
+                # Aggregate Accomlishments by Municipality
+                if not vt_prog_data.empty:
+                    df_vt_muni = vt_prog_data.groupby('Municipality')[vt_cols].sum().reset_index().rename(columns={'Municipality': 'Location'})
+                    df_lgu_cards = pd.merge(all_lgus, df_vt_muni, on='Location', how='left').fillna(0)
+                else:
+                    df_lgu_cards = all_lgus.copy()
+                    for c in vt_cols:
+                        df_lgu_cards[c] = 0
+                
+                # Fetch Official Targets
+                if not df_targets.empty:
+                    df_muni_targets = df_targets[df_targets['Level'].isin(['Municipality', 'City'])].copy()
+                    df_muni_targets['Location'] = df_muni_targets['Location'].str.title().str.strip()
+                    df_muni_targets = df_muni_targets.groupby('Location')[target_col].max().reset_index()
+                    
+                    df_lgu_cards = pd.merge(df_lgu_cards, df_muni_targets, on='Location', how='left').fillna(0)
+                    
+                    # Fetch Top Banner Target (The Parent Province)
+                    df_prov_target = df_targets[df_targets['Location'].str.title() == selected_car_prov]
+                    prov_target_val = df_prov_target[target_col].max() if not df_prov_target.empty else df_lgu_cards[target_col].sum()
+                else:
+                    df_lgu_cards[target_col] = 0
+                    prov_target_val = 0
+                    
+                df_lgu_cards = df_lgu_cards.sort_values('Location')
+                
+                # Render Reusable CSS
+                st.markdown("""
+                <style>
+                .poster-card { background-color: #ffffff; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-top: 8px solid #00ACC1; }
+                .poster-card-mr { border-top: 8px solid #1E88E5; }
+                .poster-title { font-size: 22px; font-weight: 900; color: #333; margin-bottom: -5px; text-transform: uppercase; }
+                .poster-cov { font-size: 28px; font-weight: 900; float: right; color: #333; }
+                .poster-metric { font-size: 14px; font-weight: 700; color: #555; line-height: 1.2; }
+                .poster-val { color: #000; font-weight: 900; }
+                .poster-unvax { color: #D32F2F; font-weight: 900; font-size: 16px; margin-top: 10px; }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                # Render Top Banner
+                prov_vax_total = df_lgu_cards['Grand total doses administered'].sum()
+                prov_cov = (prov_vax_total / prov_target_val * 100) if prov_target_val > 0 else 0
+                prov_unvax = max(0, prov_target_val - prov_vax_total)
+                
+                st.markdown(f"""
+                <div style="background-color: #f8f9fa; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 30px; border: 2px solid #e2e8f0;">
+                    <h2 style="margin:0; font-weight: 900; font-size: 36px; text-transform: uppercase;">{selected_car_prov}: {prov_vax_total:,.0f} ({prov_cov:.1f}%)</h2>
+                    <p style="color: #666; font-size: 18px; margin-bottom: 10px;"><b>TARGET:</b> {prov_target_val:,.0f} | <b style="color: #D32F2F;">UNVACCINATED: {prov_unvax:,.0f}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Render Dynamic LGU Grid
+                st.divider()
+                st.markdown(f"#### 📍 {selected_car_prov} Municipalities/Districts")
+                
+                cols = st.columns(4)
+                
+                for index, row in df_lgu_cards.reset_index(drop=True).iterrows():
+                    loc = row['Location']
+                    target = row[target_col]
+                    vax = row['Grand total doses administered']
+                    cov = (vax / target * 100) if target > 0 else 0
+                    unvax = max(0, target - vax)
+                    
+                    card_class = "poster-card-mr" if lgu_poster_type == "Measles-Rubella (MR)" else "poster-card"
+                    
+                    if lgu_poster_type == "Measles-Rubella (MR)":
+                        age_breakdown = (
+                            "<div style='margin-top: 10px;'>"
+                            f"<div class='poster-metric'>6-12 months: <span class='poster-val'>{row['MR 6-12mos']:,.0f}</span></div>"
+                            f"<div class='poster-metric'>13-23 months: <span class='poster-val'>{row['MR 13-23mos']:,.0f}</span></div>"
+                            f"<div class='poster-metric'>24-59 months: <span class='poster-val'>{row['MR 24-59mos']:,.0f}</span></div>"
+                            "</div>"
+                        )
+                    else:
+                        age_breakdown = (
+                            "<div style='margin-top: 10px;'>"
+                            f"<div class='poster-metric'>6-11 months: <span class='poster-val'>{row['Vit A 6-11mos']:,.0f}</span></div>"
+                            f"<div class='poster-metric'>12-59 months: <span class='poster-val'>{row['Vit A 12-59mos']:,.0f}</span></div>"
+                            "</div>"
+                        )
+                    
+                    html_card = (
+                        f"<div class='poster-card {card_class}'>"
+                        f"<div><span class='poster-title'>{loc}</span><span class='poster-cov'>{cov:.1f}%</span></div>"
+                        "<hr style='margin: 10px 0;'>"
+                        f"<div class='poster-metric'>TARGET: <span class='poster-val'>{target:,.0f}</span></div>"
+                        f"<div class='poster-metric'>VACCINATED: <span class='poster-val'>{vax:,.0f}</span></div>"
+                        f"{age_breakdown}"
+                        f"<div class='poster-unvax'>UNVACCINATED: {unvax:,.0f}</div>"
+                        "</div>"
+                    )
+                    
+                    col_idx = index % 4
+                    with cols[col_idx]:
+                        st.markdown(html_card, unsafe_allow_html=True)
 
     # ==========================================
     # ADMIN PANEL
