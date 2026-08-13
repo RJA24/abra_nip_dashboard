@@ -594,11 +594,9 @@ def fetch_vacctrack_data():
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
-tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Data", "Admin Panel"]
-    
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Province", "VaccTrack Region", "Admin Panel"]
 tabs = st.tabs(tab_names)
-
-tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vacctrack, tab_admin = tabs
+tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vt_prov, tab_vt_reg, tab_admin = tabs
 
 try:
     # ==========================================
@@ -2050,10 +2048,10 @@ try:
                 st.info("Awaiting Gsheet Sync to populate analytics.")
 
     # ==========================================
-    # VACCTRACK DATA TAB
+    # VACCTRACK PROVINCE TAB
     # ==========================================
-    with tab_vacctrack:
-        st.markdown(f"### 📈 VaccTrack Analytics: {location_label}")
+    with tab_vt_prov:
+        st.markdown(f"### 📈 VaccTrack Analytics (Province): {location_label}")
         
         df_vt_raw = fetch_vacctrack_data()
         
@@ -2438,6 +2436,138 @@ try:
                     st.dataframe(df_vt, use_container_width=True)
                     csv_raw_vt = df_vt.to_csv(index=False).encode('utf-8')
                     st.download_button(label="📥 Download Cleaned VaccTrack Data (CSV)", data=csv_raw_vt, file_name=f"VaccTrack_Cleaned_{location_label.replace(', ', '_')}.csv", mime="text/csv", key=f"dl_vt_raw_{location_label}")
+
+    # ==========================================
+    # VACCTRACK REGION TAB (CAR)
+    # ==========================================
+    with tab_vt_reg:
+        st.markdown("### 🗺️ Regional VaccTrack Analytics (CAR)")
+        st.write("Compare official VaccTrack accomplishment data across all provinces in the Cordillera Administrative Region.")
+        
+        df_vt_raw = fetch_vacctrack_data()
+        df_targets = fetch_targets_from_supabase()
+        
+        if df_vt_raw.empty:
+            st.info("Awaiting VaccTrack data sync. Please ensure records are pasted into the 'VaccTrack' tab in Google Sheets.")
+        else:
+            df_vt_reg = df_vt_raw.copy()
+            df_vt_reg.columns = [str(c).strip() for c in df_vt_reg.columns]
+            
+            # 1. Clean Province Names for Grouping
+            if 'Province Name' in df_vt_reg.columns:
+                df_vt_reg['Province'] = df_vt_reg['Province Name'].astype(str).str.strip().str.title()
+            else:
+                df_vt_reg['Province'] = "Unknown"
+                
+            # 2. Clean Numeric Columns
+            num_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos', 
+                        'Vit A 6-11mos', 'Vit A 12-59mos', 
+                        'Grand total doses administered']
+            for c in num_cols:
+                if c in df_vt_reg.columns:
+                    df_vt_reg[c] = pd.to_numeric(df_vt_reg[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                    
+            # 3. Calculate Regional Totals
+            total_mr_reg = df_vt_reg[df_vt_reg['Response Type'] == 'Measles-Rubella']['Grand total doses administered'].sum() if 'Response Type' in df_vt_reg.columns else 0
+            total_va_reg = df_vt_reg[df_vt_reg['Response Type'] == 'Vitamin A']['Grand total doses administered'].sum() if 'Response Type' in df_vt_reg.columns else 0
+            
+            # 4. Fetch Regional Targets from Supabase
+            reg_target_mr = 0
+            reg_target_va = 0
+            if not df_targets.empty:
+                df_reg_t = df_targets[df_targets['Level'] == 'Region']
+                if not df_reg_t.empty:
+                    reg_target_mr = df_reg_t['MR_6-59m_Total'].sum()
+                    reg_target_va = df_reg_t['VitA_Total'].sum()
+            
+            mr_reg_cov = (total_mr_reg / reg_target_mr * 100) if reg_target_mr > 0 else 0
+            va_reg_cov = (total_va_reg / reg_target_va * 100) if reg_target_va > 0 else 0
+            
+            # 5. Top Regional KPI Cards
+            rk1, rk2, rk3, rk4 = st.columns(4)
+            rk1.metric("💉 Regional MR Doses", f"{total_mr_reg:,.0f}", f"CAR Target: {reg_target_mr:,.0f}" if reg_target_mr > 0 else "Target Missing", delta_color="off")
+            rk2.metric("MR Regional Coverage", f"{mr_reg_cov:.1f}%")
+            rk3.metric("💊 Regional Vit A Doses", f"{total_va_reg:,.0f}", f"CAR Target: {reg_target_va:,.0f}" if reg_target_va > 0 else "Target Missing", delta_color="off")
+            rk4.metric("Vit A Regional Coverage", f"{va_reg_cov:.1f}%")
+            
+            st.divider()
+            
+            # 6. Doses by Province (Grouped Bar Chart)
+            st.markdown("#### 📊 Doses Administered by Province")
+            if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns:
+                df_prov = df_vt_reg.groupby(['Province', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                
+                # Calculate total for sorting
+                df_prov_total = df_prov.groupby('Province')['Grand total doses administered'].sum().reset_index()
+                df_prov_total = df_prov_total.sort_values('Grand total doses administered', ascending=True)
+                
+                fig_prov = px.bar(
+                    df_prov, 
+                    x='Grand total doses administered', 
+                    y='Province', 
+                    color='Response Type', 
+                    orientation='h', 
+                    barmode='group', 
+                    text_auto='.0f', 
+                    color_discrete_sequence=['#1E88E5', '#F4511E']
+                )
+                
+                fig_prov.update_traces(
+                    textfont=dict(size=12),
+                    textposition="outside", 
+                    cliponaxis=False 
+                )
+                
+                chart_height_reg = max(400, len(df_prov_total) * 45)
+                fig_prov.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Total Doses", 
+                    yaxis_title="", 
+                    height=chart_height_reg, 
+                    margin=dict(l=0, r=40, t=10, b=0), 
+                    yaxis={'categoryarray': df_prov_total['Province']}
+                )
+                st.plotly_chart(fig_prov, use_container_width=True)
+                
+                # 7. Detailed Regional Coverage Table
+                st.markdown("#### 📋 Regional Coverage Breakdown")
+                if not df_targets.empty:
+                    # Filter targets for just the Provinces
+                    df_prov_targets = df_targets[df_targets['Level'] == 'Province'].copy()
+                    df_prov_targets['Location'] = df_prov_targets['Location'].str.title()
+                    
+                    # Split Doses by Program
+                    prov_mr = df_prov[df_prov['Response Type'] == 'Measles-Rubella'].rename(columns={'Grand total doses administered': 'MR Doses', 'Province': 'Location'})[['Location', 'MR Doses']]
+                    prov_va = df_prov[df_prov['Response Type'] == 'Vitamin A'].rename(columns={'Grand total doses administered': 'Vit A Doses', 'Province': 'Location'})[['Location', 'Vit A Doses']]
+                    
+                    # Build the master table
+                    reg_table = df_prov_targets[['Location', 'MR_6-59m_Total', 'VitA_Total']].rename(columns={'MR_6-59m_Total': 'MR Target', 'VitA_Total': 'Vit A Target'})
+                    reg_table = pd.merge(reg_table, prov_mr, on='Location', how='left').fillna(0)
+                    reg_table = pd.merge(reg_table, prov_va, on='Location', how='left').fillna(0)
+                    
+                    # Calculate Coverages
+                    reg_table['MR Coverage %'] = (reg_table['MR Doses'] / reg_table['MR Target'] * 100).fillna(0).replace(np.inf, 0)
+                    reg_table['Vit A Coverage %'] = (reg_table['Vit A Doses'] / reg_table['Vit A Target'] * 100).fillna(0).replace(np.inf, 0)
+                    
+                    # Reorder and Sort
+                    reg_table = reg_table[['Location', 'MR Target', 'MR Doses', 'MR Coverage %', 'Vit A Target', 'Vit A Doses', 'Vit A Coverage %']]
+                    reg_table = reg_table.sort_values('MR Coverage %', ascending=False)
+                    
+                    # Display Table
+                    st.dataframe(
+                        reg_table.style.format({
+                            'MR Target': "{:,.0f}", 
+                            'MR Doses': "{:,.0f}", 
+                            'MR Coverage %': "{:.1f}%",
+                            'Vit A Target': "{:,.0f}", 
+                            'Vit A Doses': "{:,.0f}", 
+                            'Vit A Coverage %': "{:.1f}%"
+                        }), 
+                        use_container_width=True, 
+                        hide_index=True
+                    )
+                else:
+                    st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
 
     # ==========================================
     # ADMIN PANEL
