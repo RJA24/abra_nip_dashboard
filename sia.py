@@ -2870,13 +2870,17 @@ try:
                         selector=dict(type='choroplethmapbox')
                     )
                     
-                    #  FIX: Use .tolist() and a safe universal font to force Plotly to render the text
+                    # FIX: Added a premium font stack and slightly larger text for better readability
                     fig_map_car.add_trace(go.Scattermapbox(
                         lat=df_map['lat'].tolist(),
                         lon=df_map['lon'].tolist(),
                         mode='text',
                         text=df_map['LabelText'].tolist(),
-                        textfont=dict(size=16, color='black'), 
+                        textfont=dict(
+                            size=17, 
+                            color='#1E1E1E', 
+                            family="'Trebuchet MS', Verdana, Arial, sans-serif"
+                        ), 
                         textposition='middle center',
                         showlegend=False, 
                         hoverinfo='skip'  
