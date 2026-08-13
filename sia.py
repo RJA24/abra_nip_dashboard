@@ -2827,30 +2827,56 @@ try:
                         lambda row: max(0, row[target_col] - row['Grand total doses administered']), axis=1
                     )
                     
+                    # 🛑 NEW: Approximate center coordinates for CAR regions
+                    car_centroids = {
+                        'Abra': {'lat': 17.58, 'lon': 120.80},
+                        'Apayao': {'lat': 18.05, 'lon': 121.25},
+                        'Benguet': {'lat': 16.55, 'lon': 120.65},
+                        'Baguio City': {'lat': 16.39, 'lon': 120.60},
+                        'Ifugao': {'lat': 16.85, 'lon': 121.12},
+                        'Kalinga': {'lat': 17.43, 'lon': 121.18},
+                        'Mountain Province': {'lat': 17.06, 'lon': 120.94}
+                    }
+                    
+                    df_map['lat'] = df_map['Location'].map(lambda x: car_centroids.get(x, {}).get('lat', 17.35))
+                    df_map['lon'] = df_map['Location'].map(lambda x: car_centroids.get(x, {}).get('lon', 121.1))
+                    df_map['LabelText'] = df_map['Coverage %'].apply(lambda x: f"{x:.1f}%")
+                    
                     fig_map_car = px.choropleth_mapbox(
                         df_map,
                         geojson=car_geo,
                         locations='Location',
                         featureidkey="properties.Standard_Name",
                         color='Coverage %',
-                        color_continuous_scale="RdYlGn", # Red to Green gradient
+                        color_continuous_scale="RdYlGn", 
                         range_color=[0, 100],
                         mapbox_style="carto-positron",
                         zoom=6.8,
-                        center={"lat": 17.35, "lon": 121.1}, # Centered perfectly over CAR
+                        center={"lat": 17.35, "lon": 121.1}, 
                         opacity=0.75,
                         hover_name='Location',
                         hover_data={'Location': False, target_col: True, 'Grand total doses administered': True, 'Unvaccinated': True}
                     )
                     
-                    # Clean up the tooltip formatting to look professional
+                    # Clean up the tooltip formatting for the choropleth layer
                     fig_map_car.update_traces(
                         hovertemplate="<b>%{hovertext}</b><br><br>" +
                                       "Coverage: <b>%{z:.1f}%</b><br>" +
                                       "Target: %{customdata[0]:,.0f}<br>" +
                                       "Vaccinated: %{customdata[1]:,.0f}<br>" +
-                                      "Unvaccinated: %{customdata[2]:,.0f}<extra></extra>"
+                                      "Unvaccinated: %{customdata[2]:,.0f}<extra></extra>",
+                        selector=dict(type='choroplethmapbox')
                     )
+                    
+                    # 🛑 NEW: Add a Scattermapbox layer on top to display the text labels
+                    fig_map_car.add_trace(go.Scattermapbox(
+                        lat=df_map['lat'],
+                        lon=df_map['lon'],
+                        mode='text',
+                        text=df_map['LabelText'],
+                        textfont=dict(size=15, color='black', family="Arial Black"),
+                        hoverinfo='skip'  
+                    ))
                     
                     fig_map_car.update_layout(
                         margin={"r":0,"t":0,"l":0,"b":0}, 
