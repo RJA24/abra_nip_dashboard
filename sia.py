@@ -63,36 +63,59 @@ def fetch_abra_geojson():
 
 @st.cache_data(ttl="24h")
 def fetch_car_geojson():
-    urls = [
-        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/Province/Provinces.json",
+    # Use multiple fallback URLs to guarantee we get the data
+    prov_urls = [
+        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/provinces-lowres.json",
+        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/Province/Provinces.json"
+    ]
+    muni_urls = [
+        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json",
         "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json"
     ]
+    
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     car_features = []
-    car_provinces = ['ABRA', 'APAYAO', 'BENGUET', 'IFUGAO', 'KALINGA', 'MOUNTAIN PROVINCE']
+    car_provinces = ['ABRA', 'APAYAO', 'BENGUET', 'IFUGAO', 'KALINGA', 'MOUNTAIN PROVINCE', 'MT. PROVINCE']
     
     try:
-        # 1. Fetch Standard Provinces
-        r1 = requests.get(urls[0], headers=headers, timeout=10)
-        if r1.status_code == 200:
-            for f in r1.json().get('features', []):
-                p_name = f.get('properties', {}).get('PROV_NAME', '').upper()
-                if p_name in car_provinces:
-                    f['properties']['Standard_Name'] = p_name.title()
-                    car_features.append(f)
+        # 1. Fetch Provinces (Scanning all property keys safely)
+        for url in prov_urls:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                for f in r.json().get('features', []):
+                    props = f.get('properties', {})
+                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
                     
-        # 2. Fetch Baguio City (HUC) from Municipalities file
-        r2 = requests.get(urls[1], headers=headers, timeout=10)
-        if r2.status_code == 200:
-            for f in r2.json().get('features', []):
-                m_name = f.get('properties', {}).get('MUN_NAME', '').upper()
-                if m_name == 'BAGUIO CITY':
-                    f['properties']['Standard_Name'] = 'Baguio City'
-                    car_features.append(f)
+                    for p_name in car_provinces:
+                        if p_name in props_upper.values():
+                            # Standardize Mountain Province
+                            clean_name = "Mountain Province" if "MT" in p_name else p_name.title()
+                            f['properties']['Standard_Name'] = clean_name
+                            car_features.append(f)
+                            break
+                if car_features:
+                    break # Stop looking if we found the provinces
+                    
+        # 2. Fetch Baguio City (HUC)
+        for url in muni_urls:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                for f in r.json().get('features', []):
+                    props = f.get('properties', {})
+                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
+                    
+                    if 'BAGUIO CITY' in props_upper.values() or 'CITY OF BAGUIO' in props_upper.values():
+                        f['properties']['Standard_Name'] = 'Baguio City'
+                        car_features.append(f)
+                        break
+                # Check if Baguio was successfully added
+                if any(f.get('properties', {}).get('Standard_Name') == 'Baguio City' for f in car_features):
+                    break
                     
         if car_features:
             return {"type": "FeatureCollection", "features": car_features}
-    except Exception:
+            
+    except Exception as e:
         pass
         
     return None
