@@ -2952,12 +2952,11 @@ try:
                     if c in df_vt_filtered.columns:
                         df_vt_filtered[c] = pd.to_numeric(df_vt_filtered[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
                 
-                # Target Selection based on radio button
+            # Target Selection based on radio button
             target_col = 'MR_6-59m_Total' if lgu_poster_type == "Measles-Rubella (MR)" else 'VitA_Total'
             
             # ==========================================
             # 🛑 FIX: NORMALIZE TARGET DATABASE NAMES
-            # (This creates the missing df_t_clean variable!)
             # ==========================================
             if not df_targets.empty:
                 df_t_clean = df_targets.copy()
@@ -2973,24 +2972,42 @@ try:
             else:
                 df_t_clean = pd.DataFrame()
 
-            # --- 1. DETERMINE EXPECTED LGU CARDS FROM TARGET DATABASE ---
+            # Pre-filter VaccTrack data so we can use it as a fallback!
+            if lgu_poster_type == "Measles-Rubella (MR)":
+                vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Measles-Rubella'].copy()
+                vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+            else:
+                vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Vitamin A'].copy()
+                vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
+                
+            # Safely find Column H (Barangay Name) ignoring trailing spaces in column headers
+            brgy_col = next((c for c in vt_prog_data.columns if 'Barangay' in str(c)), None)
+
+            # --- 1. DETERMINE EXPECTED LGU CARDS (WITH VACCTRACK FALLBACK) ---
             if selected_car_prov == 'Baguio City':
                 if lgu_poster_type == "Vitamin A (Vit A)":
                     expected_locations = ['Baguio City']
                 else:
-                    if not df_t_clean.empty and 'Parent_Municipality' in df_t_clean.columns:
-                        # Baguio City MR strictly pulls its child districts
-                        mask = df_t_clean['Parent_Municipality'] == 'Baguio City'
-                        children = df_t_clean[mask & (df_t_clean['Location'] != 'Baguio City')]['Location'].unique()
-                        expected_locations = list(children) if len(children) > 0 else ['Baguio City']
+                    children = []
+                    if not df_t_clean.empty:
+                        # Check BOTH parent columns just in case the database is mapped weirdly
+                        p_prov = df_t_clean.get('Parent_Province', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
+                        p_muni = df_t_clean.get('Parent_Municipality', pd.Series(dtype=str)).str.contains('Baguio', na=False, case=False)
+                        children = df_t_clean[(p_prov | p_muni) & (~df_t_clean['Location'].str.contains('Baguio City', na=False, case=False))]['Location'].unique().tolist()
+                    
+                    if len(children) > 0:
+                        expected_locations = children
+                    elif brgy_col and not vt_prog_data.empty:
+                        # 🛑 BULLETPROOF FALLBACK: If targets are unlinked, force spawn cards using Column H from VaccTrack!
+                        expected_locations = vt_prog_data[brgy_col].astype(str).str.strip().str.title().unique().tolist()
                     else:
                         expected_locations = ['Baguio City']
             else:
                 if not df_t_clean.empty and 'Parent_Province' in df_t_clean.columns:
                     # The 6 normal provinces strictly get ONLY 'Municipality' level targets
                     mask = (df_t_clean['Parent_Province'] == selected_car_prov) & (df_t_clean['Level'] == 'Municipality')
-                    children = df_t_clean[mask]['Location'].unique()
-                    expected_locations = list(children) if len(children) > 0 else [selected_car_prov]
+                    children = df_t_clean[mask]['Location'].unique().tolist()
+                    expected_locations = children if len(children) > 0 else [selected_car_prov]
                 else:
                     expected_locations = [selected_car_prov]
                     
@@ -3004,24 +3021,16 @@ try:
                 df_lgu_cards[target_col] = 0
                 
             # --- 3. AGGREGATE VACCTRACK DATA TO CARDS ---
-            if lgu_poster_type == "Measles-Rubella (MR)":
-                vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Measles-Rubella'].copy()
-                vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
-            else:
-                vt_prog_data = df_vt_filtered[df_vt_filtered['Response Type'] == 'Vitamin A'].copy()
-                vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
-                
             if not vt_prog_data.empty:
                 # Default Location matching for all other provinces
                 vt_prog_data['Location'] = vt_prog_data['Municipality']
                 
                 if selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
-                    # Force all Baguio Vit A doses into the single city card
                     vt_prog_data['Location'] = 'Baguio City'
                 elif selected_car_prov == 'Baguio City' and lgu_poster_type == "Measles-Rubella (MR)":
                     # Explicitly pull from Column H (Barangay Name) for Baguio City districts
-                    if 'Barangay Name' in vt_prog_data.columns:
-                        vt_prog_data['Location'] = vt_prog_data['Barangay Name'].astype(str).str.strip().str.title()
+                    if brgy_col:
+                        vt_prog_data['Location'] = vt_prog_data[brgy_col].astype(str).str.strip().str.title()
                                     
                 df_vt_muni = vt_prog_data.groupby('Location')[vt_cols].sum().reset_index()
                 df_lgu_cards = pd.merge(df_lgu_cards, df_vt_muni, on='Location', how='left').fillna(0)
@@ -3029,6 +3038,8 @@ try:
                 for c in vt_cols:
                     df_lgu_cards[c] = 0
                     
+            # Cleanup weird empty entries
+            df_lgu_cards = df_lgu_cards[~df_lgu_cards['Location'].isin(['Nan', 'None', ''])]
             df_lgu_cards = df_lgu_cards.sort_values('Location')
             
             # --- 4. TOP BANNER CALCULATIONS ---
@@ -3037,7 +3048,7 @@ try:
                 df_prov_target = df_t_clean[df_t_clean['Location'] == selected_car_prov]
                 prov_target_val = df_prov_target[target_col].max() if not df_prov_target.empty else 0
                 
-                # Fallback: if Parent target is 0 (like Baguio MR), sum the child cards
+                # If parent target is missing/0, sum the child targets
                 if prov_target_val == 0:
                     prov_target_val = df_lgu_cards[target_col].sum()
             else:
