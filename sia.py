@@ -513,11 +513,27 @@ def fetch_targets_from_supabase():
     # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
     for attempt in range(3):
         try:
-            res = supabase.table('targets').select('*').execute()
+            # 🛑 FIX: Bypass the Supabase 1,000 row limit using a pagination loop!
+            all_data = []
+            offset = 0
+            limit = 1000
             
+            while True:
+                # Fetch chunks of 1000 rows until we secure the entire database
+                res = supabase.table('targets').select('*').range(offset, offset + limit - 1).execute()
+                
+                if res.data:
+                    all_data.extend(res.data)
+                    # If we receive fewer than 1000 rows, we've hit the end of the database
+                    if len(res.data) < limit:
+                        break
+                    offset += limit
+                else:
+                    break
+                    
             # SAFETY NET: If data is successfully retrieved, process it!
-            if res.data and len(res.data) >= 27: 
-                df = pd.DataFrame(res.data)
+            if all_data and len(all_data) >= 27: 
+                df = pd.DataFrame(all_data)
                 
                 col_mapping = {
                     'code': 'Code', 'location': 'Location', 'level': 'Level',
