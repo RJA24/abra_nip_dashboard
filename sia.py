@@ -2565,52 +2565,16 @@ try:
             
             st.divider()
             
-            # 6. Doses by Province (Grouped Bar Chart)
-            st.markdown("#### 📊 Doses Administered by Province")
-            if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns:
-                df_prov = df_vt_reg.groupby(['Province', 'Response Type'])['Grand total doses administered'].sum().reset_index()
-                
-                # Calculate total for sorting
-                df_prov_total = df_prov.groupby('Province')['Grand total doses administered'].sum().reset_index()
-                df_prov_total = df_prov_total.sort_values('Grand total doses administered', ascending=True)
-                
-                fig_prov = px.bar(
-                    df_prov, 
-                    x='Grand total doses administered', 
-                    y='Province', 
-                    color='Response Type', 
-                    orientation='h', 
-                    barmode='group', 
-                    text_auto='.0f', 
-                    color_discrete_sequence=['#1E88E5', '#F4511E']
-                )
-                
-                fig_prov.update_traces(
-                    textfont=dict(size=12),
-                    textposition="outside", 
-                    cliponaxis=False 
-                )
-                
-                chart_height_reg = max(400, len(df_prov_total) * 45)
-                fig_prov.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)', 
-                    xaxis_title="Total Doses", 
-                    yaxis_title="", 
-                    height=chart_height_reg, 
-                    margin=dict(l=0, r=40, t=10, b=0), 
-                    yaxis={'categoryarray': df_prov_total['Province']}
-                )
-                st.plotly_chart(fig_prov, use_container_width=True)
-                
-                # 7. Detailed Regional Coverage Table
-                st.markdown("#### 📋 Regional Coverage Breakdown")
-                if not df_targets.empty:
-                    #  FIX: Baguio City is an HUC, not a Province. 
-                    # We will explicitly grab all 7 CAR locations by name instead of relying on the 'Level' column.
+            # 6. Regional Coverage by Province (Grouped Bar Chart)
+                st.markdown("#### 📊 Coverage % by Province")
+                if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns and not df_targets.empty:
+                    
+                    # Calculate raw doses by province first
+                    df_prov = df_vt_reg.groupby(['Province', 'Response Type'])['Grand total doses administered'].sum().reset_index()
+                    
+                    # Filter targets for CAR regions safely
                     car_areas = ['Abra', 'Apayao', 'Benguet', 'Baguio City', 'City Of Baguio', 'Ifugao', 'Kalinga', 'Mountain Province', 'Mt. Province']
                     df_prov_targets = df_targets[df_targets['Location'].str.title().isin(car_areas)].copy()
-                    
-                    # Standardize Baguio City and Mt. Province names just in case
                     df_prov_targets['Location'] = df_prov_targets['Location'].str.title().replace({'City Of Baguio': 'Baguio City', 'Mt. Province': 'Mountain Province'})
                     
                     # Split Doses by Program
@@ -2626,13 +2590,53 @@ try:
                     reg_table['MR Coverage %'] = (reg_table['MR Doses'] / reg_table['MR Target'] * 100).fillna(0).replace(np.inf, 0)
                     reg_table['Vit A Coverage %'] = (reg_table['Vit A Doses'] / reg_table['Vit A Target'] * 100).fillna(0).replace(np.inf, 0)
                     
-                    # Reorder and Sort
-                    reg_table = reg_table[['Location', 'MR Target', 'MR Doses', 'MR Coverage %', 'Vit A Target', 'Vit A Doses', 'Vit A Coverage %']]
-                    reg_table = reg_table.sort_values('MR Coverage %', ascending=False)
+                    # Sort ascending so the highest coverage is at the top of the chart
+                    reg_table = reg_table.sort_values('MR Coverage %', ascending=True)
                     
-                    # Display Table
+                    # Melt the table for the Plotly grouped bar chart
+                    df_melt_reg = reg_table.melt(id_vars=['Location'], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
+                    
+                    fig_prov = px.bar(
+                        df_melt_reg, 
+                        x='Coverage %', 
+                        y='Location', 
+                        color='Program', 
+                        orientation='h', 
+                        barmode='group', 
+                        text_auto='.1f', 
+                        color_discrete_sequence=['#1E88E5', '#F4511E']
+                    )
+                    
+                    fig_prov.update_traces(
+                        textfont=dict(size=12),
+                        textposition="outside", 
+                        cliponaxis=False 
+                    )
+                    
+                    # Add the 95% Target Line
+                    fig_prov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                    
+                    chart_height_reg = max(400, len(reg_table) * 60)
+                    fig_prov.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        xaxis_title="Coverage (%)", 
+                        yaxis_title="", 
+                        height=chart_height_reg, 
+                        margin=dict(l=0, r=50, t=10, b=0), 
+                        legend_title_text="",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    st.plotly_chart(fig_prov, use_container_width=True)
+                    
+                    # 7. Detailed Regional Coverage Table
+                    st.markdown("#### 📋 Regional Coverage Breakdown")
+                    
+                    # Re-sort descending for the table view and reorder columns
+                    reg_table_view = reg_table.sort_values('MR Coverage %', ascending=False)
+                    reg_table_view = reg_table_view[['Location', 'MR Target', 'MR Doses', 'MR Coverage %', 'Vit A Target', 'Vit A Doses', 'Vit A Coverage %']]
+                    
                     st.dataframe(
-                        reg_table.style.format({
+                        reg_table_view.style.format({
                             'MR Target': "{:,.0f}", 
                             'MR Doses': "{:,.0f}", 
                             'MR Coverage %': "{:.1f}%",
@@ -2644,7 +2648,7 @@ try:
                         hide_index=True
                     )
                 else:
-                    st.warning("Regional targets missing. Please sync the Target Database in the Admin Panel.")
+                    st.warning("Insufficient data or targets missing to generate Regional Coverage.")
 
                 # ==========================================
                 # 🖼️ DIGITAL CAMPAIGN POSTERS (INFOGRAPHIC VIEW)
