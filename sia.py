@@ -2956,18 +2956,23 @@ try:
             target_col = 'MR_6-59m_Total' if lgu_poster_type == "Measles-Rubella (MR)" else 'VitA_Total'
             
             # --- 1. DETERMINE EXPECTED LGU CARDS FROM TARGET DATABASE ---
-            if selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
-                expected_locations = ['Baguio City']
-            else:
-                if not df_targets.empty:
-                    # Find all municipalities/districts under the selected province/HUC
-                    mask = (df_targets['Parent_Province'].str.title() == selected_car_prov) | (df_targets['Parent_Municipality'].str.title() == selected_car_prov)
-                    children = df_targets[mask & df_targets['Level'].isin(['Municipality', 'City', 'Barangay'])]['Location'].str.title().str.strip().unique()
-                    
-                    if len(children) > 0:
-                        expected_locations = list(children)
+            if selected_car_prov == 'Baguio City':
+                if lgu_poster_type == "Vitamin A (Vit A)":
+                    expected_locations = ['Baguio City']
+                else:
+                    if not df_t_clean.empty:
+                        # 🛑 FIX: Baguio City MR strictly pulls its child districts
+                        mask = df_t_clean['Parent_Municipality'] == 'Baguio City'
+                        children = df_t_clean[mask & (df_t_clean['Location'] != 'Baguio City')]['Location'].unique()
+                        expected_locations = list(children) if len(children) > 0 else ['Baguio City']
                     else:
-                        expected_locations = [selected_car_prov]
+                        expected_locations = ['Baguio City']
+            else:
+                if not df_t_clean.empty:
+                    # 🛑 FIX: The 6 normal provinces strictly get ONLY 'Municipality' level targets, completely ignoring barangays!
+                    mask = (df_t_clean['Parent_Province'] == selected_car_prov) & (df_t_clean['Level'] == 'Municipality')
+                    children = df_t_clean[mask]['Location'].unique()
+                    expected_locations = list(children) if len(children) > 0 else [selected_car_prov]
                 else:
                     expected_locations = [selected_car_prov]
                     
@@ -2991,21 +2996,17 @@ try:
                 vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
                 
             if not vt_prog_data.empty:
-                # Default Location matching
+                # Default Location matching for all other provinces
                 vt_prog_data['Location'] = vt_prog_data['Municipality']
                 
-                # Auto-routing for Baguio City Districts (scans other columns for district names!)
-                if selected_car_prov == 'Baguio City' and lgu_poster_type == "Measles-Rubella (MR)":
-                    for test_col in ['Barangay Name', 'Barangay', 'Rural Health Unit', 'Facility Name', 'Health Facility']:
-                        if test_col in vt_prog_data.columns:
-                            matches = vt_prog_data[test_col].astype(str).str.strip().str.title().isin(expected_locations).sum()
-                            if matches > 0:
-                                vt_prog_data['Location'] = vt_prog_data[test_col].astype(str).str.strip().str.title()
-                                break
-                elif selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
+                if selected_car_prov == 'Baguio City' and lgu_poster_type == "Vitamin A (Vit A)":
                     # Force all Baguio Vit A doses into the single city card
                     vt_prog_data['Location'] = 'Baguio City'
-                    
+                elif selected_car_prov == 'Baguio City' and lgu_poster_type == "Measles-Rubella (MR)":
+                    # 🛑 FIX: Explicitly pull from Column H (Barangay Name) for Baguio City districts
+                    if 'Barangay Name' in vt_prog_data.columns:
+                        vt_prog_data['Location'] = vt_prog_data['Barangay Name'].astype(str).str.strip().str.title()
+                                    
                 df_vt_muni = vt_prog_data.groupby('Location')[vt_cols].sum().reset_index()
                 df_lgu_cards = pd.merge(df_lgu_cards, df_vt_muni, on='Location', how='left').fillna(0)
             else:
