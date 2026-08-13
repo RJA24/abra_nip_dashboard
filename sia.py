@@ -2870,16 +2870,15 @@ try:
                         selector=dict(type='choroplethmapbox')
                     )
                     
-                    # FIX: Added a premium font stack and slightly larger text for better readability
+                    # Add the text labels on top of the map
                     fig_map_car.add_trace(go.Scattermapbox(
                         lat=df_map['lat'].tolist(),
                         lon=df_map['lon'].tolist(),
                         mode='text',
                         text=df_map['LabelText'].tolist(),
                         textfont=dict(
-                            size=17, 
-                            color='#1E1E1E', 
-                            family="'Trebuchet MS', Verdana, Arial, sans-serif"
+                            size=16, 
+                            color='black'
                         ), 
                         textposition='middle center',
                         showlegend=False, 
