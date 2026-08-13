@@ -2655,7 +2655,7 @@ try:
             # 🖼️ DIGITAL CAMPAIGN POSTERS (INFOGRAPHIC VIEW)
             # ==========================================
             st.divider()
-            st.markdown("#### 🖼️ Live Regional Infographics")
+            st.markdown("#### Live Regional Infographics")
             st.write("Dynamically generated summaries matching the official DOH poster layouts.")
             
             poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
