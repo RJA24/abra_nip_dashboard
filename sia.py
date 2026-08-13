@@ -513,7 +513,7 @@ def fetch_targets_from_supabase():
     try:
         res = supabase.table('targets').select('*').execute()
         
-        # 🛑 SAFETY NET: If data is missing or incomplete, clear cache and reject it!
+        #  SAFETY NET: If data is missing or incomplete, clear cache and reject it!
         if not res.data or len(res.data) < 27: 
             st.cache_data.clear()
             return pd.DataFrame()
@@ -547,7 +547,7 @@ def fetch_targets_from_supabase():
         df = df.rename(columns=col_mapping)
         
         # ==========================================
-        # 🛑 FIX: CLEAN TARGET LOCATIONS
+        #  FIX: CLEAN TARGET LOCATIONS
         # Strips hidden spaces and standardizes spellings so it merges perfectly!
         # ==========================================
         if 'Location' in df.columns:
@@ -577,7 +577,7 @@ def fetch_targets_from_supabase():
 
         return df
     except Exception as e:
-        # 🛑 SAFETY NET: Do not cache a database crash!
+        #  SAFETY NET: Do not cache a database crash!
         st.cache_data.clear()
         return pd.DataFrame()
 
@@ -588,13 +588,13 @@ def fetch_live_accomplishments():
         df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
         df_vita = conn.read(spreadsheet=sheet_url, worksheet="VitA", skiprows=1)
         
-        # 🛑 SAFETY NET: If Google Sheets glitches and returns nothing, clear the cache!
+        #  SAFETY NET: If Google Sheets glitches and returns nothing, clear the cache!
         if df_mr.empty or df_vita.empty:
             st.cache_data.clear()
             return pd.DataFrame(), pd.DataFrame()
             
         # ==========================================
-        # 🛑 CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
+        #  CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
         # ==========================================
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
@@ -607,7 +607,7 @@ def fetch_live_accomplishments():
             df_vita = df_vita.dropna(subset=['Vaccination Date'])
             
         # ==========================================
-        # 🛑 UNIVERSAL MATH CALCULATION
+        #  UNIVERSAL MATH CALCULATION
         # ==========================================
         
         # MR Math: Sum all 6 demographic columns
@@ -630,7 +630,7 @@ def fetch_live_accomplishments():
 
         return df_mr, df_vita
     except Exception as e:
-        # 🛑 SAFETY NET: Do not cache a connection error!
+        #  SAFETY NET: Do not cache a connection error!
         st.cache_data.clear()
         return pd.DataFrame(), pd.DataFrame()
 
@@ -640,7 +640,7 @@ def fetch_vacctrack_data():
         conn = st.connection("gsheets", type=GSheetsConnection)
         df_vt = conn.read(spreadsheet=sheet_url, worksheet="VaccTrack", ttl="1h")
         
-        # 🛑 SAFETY NET: If the sheet is empty or glitches, clear cache so it retries
+        #  SAFETY NET: If the sheet is empty or glitches, clear cache so it retries
         if df_vt.empty:
             st.cache_data.clear()
             return pd.DataFrame()
@@ -842,13 +842,13 @@ try:
                             
                         df_trend = df_trend.sort_values('Vaccination Date')
                         
-                        # 🛑 NEW: Calculate cumulative totals instead of daily bounces
+                        #  NEW: Calculate cumulative totals instead of daily bounces
                         df_trend['MR Cumulative'] = df_trend['MR Doses'].cumsum()
                         df_trend['Vit A Cumulative'] = df_trend['Vit A Doses'].cumsum()
                         
                         fig_trend = px.line(df_trend, x='Vaccination Date', y=['MR Cumulative', 'Vit A Cumulative'], markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
                         
-                        # 🛑 NEW: Add the 95% Target sprint lines
+                        #  NEW: Add the 95% Target sprint lines
                         mr_95 = active_target_mr * 0.95
                         va_95 = active_target_va * 0.95
                         
@@ -897,7 +897,7 @@ try:
                     lambda row: (row['Vit A Administered'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1
                 )
 
-                # 🛑 NEW: CALCULATE DOSE DEFICITS FOR CHART LABELS AND MAPS
+                #  NEW: CALCULATE DOSE DEFICITS FOR CHART LABELS AND MAPS
                 df_geo_summary['MR Deficit (to 95%)'] = (df_geo_summary['MR Target'] * 0.95) - df_geo_summary['MR Administered']
                 df_geo_summary['MR Deficit (to 95%)'] = df_geo_summary['MR Deficit (to 95%)'].apply(lambda x: max(0, x)) # No negative deficits
                 
@@ -905,7 +905,7 @@ try:
                 df_geo_summary['Vit A Deficit (to 95%)'] = df_geo_summary['Vit A Deficit (to 95%)'].apply(lambda x: max(0, x))
 
                 # ==========================================
-                # 🛑 THE FIX: Force Left Merge to Prevent Missing Data
+                #  THE FIX: Force Left Merge to Prevent Missing Data
                 # ==========================================
                 if view_mode == "All Municipalities (Abra)":
                     abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
@@ -929,7 +929,7 @@ try:
                     
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
-                # 🛑 NEW: Map the correct deficit to the melted rows for the hover tooltip
+                #  NEW: Map the correct deficit to the melted rows for the hover tooltip
                 def get_deficit(row):
                     match_row = df_geo_summary[df_geo_summary[geo_col] == row[geo_col]].iloc[0]
                     return match_row['MR Deficit (to 95%)'] if 'MR' in row['Program'] else match_row['Vit A Deficit (to 95%)']
@@ -949,7 +949,7 @@ try:
                     text_auto='.1f', 
                     title=f"Coverage % by {geo_col}", 
                     color_discrete_sequence=color_seq,
-                    hover_data={"Doses to hit 95% Target": ":,.0f"} # 🛑 ADDED DEFICIT TO HOVER
+                    hover_data={"Doses to hit 95% Target": ":,.0f"} #  ADDED DEFICIT TO HOVER
                 )
                 
                 # 📉 REDUCED: Shrunk fonts from 16 to 11 so they fit beautifully on the thinner bars
@@ -1583,7 +1583,7 @@ try:
                 tally_grid_mr = tally_grid_mr.reset_index()
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
                 
-                # 8. 🛑 NEW: Format the Pinned Total Row so AgGrid can freeze it
+                # 8.  NEW: Format the Pinned Total Row so AgGrid can freeze it
                 pinned_total_mr = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_mr.get(col, 0)
@@ -1594,7 +1594,7 @@ try:
                 # ==========================================
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
                 
-                # 🛑 NEW: Custom sort function to force AgGrid to read text as numbers
+                #  NEW: Custom sort function to force AgGrid to read text as numbers
                 numeric_sort = JsCode("""
                 function(a, b) {
                     var numA = (a === "" || a === null) ? 0 : Number(a);
@@ -1614,7 +1614,7 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
-                # 🛑 NEW: Added the 'comparator' parameter to the Total column
+                #  NEW: Added the 'comparator' parameter to the Total column
                 gb_mr.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
@@ -1628,7 +1628,7 @@ try:
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
                 
-                # 🛑 NEW: Make the TOTAL row bold with a slight background color
+                #  NEW: Make the TOTAL row bold with a slight background color
                 bold_total_row = JsCode("""
                 function(params) {
                     if (params.data.Municipality === 'TOTAL') {
@@ -1638,7 +1638,7 @@ try:
                 """)
                 gridOptions_mr['getRowStyle'] = bold_total_row
                 
-                # 🛑 THE BRUTE FORCE CSS FIX 🛑
+                #  THE BRUTE FORCE CSS FIX 
                 grid_css = {
                     ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
                     ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
@@ -1652,12 +1652,12 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True  # 🛑 NEW: Required to run the bolding script!
+                    allow_unsafe_jscode=True  #  NEW: Required to run the bolding script!
                 )
 
                 # --- MR TALLY SHEET DOWNLOAD BUTTON ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                # 🛑 NEW: Stitch the pinned row back onto the data for the CSV export
+                #  NEW: Stitch the pinned row back onto the data for the CSV export
                 df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
                 csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
@@ -1827,7 +1827,7 @@ try:
                 tally_grid_va = tally_grid_va.reset_index()
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
                 
-                # 8. 🛑 NEW: Format the Pinned Total Row so AgGrid can freeze it
+                # 8.  NEW: Format the Pinned Total Row so AgGrid can freeze it
                 pinned_total_va = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_va.get(col, 0)
@@ -1838,7 +1838,7 @@ try:
                 # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
                 
-                # 🛑 NEW: Custom sort function to force AgGrid to read text as numbers
+                #  NEW: Custom sort function to force AgGrid to read text as numbers
                 numeric_sort_va = JsCode("""
                 function(a, b) {
                     var numA = (a === "" || a === null) ? 0 : Number(a);
@@ -1858,7 +1858,7 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
-                # 🛑 NEW: Added the 'comparator' parameter to the Total column
+                #  NEW: Added the 'comparator' parameter to the Total column
                 gb_va.configure_column(
                     "Total", pinned='left', 
                     width=65, minWidth=65, 
@@ -1872,7 +1872,7 @@ try:
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
                 
-                # 🛑 NEW: Make the TOTAL row bold with a slight background color
+                #  NEW: Make the TOTAL row bold with a slight background color
                 bold_total_row_va = JsCode("""
                 function(params) {
                     if (params.data.Municipality === 'TOTAL') {
@@ -1882,7 +1882,7 @@ try:
                 """)
                 gridOptions_va['getRowStyle'] = bold_total_row_va
                 
-                # 🛑 THE BRUTE FORCE CSS FIX 🛑
+                #  THE BRUTE FORCE CSS FIX 
                 grid_css = {
                     ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
                     ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
@@ -1896,12 +1896,12 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True  # 🛑 NEW: Required to run the bolding script!
+                    allow_unsafe_jscode=True  #  NEW: Required to run the bolding script!
                 )
 
                 # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
                 st.markdown("<br>", unsafe_allow_html=True)
-                # 🛑 NEW: Stitch the pinned row back onto the data for the CSV export
+                #  NEW: Stitch the pinned row back onto the data for the CSV export
                 df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
                 csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
@@ -2182,10 +2182,10 @@ try:
                     df_muni_total = df_muni.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
                     df_muni_total = df_muni_total.sort_values('Grand total doses administered', ascending=True)
                     
-                    # 🛑 Added text_auto='.0f' here:
+                    #  Added text_auto='.0f' here:
                     fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', text_auto='.0f', color_discrete_sequence=['#1E88E5', '#F4511E'])
                     
-                    # 🛑 Added this block to push the numbers outside the bars:
+                    #  Added this block to push the numbers outside the bars:
                     fig_muni.update_traces(
                         textfont=dict(size=12),
                         textposition="outside", 
@@ -2194,7 +2194,7 @@ try:
                     
                     # Dynamic height to accommodate all municipalities comfortably
                     chart_height = max(400, len(df_muni_total) * 40)
-                    # 🛑 Also increased the right margin (r=40) so labels don't get cut off
+                    #  Also increased the right margin (r=40) so labels don't get cut off
                     fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=40, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
                     st.plotly_chart(fig_muni, use_container_width=True)
                 else:
@@ -2254,7 +2254,7 @@ try:
                     gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                     gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
                     
-                    # 🛑 Apply the specific program color (Blue for MR, Orange for Vit A)
+                    #  Apply the specific program color (Blue for MR, Orange for Vit A)
                     gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, comparator=numeric_sort)
                     
                     gridOptions_vt = gb_vt.build()
@@ -2403,7 +2403,7 @@ try:
                 # 2. Build the AgGrid Configuration
                 gb_recon = GridOptionsBuilder.from_dataframe(df_recon)
                 
-                # 🛑 FIX: Apply bold styling directly to ALL cells in the TOTAL row
+                #  FIX: Apply bold styling directly to ALL cells in the TOTAL row
                 bold_total_cells = JsCode("""
                 function(params) {
                     if (params.data && params.data.Municipality === 'TOTAL') {
@@ -2413,7 +2413,7 @@ try:
                 }
                 """)
                 
-                # 🛑 FIX: Added 'flex=1' and 'minWidth=100' so columns dynamically stretch to fill blank space
+                #  FIX: Added 'flex=1' and 'minWidth=100' so columns dynamically stretch to fill blank space
                 gb_recon.configure_default_column(
                     sortable=True, filter=False, resizable=True, 
                     minWidth=100, flex=1, suppressMenu=True,
@@ -2426,7 +2426,7 @@ try:
                     sortable=True, filter=True, suppressMenu=False
                 )
                 
-                # 🛑 FIX: Make sure the backlog logic doesn't erase the bold font on the TOTAL row
+                #  FIX: Make sure the backlog logic doesn't erase the bold font on the TOTAL row
                 highlight_backlog = JsCode("""
                 function(params) {
                     var val = Number(params.value);
@@ -2605,7 +2605,7 @@ try:
                 # 7. Detailed Regional Coverage Table
                 st.markdown("#### 📋 Regional Coverage Breakdown")
                 if not df_targets.empty:
-                    # 🛑 FIX: Baguio City is an HUC, not a Province. 
+                    #  FIX: Baguio City is an HUC, not a Province. 
                     # We will explicitly grab all 7 CAR locations by name instead of relying on the 'Level' column.
                     car_areas = ['Abra', 'Apayao', 'Benguet', 'Baguio City', 'City Of Baguio', 'Ifugao', 'Kalinga', 'Mountain Province', 'Mt. Province']
                     df_prov_targets = df_targets[df_targets['Location'].str.title().isin(car_areas)].copy()
@@ -2716,7 +2716,7 @@ try:
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 🛑 FIX: Custom Row Centering Logic
+                    #  FIX: Custom Row Centering Logic
                     prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location').to_dict('records')
                     
                     # ROW 1: First 4 cards
@@ -2810,13 +2810,13 @@ try:
                 # 🗺️ REGIONAL CHOROPLETH MAP
                 # ==========================================
                 st.divider()
-                st.markdown("#### 🗺️ Regional Coverage Map")
+                st.markdown("#### Regional Coverage Map")
                 st.caption(f"Visualizing {poster_type} coverage across CAR")
                 
                 car_geo = fetch_car_geojson()
                 
                 if car_geo and prov_data:
-                    import plotly.graph_objects as go # 🛑 FIX: Guarantee 'go' is imported for this tab
+                    import plotly.graph_objects as go #  FIX: Guarantee 'go' is imported for this tab
                     
                     # Convert the poster dictionary back into a DataFrame for Plotly
                     df_map = pd.DataFrame(prov_data)
@@ -2870,7 +2870,7 @@ try:
                         selector=dict(type='choroplethmapbox')
                     )
                     
-                    # 🛑 FIX: Use .tolist() and a safe universal font to force Plotly to render the text
+                    #  FIX: Use .tolist() and a safe universal font to force Plotly to render the text
                     fig_map_car.add_trace(go.Scattermapbox(
                         lat=df_map['lat'].tolist(),
                         lon=df_map['lon'].tolist(),
