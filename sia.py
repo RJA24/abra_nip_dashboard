@@ -1194,7 +1194,7 @@ try:
             # 2. Create 5 Distinct Sub-Tabs
             tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
                 "💉  Projected MR Targets", "💊 Projected Vit A Targets", 
-                "📊 Actual MR Targets", "📈 Actual Vit A Targets", 
+                "📊 Actual MR Targets", " Actual Vit A Targets", 
                 "⚖️ Target Comparison"
             ])
             
@@ -1491,7 +1491,7 @@ try:
         st.divider()
         
         # --- MR CHARTS & ANALYTICS ---
-        st.markdown("#### 📈 Accomplishment Analytics")
+        st.markdown("####  Accomplishment Analytics")
         if not df_mr_filtered.empty:
             geo_col = 'Municipality' if view_mode != "Specific Municipality" else 'Barangay'
             
@@ -1536,10 +1536,10 @@ try:
                 st.plotly_chart(fig_gender, use_container_width=True)
                 
             # ==========================================
-            # 📅 DAILY TALLY SHEET GRID (MR) - AGGRID
+            #  DAILY TALLY SHEET GRID (MR) - AGGRID
             # ==========================================
             st.divider()
-            st.markdown("#### 📅 Daily Tally Sheet")
+            st.markdown("#### Daily Tally Sheet")
             st.caption("MR") 
                         
             if not df_mr_filtered.empty and 'Vaccination Date' in df_mr_filtered.columns:
@@ -1736,7 +1736,7 @@ try:
         st.divider()
 
         # --- VITAMIN A CHARTS & ANALYTICS ---
-        st.markdown("#### 📈 Accomplishment Analytics")
+        st.markdown("####  Accomplishment Analytics")
         if not df_vita_filtered.empty:
             geo_col_va = 'Municipality' if view_mode != "Specific Municipality" else 'Barangay'
             
@@ -1780,10 +1780,10 @@ try:
                 st.plotly_chart(fig_gender_va, use_container_width=True)
 
             # ==========================================
-            # 📅 DAILY TALLY SHEET GRID (VIT A) - AGGRID
+            #  DAILY TALLY SHEET GRID (VIT A) - AGGRID
             # ==========================================
             st.divider()
-            st.markdown("#### 📅 Daily Tally Sheet")
+            st.markdown("####  Daily Tally Sheet")
             st.caption("Vitamin A")
                         
             if not df_vita_filtered.empty and 'Vaccination Date' in df_vita_filtered.columns:
@@ -2111,7 +2111,7 @@ try:
     # VACCTRACK PROVINCE TAB
     # ==========================================
     with tab_vt_prov:
-        st.markdown(f"### 📈 VaccTrack Analytics (Province): {location_label}")
+        st.markdown(f"###  VaccTrack Analytics (Province): {location_label}")
         
         df_vt_raw = fetch_vacctrack_data()
         
@@ -2203,7 +2203,7 @@ try:
                     
                 # 6. AgGrid Daily Tally Sheets (Separated MR and Vit A)
                 st.divider()
-                st.markdown("#### 📅 VaccTrack Daily Tally Sheets")
+                st.markdown("####  VaccTrack Daily Tally Sheets")
                 
                 def build_vt_tally(df_subset, prog_name, color_hex):
                     if df_subset.empty:
