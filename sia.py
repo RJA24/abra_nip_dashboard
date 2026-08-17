@@ -1421,7 +1421,7 @@ try:
             # SUB-TAB 5: COMPARISON (PROJECTED VS ACTUAL)
             # ==========================================
             with tab_compare:
-                st.markdown(f"#### ⚖️ Target Variance Analysis: {location_label}")
+                st.markdown(f"####  Target Variance Analysis: {location_label}")
                 st.write("Compare the baseline Projected population against the Actual RHU reported census to identify geographic shortfalls or over-allocations.")
                 
                 comp_prog = st.radio("Select Program for Comparison:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
@@ -1688,7 +1688,7 @@ try:
                 csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
                 st.download_button(
-                    label="📥 Download MR Tally Sheet (CSV)",
+                    label=" Download MR Tally Sheet (CSV)",
                     data=csv_tally_mr,
                     file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
@@ -1697,12 +1697,12 @@ try:
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
-            st.markdown("#### 📥 Raw Data Export")
+            st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw MR Accomplishment Data"):
                 st.dataframe(df_mr_filtered, use_container_width=True)
                 csv_mr = df_mr_filtered.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Download MR Data (CSV)",
+                    label=" Download MR Data (CSV)",
                     data=csv_mr,
                     file_name=f"MR_Accomplishment_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv"
@@ -1932,7 +1932,7 @@ try:
                 csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
                 st.download_button(
-                    label="📥 Download Vit A Tally Sheet (CSV)",
+                    label=" Download Vit A Tally Sheet (CSV)",
                     data=csv_tally_va,
                     file_name=f"VitA_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv",
@@ -1941,12 +1941,12 @@ try:
             else:
                 st.info("Awaiting vaccination date records to generate the tally board.")
             
-            st.markdown("#### 📥 Raw Data Export")
+            st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
                 st.dataframe(df_vita_filtered, use_container_width=True)
                 csv_va = df_vita_filtered.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Download Vitamin A Data (CSV)",
+                    label=" Download Vitamin A Data (CSV)",
                     data=csv_va,
                     file_name=f"VitA_Accomplishment_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
                     mime="text/csv"
@@ -2017,7 +2017,7 @@ try:
         # RAW DATA EXPORT: DEFERRALS & REFUSALS
         # ==========================================
         st.divider()
-        st.markdown("#### 📥 Raw Data Export")
+        st.markdown("####  Raw Data Export")
         
         # We use sub-tabs here to keep the UI clean
         raw_tab_mr, raw_tab_va = st.tabs(["MR Deferrals & Refusals", "Vit A Deferrals & Refusals"])
@@ -2309,7 +2309,7 @@ try:
                     st.markdown("<br>", unsafe_allow_html=True)
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
                     csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
-                    st.download_button(label=f"📥 Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
+                    st.download_button(label=f" Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
                     st.markdown("<br>", unsafe_allow_html=True)
 
                 if 'Vaccination Date' in df_vt.columns and 'Municipality' in df_vt.columns:
@@ -2324,10 +2324,10 @@ try:
                     st.info("Awaiting date and municipality data to generate the tally sheets.")
 
                 # ==========================================
-                # ⚖️ VACCTRACK VS RHU TRACKER RECONCILIATION
+                #  VACCTRACK VS RHU TRACKER RECONCILIATION
                 # ==========================================
                 st.divider()
-                st.markdown("#### ⚖️ Data Reconciliation: VaccTrack vs. RHU Tracker")
+                st.markdown("####  Data Reconciliation: VaccTrack vs. RHU Tracker")
                 st.write("Compare the official VaccTrack database against your live RHU submitted Google Sheets data to identify encoding backlogs by program.")
                 
                 # Fetch live tracker data
@@ -2508,7 +2508,7 @@ try:
                 df_csv_recon = pd.concat([pd.DataFrame([pinned_recon_total]), df_recon], ignore_index=True)
                 csv_recon = df_csv_recon.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Download Reconciliation Report (CSV)", 
+                    label=" Download Reconciliation Report (CSV)", 
                     data=csv_recon, 
                     file_name=f"VaccTrack_Reconciliation_{location_label.replace(', ', '_')}.csv", 
                     mime="text/csv", 
@@ -2516,11 +2516,11 @@ try:
                 )
                 
                 # 7. RAW DATA EXPORT
-                st.markdown("#### 📥 Cleaned Raw Data Export")
+                st.markdown("####  Cleaned Raw Data Export")
                 with st.expander("View & Download Cleaned VaccTrack Data"):
                     st.dataframe(df_vt, use_container_width=True)
                     csv_raw_vt = df_vt.to_csv(index=False).encode('utf-8')
-                    st.download_button(label="📥 Download Cleaned VaccTrack Data (CSV)", data=csv_raw_vt, file_name=f"VaccTrack_Cleaned_{location_label.replace(', ', '_')}.csv", mime="text/csv", key=f"dl_vt_raw_{location_label}")
+                    st.download_button(label=" Download Cleaned VaccTrack Data (CSV)", data=csv_raw_vt, file_name=f"VaccTrack_Cleaned_{location_label.replace(', ', '_')}.csv", mime="text/csv", key=f"dl_vt_raw_{location_label}")
 
     # ==========================================
     # VACCTRACK REGION TAB (CAR)
