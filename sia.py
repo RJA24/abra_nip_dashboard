@@ -678,7 +678,7 @@ def fetch_vacctrack_data():
 # THE DASHBOARD (Tabs and Filters)
 # ==========================================
 
-tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Province", "VaccTrack Region", "VaccTrack LGU", "Admin Panel"]
+tab_names = ["Executive Summary", "Target Overview", "MR Accomplishment", "Vit A Accomplishment", "Deferral & Refusal Analysis", "VaccTrack Abra", "VaccTrack Region", "VaccTrack LGU", "Admin Panel"]
 tabs = st.tabs(tab_names)
 tab_total, tab_target, tab_mr, tab_vita, tab_def_ref, tab_vt_prov, tab_vt_reg, tab_vt_lgu, tab_admin = tabs
 
@@ -2135,7 +2135,7 @@ try:
     # VACCTRACK PROVINCE TAB
     # ==========================================
     with tab_vt_prov:
-        st.markdown(f"###  VaccTrack Analytics (Province): {location_label}")
+        st.markdown(f"###  VaccTrack Analytics: {location_label}")
         
         df_vt_raw = fetch_vacctrack_data()
         
