@@ -135,7 +135,7 @@ def render_footer():
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="💉", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -1001,13 +1001,13 @@ try:
                 st.plotly_chart(fig_geo_cov, use_container_width=True)
                 
                 # ==========================================
-                # 🗺️ CHOROPLETH COVERAGE MAP
+                #  CHOROPLETH COVERAGE MAP
                 # ==========================================
                 # ONLY show the map if looking at the whole province
                 if view_mode == "All Municipalities (Abra)":
 
                     st.divider()
-                    st.markdown(f"#### 🗺️ Provincial Coverage Map")
+                    st.markdown(f"#### Provincial Coverage Map")
                     st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     
                     abra_geo = fetch_abra_geojson()
@@ -1218,9 +1218,9 @@ try:
 
             # 2. Create 5 Distinct Sub-Tabs
             tab_nat_mr, tab_nat_va, tab_act_mr, tab_act_va, tab_compare = st.tabs([
-                "💉  Projected MR Targets", "💊 Projected Vit A Targets", 
-                "📊 Actual MR Targets", " Actual Vit A Targets", 
-                "⚖️ Target Comparison"
+                "Projected MR Targets", "Projected Vit A Targets", 
+                "Actual MR Targets", " Actual Vit A Targets", 
+                "Target Comparison"
             ])
             
             # ==========================================
@@ -1469,7 +1469,7 @@ try:
     # MR ACCOMPLISHMENT TAB
     # ==========================================
     with tab_mr:
-        st.markdown(f"### 💉 MR Accomplishment & Coverage: {location_label}")
+        st.markdown(f"###  MR Accomplishment & Coverage: {location_label}")
         
         df_mr_live, _ = fetch_live_accomplishments()
         
@@ -1714,7 +1714,7 @@ try:
     # VITAMIN A ACCOMPLISHMENT TAB
     # ==========================================
     with tab_vita:
-        st.markdown(f"### 💊 Vitamin A Accomplishment: {location_label}")
+        st.markdown(f"###  Vitamin A Accomplishment: {location_label}")
         
         _, df_vita_live = fetch_live_accomplishments()
         
@@ -1986,7 +1986,7 @@ try:
                 st.info(f"✅ No {title.lower()} have been recorded for this location yet.")
 
         # Create Sub-Tabs for MR and Vit A
-        tab_mr_reasons, tab_va_reasons = st.tabs(["💉 MR Reasons", "💊 Vit A Reasons"])
+        tab_mr_reasons, tab_va_reasons = st.tabs([" MR Reasons", " Vit A Reasons"])
         
         with tab_mr_reasons:
             if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
@@ -2182,8 +2182,8 @@ try:
                 total_ref = df_vt['Total number of Refusal today'].sum() if 'Total number of Refusal today' in df_vt.columns else 0
                 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("💉 Total MR Administered", f"{total_mr:,.0f}")
-                k2.metric("💊 Total Vit A Administered", f"{total_va:,.0f}")
+                k1.metric(" Total MR Administered", f"{total_mr:,.0f}")
+                k2.metric(" Total Vit A Administered", f"{total_va:,.0f}")
                 k3.metric("🟨 Total Deferrals", f"{total_def:,.0f}")
                 k4.metric("🟥 Total Refusals", f"{total_ref:,.0f}")
                 
@@ -2399,14 +2399,14 @@ try:
                 c_recon_mr, c_recon_va = st.columns(2)
                 
                 with c_recon_mr:
-                    st.markdown("##### 💉 Measles-Rubella (MR) Metrics")
+                    st.markdown("#####  Measles-Rubella (MR) Metrics")
                     cm1, cm2, cm3 = st.columns(3)
                     cm1.metric("RHU MR Doses", f"{df_recon['Tracker MR'].sum():,.0f}")
                     cm2.metric("VaccTrack MR Doses", f"{df_recon['VaccTrack MR'].sum():,.0f}")
                     cm3.metric("MR Backlog", f"{df_recon['MR Backlog'].sum():,.0f}", delta_color="inverse")
                     
                 with c_recon_va:
-                    st.markdown("##### 💊 Vitamin A Metrics")
+                    st.markdown("#####  Vitamin A Metrics")
                     cv1, cv2, cv3 = st.columns(3)
                     cv1.metric("RHU Vit A Doses", f"{df_recon['Tracker Vit A'].sum():,.0f}")
                     cv2.metric("VaccTrack Vit A Doses", f"{df_recon['VaccTrack Vit A'].sum():,.0f}")
@@ -2526,7 +2526,7 @@ try:
     # VACCTRACK REGION TAB (CAR)
     # ==========================================
     with tab_vt_reg:
-        st.markdown("### 🗺️ Regional VaccTrack Analytics (CAR)")
+        st.markdown("### Regional VaccTrack Analytics (CAR)")
         st.write("Compare official VaccTrack accomplishment data across all provinces in the Cordillera Administrative Region.")
         
         df_vt_raw = fetch_vacctrack_data()
@@ -2584,9 +2584,9 @@ try:
             
             # 5. Top Regional KPI Cards
             rk1, rk2, rk3, rk4 = st.columns(4)
-            rk1.metric("💉 Regional MR Doses", f"{total_mr_reg:,.0f}", f"CAR Target: {reg_target_mr:,.0f}" if reg_target_mr > 0 else "Target Missing", delta_color="off")
+            rk1.metric(" Regional MR Doses", f"{total_mr_reg:,.0f}", f"CAR Target: {reg_target_mr:,.0f}" if reg_target_mr > 0 else "Target Missing", delta_color="off")
             rk2.metric("MR Regional Coverage", f"{mr_reg_cov:.1f}%")
-            rk3.metric("💊 Regional Vit A Doses", f"{total_va_reg:,.0f}", f"CAR Target: {reg_target_va:,.0f}" if reg_target_va > 0 else "Target Missing", delta_color="off")
+            rk3.metric(" Regional Vit A Doses", f"{total_va_reg:,.0f}", f"CAR Target: {reg_target_va:,.0f}" if reg_target_va > 0 else "Target Missing", delta_color="off")
             rk4.metric("Vit A Regional Coverage", f"{va_reg_cov:.1f}%")
             
             st.divider()
@@ -2837,7 +2837,7 @@ try:
                             st.markdown(html_card, unsafe_allow_html=True)
 
             # ==========================================
-            # 🗺️ REGIONAL CHOROPLETH MAP
+            #  REGIONAL CHOROPLETH MAP
             # ==========================================
             st.divider()
             st.markdown("#### Regional Coverage Map")
