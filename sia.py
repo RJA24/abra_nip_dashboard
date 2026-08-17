@@ -2230,7 +2230,13 @@ try:
                 
             if 'City/Municipality Name' in df_vt.columns:
                 df_vt['Municipality'] = df_vt['City/Municipality Name'].astype(str).str.replace(' (CAPITAL)', '', regex=False).str.strip().str.title()
-                df_vt['Municipality'] = df_vt['Municipality'].replace({'Pe?Arrubia': 'Peñarrubia', 'Penarrubia': 'Peñarrubia'})
+                
+                # FIX: Force VaccTrack's "City Of Baguio" to perfectly match the Target Database
+                df_vt['Municipality'] = df_vt['Municipality'].replace({
+                    'Pe?Arrubia': 'Peñarrubia', 
+                    'Penarrubia': 'Peñarrubia',
+                    'City Of Baguio': 'Baguio City'
+                })
             
             # 2. Filter by Sidebar Geographic View
             if view_mode == "Specific Municipality" and 'Municipality' in df_vt.columns:
@@ -3039,7 +3045,13 @@ try:
             # Clean Municipalities
             if 'City/Municipality Name' in df_vt_lgu.columns:
                 df_vt_lgu['Municipality'] = df_vt_lgu['City/Municipality Name'].astype(str).str.replace(' (CAPITAL)', '', regex=False).str.strip().str.title()
-                df_vt_lgu['Municipality'] = df_vt_lgu['Municipality'].replace({'Pe?Arrubia': 'Peñarrubia', 'Penarrubia': 'Peñarrubia'})
+                
+                # FIX: Force VaccTrack's "City Of Baguio" to perfectly match the Target Database's "Baguio City"
+                df_vt_lgu['Municipality'] = df_vt_lgu['Municipality'].replace({
+                    'Pe?Arrubia': 'Peñarrubia', 
+                    'Penarrubia': 'Peñarrubia',
+                    'City Of Baguio': 'Baguio City'
+                })
             
             # Filter VaccTrack Data to the selected province
             df_vt_filtered = df_vt_lgu[df_vt_lgu['Province'] == selected_car_prov].copy()
