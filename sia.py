@@ -2017,34 +2017,43 @@ try:
         # RAW DATA EXPORT: DEFERRALS & REFUSALS
         # ==========================================
         st.divider()
-        st.markdown("####  Raw Data Export")
+        st.markdown("#### Raw Data Export")
         
-        # We use sub-tabs here to keep the UI clean
+        # Sub-tabs for clean organization
         raw_tab_mr, raw_tab_va = st.tabs(["MR Deferrals & Refusals", "Vit A Deferrals & Refusals"])
         
         with raw_tab_mr:
             if not df_mr_live.empty:
-                # 1. Apply Location Filter
+                # Apply location filter based on the current view mode
                 if view_mode == "All Municipalities (Abra)":
                     df_mr_raw = df_mr_live[df_mr_live['Municipality'].isin(abra_munis)].copy()
                 else:
                     df_mr_raw = df_mr_live[df_mr_live['Municipality'] == selected_muni].copy()
                 
-                # 2. Filter only rows that have a Deferral or Refusal Reason
-                reason_cols = [c for c in df_mr_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
-                if reason_cols:
-                    # FIX: Convert floats/NaNs to empty strings before stripping
-                    mask = df_mr_raw[reason_cols].fillna('').astype(str).apply(lambda x: x.str.strip() != '')
-                    df_mr_def_only = df_mr_raw[mask.any(axis=1)]
+                # Identify columns that track MR deferrals or refusals
+                # This includes C1-C23 reason columns and any column with 'Deferral' or 'Refusal'
+                mr_prefixes = tuple([f"C{i} " for i in range(1, 24)])
+                mr_reason_cols = [
+                    c for c in df_mr_raw.columns 
+                    if str(c).startswith(mr_prefixes) or 'Deferral' in str(c) or 'Refusal' in str(c)
+                ]
+                
+                if mr_reason_cols:
+                    # Convert these specific columns to numeric to safely calculate the sum
+                    temp_mr_numeric = df_mr_raw[mr_reason_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    
+                    # Keep only the rows where the sum of deferrals/refusals is greater than zero
+                    mask_mr = temp_mr_numeric.sum(axis=1) > 0
+                    df_mr_def_only = df_mr_raw[mask_mr]
                 else:
-                    df_mr_def_only = df_mr_raw 
+                    df_mr_def_only = pd.DataFrame() 
                 
                 if not df_mr_def_only.empty:
                     with st.expander("View & Download Raw MR Deferral/Refusal Data", expanded=False):
                         st.dataframe(df_mr_def_only, use_container_width=True)
                         csv_mr = df_mr_def_only.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="⬇️ Download MR Data (CSV)",
+                            label="Download MR Data (CSV)",
                             data=csv_mr,
                             file_name=f"MR_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
                             mime="text/csv",
@@ -2057,27 +2066,35 @@ try:
 
         with raw_tab_va:
             if not df_vita_live.empty:
-                # 1. Apply Location Filter
+                # Apply location filter based on the current view mode
                 if view_mode == "All Municipalities (Abra)":
                     df_va_raw = df_vita_live[df_vita_live['Municipality'].isin(abra_munis)].copy()
                 else:
                     df_va_raw = df_vita_live[df_vita_live['Municipality'] == selected_muni].copy()
                 
-                # 2. Filter only rows that have a Deferral or Refusal Reason
-                reason_cols_va = [c for c in df_va_raw.columns if 'Reason' in c or 'Deferral' in c or 'Refusal' in c]
-                if reason_cols_va:
-                    # FIX: Convert floats/NaNs to empty strings before stripping
-                    mask_va = df_va_raw[reason_cols_va].fillna('').astype(str).apply(lambda x: x.str.strip() != '')
-                    df_va_def_only = df_va_raw[mask_va.any(axis=1)]
+                # Identify columns that track Vit A deferrals or refusals
+                # This includes VIT reason columns and any column with 'Deferral' or 'Refusal'
+                va_reason_cols = [
+                    c for c in df_va_raw.columns 
+                    if str(c).startswith('VIT') or 'Deferral' in str(c) or 'Refusal' in str(c)
+                ]
+                
+                if va_reason_cols:
+                    # Convert these specific columns to numeric to safely calculate the sum
+                    temp_va_numeric = df_va_raw[va_reason_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+                    
+                    # Keep only the rows where the sum of deferrals/refusals is greater than zero
+                    mask_va = temp_va_numeric.sum(axis=1) > 0
+                    df_va_def_only = df_va_raw[mask_va]
                 else:
-                    df_va_def_only = df_va_raw 
+                    df_va_def_only = pd.DataFrame() 
 
                 if not df_va_def_only.empty:
                     with st.expander("View & Download Raw Vit A Deferral/Refusal Data", expanded=False):
                         st.dataframe(df_va_def_only, use_container_width=True)
                         csv_va = df_va_def_only.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="⬇️ Download Vit A Data (CSV)",
+                            label="Download Vit A Data (CSV)",
                             data=csv_va,
                             file_name=f"VitA_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
                             mime="text/csv",
@@ -2087,50 +2104,6 @@ try:
                     st.info(f"No Vit A deferrals or refusals recorded yet for {location_label}.")
             else:
                 st.warning("Vit A Accomplishment data is empty.")
-                
-        with tab_va_reasons:
-            if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
-                df_va_filtered = df_vita_live.copy()
-                
-                # Apply Geographic Filter
-                if view_mode == "All Municipalities (Abra)":
-                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(abra_munis)]
-                elif view_mode == "Specific Municipality":
-                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'] == selected_muni]
-                
-                # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
-                va_def_prefixes = ('VIT1 ', 'VIT3 ', 'VIT4 ', 'VIT5 ')
-                va_ref_prefixes = ('VIT2 ')
-                
-                reason_cols_va_def = [col for col in df_va_filtered.columns if str(col).startswith(va_def_prefixes)]
-                reason_cols_va_ref = [col for col in df_va_filtered.columns if str(col).startswith(va_ref_prefixes)]
-                
-                # Catch any extra VIT columns
-                all_vit = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
-                missed = [c for c in all_vit if c not in reason_cols_va_def and c not in reason_cols_va_ref]
-                if missed:
-                    reason_cols_va_ref.extend(missed) 
-                
-                # Plot Full Width Charts
-                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') 
-                st.markdown("<br>", unsafe_allow_html=True)
-                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  
-
-                # Moved the Export block INSIDE the if-statement so it doesn't crash on empty data!
-                st.divider()
-                st.markdown("#### Raw Data Export")
-                with st.expander("View & Download Raw Vit A Deferral/Refusal Data"):
-                    st.dataframe(df_va_filtered, use_container_width=True)
-                    csv_va_def = df_va_filtered.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="Download Vit A Data (CSV)",
-                        data=csv_va_def,
-                        file_name=f"VitA_Deferrals_Refusals_{location_label.replace(', ', '_')}.csv",
-                        mime="text/csv",
-                        key="dl_va_def"
-                    )
-            else:
-                st.info("Awaiting Gsheet Sync to populate analytics.")
 
     # ==========================================
     # VACCTRACK PROVINCE TAB
