@@ -3259,17 +3259,26 @@ try:
             # Fetch EXPECTED Barangays from Target Database
             if not df_t_clean.empty:
                 if selected_car_prov == 'Baguio City':
-                    mask_brgy = (df_t_clean['Parent_Municipality'] == 'Baguio City') | (df_t_clean['Parent_Province'] == 'Baguio City')
-                    df_expected = df_t_clean[mask_brgy & (df_t_clean['Location'] != 'Baguio City')].copy()
+                    # FIX: Use the '14303' prefix to reliably grab all 129 Baguio districts, bypassing empty Parent labels
+                    if 'Code' in df_t_clean.columns:
+                        mask_code = df_t_clean['Code'].astype(str).str.startswith('14303')
+                        mask_not_parent = ~df_t_clean['Location'].str.contains('Baguio City', na=False, case=False)
+                        df_expected = df_t_clean[mask_code & mask_not_parent].copy()
+                    else:
+                        # Fallback if Code is missing
+                        mask_brgy = (df_t_clean.get('Parent_Municipality', pd.Series(dtype=str)) == 'Baguio City') | (df_t_clean.get('Parent_Province', pd.Series(dtype=str)) == 'Baguio City')
+                        df_expected = df_t_clean[mask_brgy & (df_t_clean['Location'] != 'Baguio City')].copy()
+                        
                     df_expected['Municipality'] = 'Baguio City'
                 else:
+                    # Standard province filtering
                     mask_brgy = (df_t_clean['Parent_Province'] == selected_car_prov) & (df_t_clean['Level'].astype(str).str.contains('Barangay', case=False, na=False))
                     df_expected = df_t_clean[mask_brgy].copy()
                     df_expected['Municipality'] = df_expected['Parent_Municipality'].astype(str).str.title()
                     
                 df_expected = df_expected[['Municipality', 'Location', target_col]].rename(columns={'Location': 'Barangay', target_col: 'Target'})
                 
-                # Deduplicate in case of weird database entries
+                # Deduplicate in case of duplicate database entries
                 df_expected = df_expected.groupby(['Municipality', 'Barangay'])['Target'].max().reset_index()
             else:
                 df_expected = pd.DataFrame(columns=['Municipality', 'Barangay', 'Target'])
@@ -3286,7 +3295,7 @@ try:
                     df_brgy_summary = df_vt_agg.copy()
                     df_brgy_summary['Target'] = 0
                     
-                # Fill NAs with zero for locations that have targets but haven't reported yet
+                # Fill NAs with zero for locations that have targets but have not reported yet
                 df_brgy_summary['Target'] = df_brgy_summary['Target'].fillna(0)
                 df_brgy_summary['Total Doses'] = df_brgy_summary['Total Doses'].fillna(0)
                 for c in age_cols:
