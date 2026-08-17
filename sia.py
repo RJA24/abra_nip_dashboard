@@ -407,7 +407,6 @@ is_admin = st.session_state['user_role'] == "System Admin"
 # Automatically refresh the dashboard every 1 hour (3,600,000 ms)
 st_autorefresh(interval=3600000, limit=None, key="hourly_data_refresh")
 
-st.caption(f"🕒 Last Sync: {last_updated}")
 
 # ==========================================
 # CONTINUOUS SESSION TRACKING
@@ -488,7 +487,7 @@ with st.sidebar:
                 
             st.rerun()
             
-        st.caption(f"🕒 Last Sync: {last_updated}")
+    st.caption(f"🕒 Last Sync: {last_updated}")
 
 # --- DATA HELPER FUNCTIONS ---
 def clean_and_process_car_data(df, col_names):
