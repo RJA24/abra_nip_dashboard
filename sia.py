@@ -1227,7 +1227,7 @@ try:
             # SUB-TAB 1: PROJECTED MR
             # ==========================================
             with tab_nat_mr:
-                st.markdown(f"#### PROJECTED MR Breakdown: {location_label} ({gender_filter})")
+                st.markdown(f"#### Projected MR Breakdown: {location_label} ({gender_filter})")
                 
                 t_col = 'MR_6-59m_Total' if gender_filter == "Total (Both)" else 'MR_6-59m_M' if gender_filter == "Male" else 'MR_6-59m_F'
                 c1_col = 'MR_6-12m_Total' if gender_filter == "Total (Both)" else 'MR_6-12m_M' if gender_filter == "Male" else 'MR_6-12m_F'
