@@ -395,6 +395,7 @@ if not st.session_state.get('logged_in', False):
 # MAIN DASHBOARD CODE (Only runs if logged in)
 # ==========================================
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
+st.caption(f"🕒 Last Sync: {last_updated}")
 
 @st.cache_data(ttl="15s")
 def get_last_updated_time():
