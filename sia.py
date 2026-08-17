@@ -947,11 +947,11 @@ try:
                 if view_mode == "All Municipalities (Abra)":
                     vars_to_melt = ['MR Coverage %', 'Vit A Coverage %']
                     color_seq = ['#1E88E5', '#F4511E']
-                    bar_multiplier = 40  # 📉 REDUCED: Was 70. This makes the overall chart much shorter!
+                    bar_multiplier = 40  #  REDUCED: Was 70. This makes the overall chart much shorter!
                 else:
                     vars_to_melt = ['MR Coverage %']
                     color_seq = ['#1E88E5']
-                    bar_multiplier = 25  # 📉 REDUCED: Was 35. 
+                    bar_multiplier = 25  #  REDUCED: Was 35. 
                     
                 df_melt_geo = df_geo_summary.melt(id_vars=[geo_col], value_vars=vars_to_melt, var_name='Program', value_name='Coverage %')
                 
@@ -978,7 +978,7 @@ try:
                     hover_data={"Doses to hit 95% Target": ":,.0f"} #  ADDED DEFICIT TO HOVER
                 )
                 
-                # 📉 REDUCED: Shrunk fonts from 16 to 11 so they fit beautifully on the thinner bars
+                #  REDUCED: Shrunk fonts from 16 to 11 so they fit beautifully on the thinner bars
                 fig_geo_cov.update_traces(
                     textfont=dict(size=11),
                     insidetextfont=dict(size=11),
@@ -1958,7 +1958,7 @@ try:
     # DEFERRAL & REFUSAL ANALYSIS TAB
     # ==========================================
     with tab_def_ref:
-        st.markdown(f"### 📉 Deferral and Refusal Analysis: {location_label}")
+        st.markdown(f"###  Deferral and Refusal Analysis: {location_label}")
         st.write("Deep dive into the specific reasons for missed vaccination targets based on RHU reports.")
         
         df_mr_live, df_vita_live = fetch_live_accomplishments()
@@ -2592,7 +2592,7 @@ try:
             st.divider()
             
             # 6. Regional Coverage by Province (Grouped Bar Chart)
-            st.markdown("#### 📊 Coverage % by Province")
+            st.markdown("####  Coverage % by Province")
             if 'Province' in df_vt_reg.columns and 'Response Type' in df_vt_reg.columns and not df_targets.empty:
                 
                 # Calculate raw doses by province first
