@@ -2328,7 +2328,7 @@ try:
                 # ==========================================
                 st.divider()
                 st.markdown("####  Data Reconciliation: VaccTrack vs. RHU Tracker")
-                st.write("Compare the official VaccTrack database against your live RHU submitted Google Sheets data to identify encoding backlogs by program.")
+                st.write("Compare the official VaccTrack database against the live RHU submitted Google Sheets data to identify encoding backlogs by program.")
                 
                 # Fetch live tracker data
                 df_mr_live, df_vita_live = fetch_live_accomplishments()
