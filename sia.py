@@ -566,9 +566,11 @@ def fetch_targets_from_supabase():
                 # FIX: CLEAN TARGET LOCATIONS
                 # ==========================================
                 if 'Location' in df.columns:
-                    df['Location'] = df['Location'].astype(str).str.strip().str.title()
+                    # Pass the raw target locations through the master cleaner
+                    df['Location'] = standardize_geo_names(df['Location'])
+                    
+                    # Keep explicit overrides for completely different spellings
                     df['Location'] = df['Location'].replace({
-                        'Penarrubia': 'Peñarrubia', 
                         'Salapadan': 'Sallapadan',
                         'Licuan-Baay (Licuan)': 'Licuan-Baay'
                     })
@@ -613,20 +615,18 @@ def fetch_live_accomplishments():
             return pd.DataFrame(), pd.DataFrame()
             
         # ==========================================
-        #  CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
+        # CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
         # ==========================================
         if 'Barangay' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Barangay'])
-            # 🛑 FIX: Apply Title Case to live MR data so it perfectly matches the Target database!
-            df_mr['Barangay'] = df_mr['Barangay'].astype(str).str.strip().str.title()
+            df_mr['Barangay'] = standardize_geo_names(df_mr['Barangay'])
             
         if 'Vaccination Date' in df_mr.columns:
             df_mr = df_mr.dropna(subset=['Vaccination Date'])
             
         if 'Barangay' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Barangay'])
-            # 🛑 FIX: Apply Title Case to live Vit A data so it perfectly matches the Target database!
-            df_vita['Barangay'] = df_vita['Barangay'].astype(str).str.strip().str.title()
+            df_vita['Barangay'] = standardize_geo_names(df_vita['Barangay'])
             
         if 'Vaccination Date' in df_vita.columns:
             df_vita = df_vita.dropna(subset=['Vaccination Date'])
@@ -674,6 +674,49 @@ def fetch_vacctrack_data():
     except Exception as e:
         st.cache_data.clear()
         return pd.DataFrame()
+
+def standardize_geo_names(series):
+    """
+    Universally cleans and standardizes geographic names to prevent 
+    Pandas merge failures due to typos, encoding glitches, or abbreviations.
+    """
+    # 1. Convert to string, remove outer spaces, and apply Title Case
+    s = series.astype(str).str.strip().str.title()
+    
+    # 2. Fix encoding glitches (tablets often replace an enye with a question mark)
+    s = s.str.replace('?', 'ñ', regex=False)
+    
+    # 3. Fix the awkward capitalization caused by .title() after a special character
+    s = s.str.replace('ñA', 'ña', regex=False)
+    s = s.str.replace('ñE', 'ñe', regex=False)
+    s = s.str.replace('ñI', 'ñi', regex=False)
+    s = s.str.replace('ñO', 'ño', regex=False)
+    s = s.str.replace('ñU', 'ñu', regex=False)
+    
+    # 4. Handle erratic "Pob" and "Poblacion" suffixes (e.g., Caupasan (Pob.) -> Caupasan)
+    # First, remove parentheticals entirely
+    s = s.str.replace(r'\s*\([Pp]ob.*?\)', '', regex=True, case=False)
+    
+    # Create masks to protect legitimate "Zone X Pob" and exact "Poblacion" names
+    mask_zone = s.str.contains(r'^Zone\s*\d+', regex=True, case=False)
+    mask_exact_pob = s.str.lower() == 'poblacion'
+    
+    # Strip trailing " Pob", " Pob.", or " Poblacion" from all other names
+    s.loc[~mask_zone & ~mask_exact_pob] = s.loc[~mask_zone & ~mask_exact_pob].str.replace(r'\s+Pob\.?$', '', regex=True, case=False)
+    s.loc[~mask_zone & ~mask_exact_pob] = s.loc[~mask_zone & ~mask_exact_pob].str.replace(r'\s+Poblacion$', '', regex=True, case=False)
+
+    # 5. Expand common Philippine local government abbreviations to official full names
+    s = s.str.replace(r'\bPob\.\b', 'Poblacion', regex=True)
+    s = s.str.replace(r'\bPob\b', 'Poblacion', regex=True)
+    s = s.str.replace(r'\bSta\.\b', 'Santa', regex=True)
+    s = s.str.replace(r'\bSta\b', 'Santa', regex=True)
+    s = s.str.replace(r'\bSto\.\b', 'Santo', regex=True)
+    s = s.str.replace(r'\bSto\b', 'Santo', regex=True)
+    
+    # Final cleanup of any accidental double spaces created during typing
+    s = s.str.replace('  ', ' ', regex=False)
+    
+    return s.str.strip()
 
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
@@ -3241,17 +3284,9 @@ try:
         if brgy_col:
                 df_brgy = df_vt_filtered.copy() if not df_vt_filtered.empty else pd.DataFrame()
                 
-                # Clean the barangay names to ensure clean grouping and perfect matching with the Target database
+                # Apply the master cleaner to ensure perfect matching with the Target database
                 if not df_brgy.empty:
-                    df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
-                    
-                    # FIX: Repair corrupted "ñ" characters that turned into "?" during data encoding
-                    df_brgy['Barangay'] = df_brgy['Barangay'].replace({
-                        'Ba?Acao': 'Bañacao',
-                        'Ba?acao': 'Bañacao',
-                        'Pe?Arrubia': 'Peñarrubia',
-                        'Pe?arrubia': 'Peñarrubia'
-                    })
+                    df_brgy['Barangay'] = standardize_geo_names(df_brgy[brgy_col])
                 
                 # Filter data based on the active campaign toggle at the top of the tab
                 if lgu_poster_type == "Measles-Rubella (MR)":
