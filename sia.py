@@ -3226,39 +3226,75 @@ try:
         if not brgy_col:
             brgy_col = next((c for c in df_vt_filtered.columns if 'Barangay' in str(c)), None)
             
-        if brgy_col and not df_vt_filtered.empty:
-            df_brgy = df_vt_filtered.copy()
+        if brgy_col:
+            df_brgy = df_vt_filtered.copy() if not df_vt_filtered.empty else pd.DataFrame()
             
             # Clean the barangay names to ensure clean grouping and perfect matching with the Target database
-            df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
+            if not df_brgy.empty:
+                df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
             
             # Filter data based on the active campaign toggle at the top of the tab
             if lgu_poster_type == "Measles-Rubella (MR)":
-                brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Measles-Rubella']
                 age_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+                if not df_brgy.empty:
+                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Measles-Rubella']
+                else:
+                    brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
             else:
-                brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Vitamin A']
                 age_cols = ['Vit A 6-11mos', 'Vit A 12-59mos']
+                if not df_brgy.empty:
+                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Vitamin A']
+                else:
+                    brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
                 
             brgy_cols = age_cols + ['Grand total doses administered']
             
+            # Group the VaccTrack data to get actual doses
             if not brgy_prog_data.empty:
-                # Group the data by Municipality and Barangay, then sum the doses
-                df_brgy_summary = brgy_prog_data.groupby(['Municipality', 'Barangay'])[brgy_cols].sum().reset_index()
+                df_vt_agg = brgy_prog_data.groupby(['Municipality', 'Barangay'])[brgy_cols].sum().reset_index()
+                df_vt_agg = df_vt_agg.rename(columns={'Grand total doses administered': 'Total Doses'})
+            else:
+                df_vt_agg = pd.DataFrame(columns=['Municipality', 'Barangay', 'Total Doses'] + age_cols)
                 
-                # Rename the grand total column for a cleaner user interface
-                df_brgy_summary = df_brgy_summary.rename(columns={'Grand total doses administered': 'Total Doses'})
-                
-                # Fetch targets and map them to the corresponding barangays
-                if not df_t_clean.empty:
-                    # Grab targets specific to the selected province to prevent cross-province name clashes
-                    mask_prov = (df_t_clean['Parent_Province'] == selected_car_prov) | (df_t_clean['Parent_Municipality'] == selected_car_prov)
-                    df_t_sub = df_t_clean[mask_prov]
-                    target_dict = df_t_sub.groupby('Location')[target_col].max().to_dict()
-                    df_brgy_summary['Target'] = df_brgy_summary['Barangay'].map(target_dict).fillna(0)
+            # Fetch EXPECTED Barangays from Target Database
+            if not df_t_clean.empty:
+                if selected_car_prov == 'Baguio City':
+                    mask_brgy = (df_t_clean['Parent_Municipality'] == 'Baguio City') | (df_t_clean['Parent_Province'] == 'Baguio City')
+                    df_expected = df_t_clean[mask_brgy & (df_t_clean['Location'] != 'Baguio City')].copy()
+                    df_expected['Municipality'] = 'Baguio City'
                 else:
+                    mask_brgy = (df_t_clean['Parent_Province'] == selected_car_prov) & (df_t_clean['Level'].astype(str).str.contains('Barangay', case=False, na=False))
+                    df_expected = df_t_clean[mask_brgy].copy()
+                    df_expected['Municipality'] = df_expected['Parent_Municipality'].astype(str).str.title()
+                    
+                df_expected = df_expected[['Municipality', 'Location', target_col]].rename(columns={'Location': 'Barangay', target_col: 'Target'})
+                
+                # Deduplicate in case of weird database entries
+                df_expected = df_expected.groupby(['Municipality', 'Barangay'])['Target'].max().reset_index()
+            else:
+                df_expected = pd.DataFrame(columns=['Municipality', 'Barangay', 'Target'])
+                
+            # Merge expected targets with actual doses (Outer Join guarantees 0-reporting barangays stay visible)
+            if not df_expected.empty or not df_vt_agg.empty:
+                if not df_expected.empty and not df_vt_agg.empty:
+                    df_brgy_summary = pd.merge(df_expected, df_vt_agg, on=['Municipality', 'Barangay'], how='outer')
+                elif not df_expected.empty:
+                    df_brgy_summary = df_expected.copy()
+                    df_brgy_summary['Total Doses'] = 0
+                    for c in age_cols: df_brgy_summary[c] = 0
+                else:
+                    df_brgy_summary = df_vt_agg.copy()
                     df_brgy_summary['Target'] = 0
                     
+                # Fill NAs with zero for locations that have targets but haven't reported yet
+                df_brgy_summary['Target'] = df_brgy_summary['Target'].fillna(0)
+                df_brgy_summary['Total Doses'] = df_brgy_summary['Total Doses'].fillna(0)
+                for c in age_cols:
+                    if c in df_brgy_summary.columns:
+                        df_brgy_summary[c] = df_brgy_summary[c].fillna(0)
+                    else:
+                        df_brgy_summary[c] = 0
+                        
                 # Calculate the Coverage Percentage safely
                 df_brgy_summary['Coverage %'] = df_brgy_summary.apply(
                     lambda row: (row['Total Doses'] / row['Target'] * 100) if row['Target'] > 0 else 0, axis=1
@@ -3296,7 +3332,7 @@ try:
                     key=f"dl_brgy_vt_{selected_car_prov}"
                 )
             else:
-                st.info(f"No {lgu_poster_type} records found at the barangay level for {selected_car_prov}.")
+                st.info(f"No targets or records found at the barangay level for {selected_car_prov}.")
         else:
             st.info("Barangay data column not found in the VaccTrack sheet.")
 
