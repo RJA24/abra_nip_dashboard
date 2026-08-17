@@ -3239,27 +3239,35 @@ try:
             brgy_col = next((c for c in df_vt_filtered.columns if 'Barangay' in str(c)), None)
             
         if brgy_col:
-            df_brgy = df_vt_filtered.copy() if not df_vt_filtered.empty else pd.DataFrame()
-            
-            # Clean the barangay names to ensure clean grouping and perfect matching with the Target database
-            if not df_brgy.empty:
-                df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
-            
-            # Filter data based on the active campaign toggle at the top of the tab
-            if lgu_poster_type == "Measles-Rubella (MR)":
-                age_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
-                if not df_brgy.empty:
-                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Measles-Rubella']
-                else:
-                    brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
-            else:
-                age_cols = ['Vit A 6-11mos', 'Vit A 12-59mos']
-                if not df_brgy.empty:
-                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Vitamin A']
-                else:
-                    brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
+                df_brgy = df_vt_filtered.copy() if not df_vt_filtered.empty else pd.DataFrame()
                 
-            brgy_cols = age_cols + ['Grand total doses administered']
+                # Clean the barangay names to ensure clean grouping and perfect matching with the Target database
+                if not df_brgy.empty:
+                    df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
+                    
+                    # FIX: Repair corrupted "ñ" characters that turned into "?" during data encoding
+                    df_brgy['Barangay'] = df_brgy['Barangay'].replace({
+                        'Ba?Acao': 'Bañacao',
+                        'Ba?acao': 'Bañacao',
+                        'Pe?Arrubia': 'Peñarrubia',
+                        'Pe?arrubia': 'Peñarrubia'
+                    })
+                
+                # Filter data based on the active campaign toggle at the top of the tab
+                if lgu_poster_type == "Measles-Rubella (MR)":
+                    age_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+                    if not df_brgy.empty:
+                        brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Measles-Rubella']
+                    else:
+                        brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
+                else:
+                    age_cols = ['Vit A 6-11mos', 'Vit A 12-59mos']
+                    if not df_brgy.empty:
+                        brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Vitamin A']
+                    else:
+                        brgy_prog_data = pd.DataFrame(columns=['Municipality', 'Barangay', 'Grand total doses administered'] + age_cols)
+                    
+                brgy_cols = age_cols + ['Grand total doses administered']
             
             # Group the VaccTrack data to get actual doses
             if not brgy_prog_data.empty:
