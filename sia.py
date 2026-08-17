@@ -3215,6 +3215,62 @@ try:
                     st.markdown(html_card, unsafe_allow_html=True)
 
     # ==========================================
+            # BARANGAY LEVEL ACCOMPLISHMENT TABLE
+            # ==========================================
+            st.divider()
+            st.markdown("#### Barangay Level Accomplishment")
+            st.write(f"Detailed breakdown of doses administered per barangay in {selected_car_prov}.")
+            
+            # Safely locate the exact name of the Barangay column from the raw Google Sheet data
+            brgy_col = next((c for c in df_vt_filtered.columns if 'Barangay' in str(c) and 'Name' in str(c)), None)
+            if not brgy_col:
+                brgy_col = next((c for c in df_vt_filtered.columns if 'Barangay' in str(c)), None)
+                
+            if brgy_col and not df_vt_filtered.empty:
+                df_brgy = df_vt_filtered.copy()
+                
+                # Clean the barangay names to ensure clean grouping without duplicates
+                df_brgy['Barangay'] = df_brgy[brgy_col].astype(str).str.strip().str.title()
+                
+                # Filter data based on the active campaign toggle at the top of the tab
+                if lgu_poster_type == "Measles-Rubella (MR)":
+                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Measles-Rubella']
+                    brgy_cols = ['MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos', 'Grand total doses administered']
+                else:
+                    brgy_prog_data = df_brgy[df_brgy['Response Type'] == 'Vitamin A']
+                    brgy_cols = ['Vit A 6-11mos', 'Vit A 12-59mos', 'Grand total doses administered']
+                
+                if not brgy_prog_data.empty:
+                    # Group the data by Municipality and Barangay, then sum the doses
+                    df_brgy_summary = brgy_prog_data.groupby(['Municipality', 'Barangay'])[brgy_cols].sum().reset_index()
+                    
+                    # Sort alphabetically by Municipality, then highest total doses at the top
+                    df_brgy_summary = df_brgy_summary.sort_values(
+                        by=['Municipality', 'Grand total doses administered'], 
+                        ascending=[True, False]
+                    )
+                    
+                    # Rename the grand total column for a cleaner user interface
+                    df_brgy_summary = df_brgy_summary.rename(columns={'Grand total doses administered': 'Total Doses'})
+                    
+                    # Render the table
+                    st.dataframe(df_brgy_summary, use_container_width=True, hide_index=True)
+                    
+                    # Provide a download button for the specific barangay breakdown
+                    csv_brgy = df_brgy_summary.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label=f"Download {selected_car_prov} Barangay Accomplishment (CSV)",
+                        data=csv_brgy,
+                        file_name=f"VaccTrack_Barangay_Accomplishment_{selected_car_prov.replace(' ', '_')}.csv",
+                        mime="text/csv",
+                        key=f"dl_brgy_vt_{selected_car_prov}"
+                    )
+                else:
+                    st.info(f"No {lgu_poster_type} records found at the barangay level for {selected_car_prov}.")
+            else:
+                st.info("Barangay data column not found in the VaccTrack sheet.")
+
+    # ==========================================
     # ADMIN PANEL
     # ==========================================
         with tab_admin:
