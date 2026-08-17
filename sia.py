@@ -1958,35 +1958,100 @@ try:
     # DEFERRAL & REFUSAL ANALYSIS TAB
     # ==========================================
     with tab_def_ref:
-        st.markdown(f"###  Deferral and Refusal Analysis: {location_label}")
+        st.markdown(f"### Deferral and Refusal Analysis: {location_label}")
         st.write("Deep dive into the specific reasons for missed vaccination targets based on RHU reports.")
         
         df_mr_live, df_vita_live = fetch_live_accomplishments()
         
-        # Helper function to generate clean, full-width charts
+        # Determine the correct geographic column based on the selected view mode
+        geo_col_def = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+        
+        # Helper function to generate clean, full-width bar charts
         def plot_reasons(df, cols, title, color):
             if not cols:
-                return st.warning(f"⚠️ Could not find data columns for {title}")
+                return st.warning(f"Could not find data columns for {title}")
             
-            # Clean and sum the data
+            # Clean and sum the data across the specified columns
             for c in cols:
                 df[c] = pd.to_numeric(df[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
             df_sum = df[cols].sum().reset_index()
             df_sum.columns = ['Reason', 'Count']
+            
+            # Filter out zero counts and sort for the horizontal bar chart
             df_sum = df_sum[df_sum['Count'] > 0].sort_values('Count', ascending=True)
             
             if not df_sum.empty:
-                # Truncate extremely long reasons so the chart doesn't shrink
+                # Truncate extremely long reasons so the chart margin doesn't shrink
                 df_sum['Short Reason'] = df_sum['Reason'].apply(lambda x: (str(x)[:85] + '...') if len(str(x)) > 85 else str(x))
                 
                 fig = px.bar(df_sum, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title=title, color_discrete_sequence=[color])
                 fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(350, len(df_sum)*45), margin=dict(l=0, r=0, t=40, b=0))
                 st.plotly_chart(fig, use_container_width=True, key=title)
             else:
-                st.info(f"✅ No {title.lower()} have been recorded for this location yet.")
+                st.info(f"No {title.lower()} have been recorded for this location yet.")
+
+        # Helper function to build the cross-tabulated summary data table
+        def build_summary_table(df, reason_cols, index_col, table_title):
+            if not reason_cols or df.empty or index_col not in df.columns:
+                return
+
+            # Create a working copy and ensure all reason columns are numeric
+            temp_df = df[[index_col] + reason_cols].copy()
+            for c in reason_cols:
+                temp_df[c] = pd.to_numeric(temp_df[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+
+            # Group by the geographic level (Municipality or Barangay) and sum the values
+            grouped = temp_df.groupby(index_col)[reason_cols].sum().astype(int)
+
+            # Drop columns (specific reasons) that have a sum of zero across all locations
+            grouped = grouped.loc[:, (grouped != 0).any(axis=0)]
+
+            if grouped.empty:
+                return 
+
+            # Drop rows (locations) that have a sum of zero across all remaining reasons
+            grouped = grouped.loc[(grouped != 0).any(axis=1)]
+
+            if grouped.empty:
+                return
+
+            # Insert the row 'Total' column at the very beginning of the table
+            grouped.insert(0, 'Total', grouped.sum(axis=1))
+
+            # Sort the table alphabetically by the location name
+            grouped = grouped.sort_index()
+
+            # Calculate the overarching 'Total' row for the bottom of the dataset
+            total_row = grouped.sum(numeric_only=True).astype(int)
+            total_row.name = 'Total'
+
+            # Append the 'Total' row to the top of the dataframe to match the requested layout
+            final_df = pd.concat([pd.DataFrame([total_row]), grouped])
+
+            # Replace any absolute 0s with an empty string for a cleaner visual interface
+            final_df = final_df.replace(0, "")
+
+            # Reset the index so the geographic column becomes a standard, exportable column
+            final_df = final_df.reset_index()
+            final_df = final_df.rename(columns={'index': index_col})
+
+            # Render the table
+            st.markdown(f"**{table_title} Summary Table**")
+            st.dataframe(final_df, use_container_width=True, hide_index=True)
+
+            # Generate the CSV download button
+            csv_data = final_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"Download {table_title} Table (CSV)",
+                data=csv_data,
+                file_name=f"{table_title.replace(' ', '_')}_Summary.csv",
+                mime="text/csv",
+                key=f"dl_summary_{table_title}"
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
 
         # Create Sub-Tabs for MR and Vit A
-        tab_mr_reasons, tab_va_reasons = st.tabs([" MR Reasons", " Vit A Reasons"])
+        tab_mr_reasons, tab_va_reasons = st.tabs(["MR Reasons", "Vit A Reasons"])
         
         with tab_mr_reasons:
             if not df_mr_live.empty and 'Municipality' in df_mr_live.columns:
@@ -2005,11 +2070,51 @@ try:
                 reason_cols_mr_def = [col for col in df_mr_filtered.columns if str(col).startswith(def_prefixes)]
                 reason_cols_mr_ref = [col for col in df_mr_filtered.columns if str(col).startswith(ref_prefixes)]
                 
-                # Plot Full Width Charts
-                plot_reasons(df_mr_filtered, reason_cols_mr_def, "MR Deferrals (C1 - C6)", '#FFB300') # Yellow/Orange for Deferral
+                # Render MR Deferrals
+                plot_reasons(df_mr_filtered, reason_cols_mr_def, "MR Deferrals (C1 - C6)", '#FFB300')
+                build_summary_table(df_mr_filtered, reason_cols_mr_def, geo_col_def, "MR Deferrals")
+                
                 st.markdown("<br>", unsafe_allow_html=True)
-                plot_reasons(df_mr_filtered, reason_cols_mr_ref, "MR Refusals (C7 - C23)", '#E53935') # Red for Refusal
+                
+                # Render MR Refusals
+                plot_reasons(df_mr_filtered, reason_cols_mr_ref, "MR Refusals (C7 - C23)", '#E53935')
+                build_summary_table(df_mr_filtered, reason_cols_mr_ref, geo_col_def, "MR Refusals")
                     
+            else:
+                st.info("Awaiting Gsheet Sync to populate analytics.")
+
+        with tab_va_reasons:
+            if not df_vita_live.empty and 'Municipality' in df_vita_live.columns:
+                df_va_filtered = df_vita_live.copy()
+                
+                # Apply Geographic Filter
+                if view_mode == "All Municipalities (Abra)":
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'].isin(abra_munis)]
+                elif view_mode == "Specific Municipality":
+                    df_va_filtered = df_va_filtered[df_va_filtered['Municipality'] == selected_muni]
+                
+                # Group columns: VIT1,3,4,5 (Deferrals), VIT2 (Refusals)
+                va_def_prefixes = ('VIT1 ', 'VIT3 ', 'VIT4 ', 'VIT5 ')
+                va_ref_prefixes = ('VIT2 ')
+                
+                reason_cols_va_def = [col for col in df_va_filtered.columns if str(col).startswith(va_def_prefixes)]
+                reason_cols_va_ref = [col for col in df_va_filtered.columns if str(col).startswith(va_ref_prefixes)]
+                
+                # Catch any extra/misspelled VIT columns and assign them to refusals
+                all_vit = [col for col in df_va_filtered.columns if str(col).startswith('VIT')]
+                missed = [c for c in all_vit if c not in reason_cols_va_def and c not in reason_cols_va_ref]
+                if missed:
+                    reason_cols_va_ref.extend(missed) 
+                
+                # Render Vitamin A Deferrals
+                plot_reasons(df_va_filtered, reason_cols_va_def, "Vitamin A Deferrals", '#00ACC1') 
+                build_summary_table(df_va_filtered, reason_cols_va_def, geo_col_def, "Vitamin A Deferrals")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Render Vitamin A Refusals
+                plot_reasons(df_va_filtered, reason_cols_va_ref, "Vitamin A Refusals", '#8E24AA')  
+                build_summary_table(df_va_filtered, reason_cols_va_ref, geo_col_def, "Vitamin A Refusals")
             else:
                 st.info("Awaiting Gsheet Sync to populate analytics.")
 
@@ -2031,7 +2136,6 @@ try:
                     df_mr_raw = df_mr_live[df_mr_live['Municipality'] == selected_muni].copy()
                 
                 # Identify columns that track MR deferrals or refusals
-                # This includes C1-C23 reason columns and any column with 'Deferral' or 'Refusal'
                 mr_prefixes = tuple([f"C{i} " for i in range(1, 24)])
                 mr_reason_cols = [
                     c for c in df_mr_raw.columns 
@@ -2039,7 +2143,7 @@ try:
                 ]
                 
                 if mr_reason_cols:
-                    # Convert these specific columns to numeric to safely calculate the sum
+                    # Convert specific columns to numeric to safely calculate the sum
                     temp_mr_numeric = df_mr_raw[mr_reason_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     
                     # Keep only the rows where the sum of deferrals/refusals is greater than zero
@@ -2073,14 +2177,13 @@ try:
                     df_va_raw = df_vita_live[df_vita_live['Municipality'] == selected_muni].copy()
                 
                 # Identify columns that track Vit A deferrals or refusals
-                # This includes VIT reason columns and any column with 'Deferral' or 'Refusal'
                 va_reason_cols = [
                     c for c in df_va_raw.columns 
                     if str(c).startswith('VIT') or 'Deferral' in str(c) or 'Refusal' in str(c)
                 ]
                 
                 if va_reason_cols:
-                    # Convert these specific columns to numeric to safely calculate the sum
+                    # Convert specific columns to numeric to safely calculate the sum
                     temp_va_numeric = df_va_raw[va_reason_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
                     
                     # Keep only the rows where the sum of deferrals/refusals is greater than zero
