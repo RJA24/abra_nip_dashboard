@@ -395,7 +395,6 @@ if not st.session_state.get('logged_in', False):
 # MAIN DASHBOARD CODE (Only runs if logged in)
 # ==========================================
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
-st.caption(f"🕒 Last Sync: {last_updated}")
 
 @st.cache_data(ttl="15s")
 def get_last_updated_time():
@@ -407,6 +406,8 @@ is_admin = st.session_state['user_role'] == "System Admin"
 
 # Automatically refresh the dashboard every 1 hour (3,600,000 ms)
 st_autorefresh(interval=3600000, limit=None, key="hourly_data_refresh")
+
+st.caption(f"🕒 Last Sync: {last_updated}")
 
 # ==========================================
 # CONTINUOUS SESSION TRACKING
