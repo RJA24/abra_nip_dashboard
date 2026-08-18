@@ -1141,17 +1141,14 @@ try:
                 # ==========================================
                 #  CHOROPLETH COVERAGE MAP
                 # ==========================================
-                # ONLY show the map if looking at the whole province
                 if view_mode == "All Municipalities (Abra)":
-
                     st.divider()
                     st.markdown(f"#### Provincial Coverage Map")
-                    st.caption(f"Map data based on: {exec_target_mode}")
+                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     
                     abra_geo = fetch_abra_geojson()
                     
                     if abra_geo and not df_geo_summary.empty:
-                        
                         df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
                         
                         # Force our Google Sheet names to perfectly match the Map File's hidden names
@@ -1174,16 +1171,12 @@ try:
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
                                 if lon is not None and lat is not None:
-                                    # Format the display name to Title Case
                                     display_name = std_name.title()
-                                    
-                                    # Prepare MR Labels
                                     mr_cov = match['MR Coverage %'].values[0]
                                     mr_lons.append(lon)
                                     mr_lats.append(lat)
                                     mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
                                     
-                                    # Prepare Vit A Labels (if available)
                                     if 'Vit A Coverage %' in df_geo_summary.columns:
                                         va_cov = match['Vit A Coverage %'].values[0]
                                         va_lons.append(lon)
@@ -1195,75 +1188,38 @@ try:
                         with map_c1:
                             st.markdown("**Measles-Rubella (MR) Coverage**")
                             fig_map_mr = px.choropleth_mapbox(
-                                df_geo_summary,
-                                geojson=abra_geo,
-                                locations='Map_Location',
-                                featureidkey="properties.Standard_Name", 
-                                color='MR Coverage %',
-                                color_continuous_scale="RdYlGn", 
-                                range_color=[0, 100],
-                                mapbox_style="carto-positron",
-                                zoom=8.5,
-                                center={"lat": 17.58, "lon": 120.80},
-                                opacity=0.7,
-                                hover_name=geo_col,
+                                df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                                zoom=8.5, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                             )
-                            
-                            # Overlay the text labels on the MR map
                             fig_map_mr.add_trace(go.Scattermapbox(
-                                lon=mr_lons,
-                                lat=mr_lats,
-                                mode='text',
-                                text=mr_texts,
-                                textfont=dict(size=11, color='black'),
-                                hoverinfo='skip',
-                                showlegend=False
+                                lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
                             ))
-                            
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
                             st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                                                         
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
-                            if 'Vit A Coverage %' in df_geo_summary.columns and view_mode == "All Municipalities (Abra)":
+                            if 'Vit A Coverage %' in df_geo_summary.columns:
                                 fig_map_va = px.choropleth_mapbox(
-                                    df_geo_summary,
-                                    geojson=abra_geo,
-                                    locations='Map_Location',
-                                    featureidkey="properties.Standard_Name", 
-                                    color='Vit A Coverage %',
-                                    color_continuous_scale="RdYlGn",
-                                    range_color=[0, 100],
-                                    mapbox_style="carto-positron",
-                                    zoom=8.5,
-                                    center={"lat": 17.58, "lon": 120.80},
-                                    opacity=0.7,
-                                    hover_name=geo_col,
+                                    df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                    color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                                    zoom=8.5, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                     hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                                 )
-                                
-                                # Overlay the text labels on the Vit A map
                                 fig_map_va.add_trace(go.Scattermapbox(
-                                    lon=va_lons,
-                                    lat=va_lats,
-                                    mode='text',
-                                    text=va_texts,
-                                    textfont=dict(size=11, color='black'),
-                                    hoverinfo='skip',
-                                    showlegend=False
+                                    lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
                                 ))
-                                
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                                 st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
-                            
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
 
-                    elif view_mode == "Specific Municipality":
+                elif view_mode == "Specific Municipality":
                     st.divider()
                     st.markdown(f"#### Barangay Coverage Map: {selected_muni}")
-                    st.caption(f"Map data based on: {exec_target_mode}")
+                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     
                     brgy_geo = fetch_barangay_geojson(selected_muni)
                     
