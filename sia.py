@@ -69,7 +69,7 @@ def fetch_barangay_geojson(target_muni):
     """
     import os
     import json
-    import re
+    import pandas as pd
     
     if not os.path.exists("abra_barangays.geojson"):
         return None
@@ -86,6 +86,7 @@ def fetch_barangay_geojson(target_muni):
             
             for feat in data.get('features', []):
                 props = feat.get('properties', {})
+                # Create an uppercase lookup dictionary for consistent targeting
                 props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
                 
                 # 1. Match the Municipality
@@ -98,34 +99,21 @@ def fetch_barangay_geojson(target_muni):
                 if not muni_match and any(target in v for v in props_upper.values()):
                     muni_match = True
                         
-                # 2. If it is a match, perfectly clean the Barangay Name
+                # 2. If it is a match, safely extract the Barangay Name
                 if muni_match:
                     brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4']
                     raw_brgy = "UNKNOWN"
                     for k in brgy_keys:
                         if k in props_upper:
-                            raw_brgy = str(props.get(k, props.get(k.lower(), props.get(k.capitalize(), ""))))
+                            raw_brgy = props_upper[k]
                             break
                     
                     feat['properties']['Original_Name'] = raw_brgy
                     
-                    # Apply identical cleaning logic to Standardize_Geo_Names
-                    s = str(raw_brgy).strip().title()
-                    s = s.replace('?', 'ñ').replace('ñA', 'ña').replace('ñE', 'ñe').replace('ñI', 'ñi').replace('ñO', 'ño').replace('ñU', 'ñu')
-                    s = re.sub(r'\s*\([Pp]ob.*?\)', '', s, flags=re.IGNORECASE)
+                    # 3. Apply the exact same master cleaner function to the map labels
+                    clean_series = standardize_geo_names(pd.Series([raw_brgy]))
+                    feat['properties']['Standard_Name'] = clean_series.iloc[0]
                     
-                    if not re.match(r'^Zone\s*\d+', s, re.IGNORECASE) and s.lower() != 'poblacion':
-                        s = re.sub(r'\s+Pob\.?$', '', s, flags=re.IGNORECASE)
-                        s = re.sub(r'\s+Poblacion$', '', s, flags=re.IGNORECASE)
-                        
-                    s = re.sub(r'\bPob\.\b', 'Poblacion', s, flags=re.IGNORECASE)
-                    s = re.sub(r'\bPob\b', 'Poblacion', s, flags=re.IGNORECASE)
-                    s = re.sub(r'\bSta\.\b', 'Santa', s, flags=re.IGNORECASE)
-                    s = re.sub(r'\bSta\b', 'Santa', s, flags=re.IGNORECASE)
-                    s = re.sub(r'\bSto\.\b', 'Santo', s, flags=re.IGNORECASE)
-                    s = re.sub(r'\bSto\b', 'Santo', s, flags=re.IGNORECASE)
-                    
-                    feat['properties']['Standard_Name'] = s.replace('  ', ' ').strip()
                     features.append(feat)
             
             if features:
@@ -1219,12 +1207,13 @@ try:
                 elif view_mode == "Specific Municipality":
                     st.divider()
                     st.markdown(f"#### Barangay Coverage Map: {selected_muni}")
-                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
+                    st.caption(f"Map data based on: {exec_target_mode}")
                     
                     brgy_geo = fetch_barangay_geojson(selected_muni)
                     
                     if brgy_geo and not df_geo_summary.empty:
-                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.title().str.strip()
+                        # FIX: Do not reformat the name. Use the already standardized name.
+                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col]
                         
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
