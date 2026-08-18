@@ -64,79 +64,84 @@ def fetch_abra_geojson():
 @st.cache_data(ttl="24h")
 def fetch_barangay_geojson(target_muni):
     """
-    Fetches and prepares local barangay boundaries using the robust matching 
-    and aggressive fallback search logic from the Dengue Surveillance App.
+    Fetches and prepares local barangay boundaries using the EXACT 
+    robust matching engine from the Dengue Surveillance App.
     """
     import os
     import json
     import re
     import unicodedata
-    import pandas as pd
     
-    if not os.path.exists("abra_barangays.geojson"):
-        return None
-        
-    # The Dengue App cleaner: strips all spaces, (), and special chars
+    ALL_ABRA_MUNICIPALITIES = [
+        "BANGUED", "BOLINEY", "BUCAY", "BUCLOC", "DAGUIOMAN", "DANGLAS", "DOLORES",
+        "LA PAZ", "LACUB", "LAGANGILANG", "LAGAYAN", "LANGIDEN", "LICUAN-BAAY",
+        "LUBA", "MALIBCONG", "MANABO", "PEÑARRUBIA", "PIDIGAN", "PILAR",
+        "SALLAPADAN", "SAN ISIDRO", "SAN JUAN", "SAN QUINTIN", "TAYUM", "TINEG",
+        "TUBO", "VILLAVICIOSA"
+    ]
+
+    def clean_muni_name(raw_name):
+        if not isinstance(raw_name, str): return ""
+        raw = str(raw_name).upper()
+        raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
+        raw_alpha = re.sub(r'[^A-Z]', '', raw)
+        if "LICUAN" in raw_alpha or "BAAY" in raw_alpha: return "LICUAN-BAAY"
+        if "PENAR" in raw_alpha or "RUBIA" in raw_alpha: return "PEÑARRUBIA"
+        if "PAZ" in raw_alpha: return "LA PAZ"
+        if "JUAN" in raw_alpha: return "SAN JUAN"
+        if "ISIDRO" in raw_alpha: return "SAN ISIDRO"
+        if "QUINTIN" in raw_alpha: return "SAN QUINTIN"
+        for muni in ALL_ABRA_MUNICIPALITIES:
+            if re.sub(r'[^A-Z]', '', muni.replace("Ñ", "N")) in raw_alpha:
+                return muni
+        return raw_name
+
     def clean_brgy_name(raw_name):
-        if pd.isna(raw_name): return ""
+        if not isinstance(raw_name, str): return ""
         raw = str(raw_name).upper()
         raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
         raw = re.sub(r'\(.*?\)', '', raw) 
         raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
         return re.sub(r'[^A-Z0-9]', '', raw)
+
+    def get_muni_name_from_props(props):
+        keys = ['ADM3_EN', 'MUN_NAME', 'NAME_3', 'MUNICIPALITY']
+        upper_props = {str(k).upper(): str(v) for k, v in props.items()}
+        for k in keys:
+            if k in upper_props:
+                std = clean_muni_name(upper_props[k])
+                if std in ALL_ABRA_MUNICIPALITIES: return std
+        for val in props.values():
+            std = clean_muni_name(str(val))
+            if std in ALL_ABRA_MUNICIPALITIES: return std
+        return None
+
+    def extract_brgy_name(props):
+        keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4', 'NAME_3']
+        upper_props = {str(k).upper(): v for k, v in props.items()}
+        for k in keys:
+            if k in upper_props: return str(upper_props[k])
+        for val in props.values():
+            v_str = str(val).upper().strip()
+            if v_str not in ["ABRA", "PHILIPPINES"] and clean_muni_name(v_str) not in ALL_ABRA_MUNICIPALITIES:
+                if len(v_str) > 2: return v_str
+        return "UNKNOWN"
+
+    if not os.path.exists("abra_barangays.geojson"):
+        return None
         
     try:
         with open("abra_barangays.geojson", "r", encoding="utf-8") as f:
             data = json.load(f)
             features = []
-            
-            target_alpha = re.sub(r'[^A-Z]', '', str(target_muni).upper())
-            if "PENARRUBIA" in target_alpha or "PEÑARRUBIA" in target_alpha: target_alpha = "PENARRUBIA"
-            if "LICUAN" in target_alpha or "BAAY" in target_alpha: target_alpha = "LICUANBAAY"
-            
-            # Master list of municipalities to prevent accidentally claiming a muni name as a barangay
-            all_munis = ["BANGUED", "BOLINEY", "BUCAY", "BUCLOC", "DAGUIOMAN", "DANGLAS", "DOLORES", "LAPAZ", "LACUB", "LAGANGILANG", "LAGAYAN", "LANGIDEN", "LICUANBAAY", "LUBA", "MALIBCONG", "MANABO", "PENARRUBIA", "PIDIGAN", "PILAR", "SALLAPADAN", "SANISIDRO", "SANJUAN", "SANQUINTIN", "TAYUM", "TINEG", "TUBO", "VILLAVICIOSA"]
-            
+            target = clean_muni_name(target_muni)
             for feat in data.get('features', []):
-                props = feat.get('properties', {})
-                props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
-                
-                # Match the Municipality using strict alphanumeric stripping
-                muni_match = False
-                for val in props_upper.values():
-                    val_alpha = re.sub(r'[^A-Z]', '', str(val))
-                    if target_alpha == val_alpha or target_alpha in val_alpha:
-                        if len(target_alpha) > 3:
-                            muni_match = True
-                            break
-                            
-                # Extract and clean the raw Barangay Name
-                if muni_match:
-                    raw_brgy = "UNKNOWN"
-                    
-                    # 1. Try standard keys first
-                    brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4', 'NAME_3']
-                    for k in brgy_keys:
-                        if k in props_upper and props_upper[k] not in ["", "UNKNOWN", "NONE", "NULL"]:
-                            raw_brgy = props_upper[k]
-                            break
-                            
-                    # 2. Aggressive Fallback: Scan all properties if standard keys fail
-                    if raw_brgy == "UNKNOWN" or re.sub(r'[^A-Z]', '', raw_brgy) in all_munis:
-                        for val in props.values():
-                            v_str = str(val).upper().strip()
-                            v_alpha = re.sub(r'[^A-Z]', '', v_str)
-                            # Ignore basic geographic labels and municipality names
-                            if v_str not in ["ABRA", "PHILIPPINES"] and v_alpha not in all_munis:
-                                if len(v_str) > 2:
-                                    raw_brgy = v_str
-                                    break
-                    
-                    feat['properties']['Original_Name'] = raw_brgy
+                if get_muni_name_from_props(feat.get('properties', {})) == target:
+                    raw_brgy = extract_brgy_name(feat.get('properties', {}))
+                    feat['properties']['Original_Name'] = str(raw_brgy).title()
                     feat['properties']['Standard_Name'] = clean_brgy_name(raw_brgy)
                     features.append(feat)
-            
-            if features:
+            if features: 
                 return {"type": "FeatureCollection", "features": features}
             return None
     except Exception:
@@ -1159,7 +1164,6 @@ try:
                     if abra_geo and not df_geo_summary.empty:
                         df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.upper().str.strip()
                         
-                        # Force our Google Sheet names to perfectly match the Map File's hidden names
                         df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
                             'SALAPADAN': 'SALLAPADAN',
                             'PENARRUBIA': 'PEŃARRUBIA',  
@@ -1167,14 +1171,11 @@ try:
                             'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
                         })
                         
-                        # Extract centroids and prepare label texts for the map
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
                         
                         for feat in abra_geo.get('features', []):
                             std_name = feat['properties'].get('Standard_Name', '')
-                            
-                            # Find the matching row in our summary dataframe
                             match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
@@ -1201,15 +1202,9 @@ try:
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
+                        # Reverted to Stable mode='text'
                         fig_map_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, 
-                            mode='markers+text', 
-                            marker=dict(size=1, opacity=0), # Invisible anchor!
-                            text=mr_texts, 
-                            textposition='middle center',
-                            textfont=dict(size=11, color='black', family="Arial Black"), 
-                            hoverinfo='skip', 
-                            showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
                         ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
@@ -1224,15 +1219,9 @@ try:
                                 zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
+                            # Reverted to Stable mode='text'
                             fig_map_va.add_trace(go.Scattermapbox(
-                                lon=va_lons, lat=va_lats, 
-                                mode='markers+text', 
-                                marker=dict(size=1, opacity=0), # Invisible anchor!
-                                text=va_texts, 
-                                textposition='middle center',
-                                textfont=dict(size=11, color='black', family="Arial Black"), 
-                                hoverinfo='skip', 
-                                showlegend=False
+                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
                             ))
                             fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"), height=600)
                             st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
@@ -1259,7 +1248,7 @@ try:
                             raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
                             return re.sub(r'[^A-Z0-9]', '', raw)
                             
-                        # Extract the base map properties
+                        # Extract the base map properties natively parsed by the Dengue Engine
                         all_geojson_brgys = [f['properties']['Standard_Name'] for f in brgy_geo['features']]
                         all_geojson_originals = [f['properties']['Original_Name'] for f in brgy_geo['features']]
                         
@@ -1268,14 +1257,12 @@ try:
                             "Map_Location": all_geojson_originals
                         })
                         
-                        # Prepare the active data
+                        # Prepare the active data using the exact same cleaner
                         curr_data = df_geo_summary.copy()
                         curr_data["Join_Key"] = curr_data[geo_col].apply(clean_brgy_name)
                         
-                        # Merge the map boundaries with our data (ensures unvaxxed areas render with 0)
+                        # Merge the map boundaries with our data
                         map_data = pd.merge(base_df, curr_data, on="Join_Key", how="left").fillna(0)
-                        
-                        # Format hover text beautifully
                         map_data['Display_Name'] = map_data['Map_Location'].str.title()
                         
                         mr_lons, mr_lats, mr_texts = [], [], []
@@ -1304,19 +1291,13 @@ try:
                         fig_map_brgy_mr = px.choropleth_mapbox(
                             map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
                             color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                            zoom=11.8, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
+                            zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         
+                        # Reverted to Stable mode='text'
                         fig_map_brgy_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, 
-                            mode='markers+text', 
-                            marker=dict(size=1, opacity=0), # Invisible anchor!
-                            text=mr_texts, 
-                            textposition='middle center',
-                            textfont=dict(size=11, color='black', family='Arial Black'), 
-                            hoverinfo='skip', 
-                            showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black', family='Arial'), hoverinfo='skip', showlegend=False
                         ))
                         
                         fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
