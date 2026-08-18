@@ -1124,7 +1124,7 @@ try:
                     legend_title_text="",
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
                 )
-                st.plotly_chart(fig_geo_cov, use_container_width=True)
+                st.plotly_chart(fig_geo_cov, use_container_width=True, key="exec_geo_cov")
                 
                 # ==========================================
                 #  CHOROPLETH COVERAGE MAP
@@ -1207,34 +1207,38 @@ try:
                 elif view_mode == "Specific Municipality":
                     st.divider()
                     st.markdown(f"#### Barangay Coverage Map: {selected_muni}")
-                    st.caption(f"Map data based on: {exec_target_mode}")
+                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
                     
                     brgy_geo = fetch_barangay_geojson(selected_muni)
                     
                     if brgy_geo and not df_geo_summary.empty:
-                        # FIX: Do not reformat the name. Use the already standardized name.
-                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col]
+                        # FIX: Force absolute UPPERCASE matching to prevent Plotly from drawing blank maps
+                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col].astype(str).str.upper().str.strip()
                         
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
                         
                         for feat in brgy_geo.get('features', []):
-                            std_name = feat['properties'].get('Standard_Name', '')
+                            # Force the geojson standard name to UPPERCASE as well so it perfectly matches
+                            std_name = str(feat['properties'].get('Standard_Name', '')).upper().strip()
+                            feat['properties']['Standard_Name'] = std_name 
+                            
                             match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
                             
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
                                 if lon is not None and lat is not None:
+                                    display_name = std_name.title()
                                     mr_cov = match['MR Coverage %'].values[0]
                                     mr_lons.append(lon)
                                     mr_lats.append(lat)
-                                    mr_texts.append(f"{std_name}<br>{mr_cov:.1f}%")
+                                    mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
                                     
                                     if 'Vit A Coverage %' in df_geo_summary.columns:
                                         va_cov = match['Vit A Coverage %'].values[0]
                                         va_lons.append(lon)
                                         va_lats.append(lat)
-                                        va_texts.append(f"{std_name}<br>{va_cov:.1f}%")
+                                        va_texts.append(f"{display_name}<br>{va_cov:.1f}%")
                                                         
                         cam_lat = np.mean(mr_lats) if mr_lats else 17.58
                         cam_lon = np.mean(mr_lons) if mr_lons else 120.80
@@ -1252,7 +1256,7 @@ try:
                                 lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
                             ))
                             fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
-                            st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr")
+                            st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
                                                         
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
@@ -1267,7 +1271,7 @@ try:
                                     lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
                                 ))
                                 fig_map_brgy_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
-                                st.plotly_chart(fig_map_brgy_va, use_container_width=True, key="exec_map_brgy_va")
+                                st.plotly_chart(fig_map_brgy_va, use_container_width=True, key="exec_map_brgy_va_unique")
                     else:
                         st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
 
@@ -1398,7 +1402,7 @@ try:
                     legend_title_text="",
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
-                st.plotly_chart(fig_comp_cov, use_container_width=True)
+                st.plotly_chart(fig_comp_cov, use_container_width=True, key="exec_comp_cov")
 
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
@@ -1461,7 +1465,7 @@ try:
                     df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
                     fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
                     fig_mr.update_layout(xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_mr, use_container_width=True)
+                    st.plotly_chart(fig_mr, use_container_width=True, key="tgt_mr_bar")
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1474,7 +1478,7 @@ try:
                         })
                         fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                         fig_donut_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_mr, use_container_width=True)
+                        st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie")
 
             # ==========================================
             # SUB-TAB 2: PROJECTED VITAMIN A
@@ -1508,7 +1512,7 @@ try:
                     df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
                     fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
                     fig_va.update_layout(xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_va, use_container_width=True)
+                    st.plotly_chart(fig_va, use_container_width=True, key="tgt_va_bar")
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1521,7 +1525,7 @@ try:
                         })
                         fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                         fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_va, use_container_width=True)
+                        st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie")
 
             # ==========================================
             # SUB-TAB 3: ACTUAL MR
@@ -1558,7 +1562,7 @@ try:
                     df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
                     fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
                     fig_act_mr.update_layout(xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_act_mr, use_container_width=True)
+                    st.plotly_chart(fig_act_mr, use_container_width=True, key="tgt_act_mr_bar")
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1571,7 +1575,7 @@ try:
                         })
                         fig_donut_act_mr = px.pie(act_mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                         fig_donut_act_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_act_mr, use_container_width=True)
+                        st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie")
 
             # ==========================================
             # SUB-TAB 4: ACTUAL VITAMIN A
@@ -1605,7 +1609,7 @@ try:
                     df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
                     fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
                     fig_act_va.update_layout(xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_act_va, use_container_width=True)
+                    st.plotly_chart(fig_act_va, use_container_width=True, key="tgt_act_va_bar")
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1618,7 +1622,7 @@ try:
                         })
                         fig_donut_act_va = px.pie(act_va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                         fig_donut_act_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_act_va, use_container_width=True)
+                        st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie")
 
             # ==========================================
             # SUB-TAB 5: COMPARISON (PROJECTED VS ACTUAL)
@@ -1659,7 +1663,7 @@ try:
                     
                     fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
                     fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, legend_title_text="")
-                    st.plotly_chart(fig_comp, use_container_width=True)
+                    st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar")
                     
                     st.markdown("##### Detailed Breakdown")
                     df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
@@ -1731,14 +1735,14 @@ try:
                 df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                 fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
                 fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_time, use_container_width=True)
+                st.plotly_chart(fig_time, use_container_width=True, key="mr_timeline_chart")
             
             # Full width Geographic Bar Chart
             if geo_col in df_mr_filtered.columns:
                 df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                 fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
                 fig_geo.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_geo, use_container_width=True)
+                st.plotly_chart(fig_geo, use_container_width=True, key="mr_geographic_chart")
                 
             st.markdown("<br>", unsafe_allow_html=True)
             
@@ -1752,7 +1756,7 @@ try:
                 df_age = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Doses': [mr_6_12, mr_13_23, mr_24_59]})
                 fig_age = px.pie(df_age, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                 fig_age.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_age, use_container_width=True)
+                st.plotly_chart(fig_age, use_container_width=True, key="mr_age_pie")
                 
             with pc2:
                 mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
@@ -1761,7 +1765,7 @@ try:
                 df_gender = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [mr_male, mr_female]})
                 fig_gender = px.pie(df_gender, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
                 fig_gender.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_gender, use_container_width=True)
+                st.plotly_chart(fig_gender, use_container_width=True, key="mr_gender_pie")
                 
             # ==========================================
             #  DAILY TALLY SHEET GRID (MR) - AGGRID
@@ -1976,14 +1980,14 @@ try:
                 df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                 fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
                 fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_time_va, use_container_width=True)
+                st.plotly_chart(fig_time_va, use_container_width=True, key="vita_timeline_chart")
             
             # Full width Geographic Bar Chart
             if geo_col_va in df_vita_filtered.columns:
                 df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                 fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
                 fig_geo_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_geo_va, use_container_width=True)
+                st.plotly_chart(fig_geo_va, use_container_width=True, key="vita_geographic_chart")
                 
             st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -1996,7 +2000,7 @@ try:
                 df_age_va = pd.DataFrame({'Age Group': ['6-11m', '12-59m'], 'Doses': [va_6_11, va_12_59]})
                 fig_age_va = px.pie(df_age_va, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                 fig_age_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_age_va, use_container_width=True)
+                st.plotly_chart(fig_age_va, use_container_width=True, key="vita_age_pie")
                 
             with pc2_va:
                 va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
@@ -2005,7 +2009,7 @@ try:
                 df_gender_va = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [va_male, va_female]})
                 fig_gender_va = px.pie(df_gender_va, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
                 fig_gender_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_gender_va, use_container_width=True)
+                st.plotly_chart(fig_gender_va, use_container_width=True, key="vita_gender_pie")
 
             # ==========================================
             #  DAILY TALLY SHEET GRID (VIT A) - AGGRID
@@ -2480,7 +2484,7 @@ try:
                     df_trend = df_vt.groupby(['Vaccination Date', 'Response Type'])['Grand total doses administered'].sum().reset_index()
                     fig_trend = px.line(df_trend, x='Vaccination Date', y='Grand total doses administered', color='Response Type', markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
                     fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Doses", height=450, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_trend, use_container_width=True)
+                    st.plotly_chart(fig_trend, use_container_width=True, key="exec_trend")
                 else:
                     st.info("Insufficient date/type data for trend chart.")
                 
@@ -2507,7 +2511,7 @@ try:
                     chart_height = max(400, len(df_muni_total) * 40)
                     #  Also increased the right margin (r=40) so labels don't get cut off
                     fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=40, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
-                    st.plotly_chart(fig_muni, use_container_width=True)
+                    st.plotly_chart(fig_muni, use_container_width=True, key="exec_muni")
                 else:
                     st.info("Insufficient municipality data for bar chart.")
                     
@@ -2937,7 +2941,7 @@ try:
                     legend_title_text="",
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
-                st.plotly_chart(fig_prov, use_container_width=True)
+                st.plotly_chart(fig_prov, use_container_width=True, key="exec_prov_cov")
                 
                 # 7. Detailed Regional Coverage Table
                 st.markdown("#### 📋 Regional Coverage Breakdown")
@@ -3206,7 +3210,7 @@ try:
                     height=550
                 )
                 
-                st.plotly_chart(fig_map_car, use_container_width=True)
+                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car")
             else:
                 st.warning("Regional map boundary data could not be loaded or processed.")
 
