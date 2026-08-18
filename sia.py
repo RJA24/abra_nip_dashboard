@@ -1202,9 +1202,9 @@ try:
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
-                        # Reverted to Stable mode='text'
+                        # FIX: Removed 'family' parameter. Mapbox will now correctly use its default font and render the text!
                         fig_map_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
@@ -1219,9 +1219,9 @@ try:
                                 zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
-                            # Reverted to Stable mode='text'
+                            # FIX: Removed 'family' parameter here too.
                             fig_map_va.add_trace(go.Scattermapbox(
-                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
+                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                             ))
                             fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"), height=600)
                             st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
@@ -1239,7 +1239,6 @@ try:
                         import unicodedata
                         import re
                         
-                        # Apply Dengue App logic to force a perfect background match
                         def clean_brgy_name(raw_name):
                             if pd.isna(raw_name): return ""
                             raw = str(raw_name).upper()
@@ -1248,7 +1247,6 @@ try:
                             raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
                             return re.sub(r'[^A-Z0-9]', '', raw)
                             
-                        # Extract the base map properties natively parsed by the Dengue Engine
                         all_geojson_brgys = [f['properties']['Standard_Name'] for f in brgy_geo['features']]
                         all_geojson_originals = [f['properties']['Original_Name'] for f in brgy_geo['features']]
                         
@@ -1257,11 +1255,9 @@ try:
                             "Map_Location": all_geojson_originals
                         })
                         
-                        # Prepare the active data using the exact same cleaner
                         curr_data = df_geo_summary.copy()
                         curr_data["Join_Key"] = curr_data[geo_col].apply(clean_brgy_name)
                         
-                        # Merge the map boundaries with our data
                         map_data = pd.merge(base_df, curr_data, on="Join_Key", how="left").fillna(0)
                         map_data['Display_Name'] = map_data['Map_Location'].str.title()
                         
@@ -1295,9 +1291,9 @@ try:
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         
-                        # Reverted to Stable mode='text'
+                        # FIX: Removed 'family' parameter here as well!
                         fig_map_brgy_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black', family='Arial'), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         
                         fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
