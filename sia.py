@@ -1294,12 +1294,19 @@ try:
                         fig_map_brgy_mr = px.choropleth_mapbox(
                             map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
                             color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                            zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
+                            zoom=12.2, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         
+                        # FIX: Shrink font, make it bold, and use the invisible marker hack to bypass collision limits as much as possible
                         fig_map_brgy_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, 
+                            mode='markers+text', 
+                            marker=dict(size=1, color='rgba(0,0,0,0)'), # Invisible marker 
+                            text=mr_texts, 
+                            textfont=dict(size=10, color='black', family='Arial Black'), 
+                            hoverinfo='skip', 
+                            showlegend=False
                         ))
                         
                         fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
