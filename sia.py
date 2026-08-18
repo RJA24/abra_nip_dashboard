@@ -509,6 +509,28 @@ def clean_and_process_car_data(df, col_names):
     df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
     return df
 
+def get_polygon_centroid(geometry):
+    """
+    Calculates the central coordinate of a geographic polygon.
+    This allows us to accurately place dynamic text labels on the map.
+    """
+    try:
+        coords = []
+        if geometry['type'] == 'Polygon':
+            for ring in geometry['coordinates']:
+                coords.extend(ring)
+        elif geometry['type'] == 'MultiPolygon':
+            for poly in geometry['coordinates']:
+                for ring in poly:
+                    coords.extend(ring)
+        if not coords:
+            return None, None
+        
+        coords = np.array(coords)
+        return float(np.mean(coords[:, 0])), float(np.mean(coords[:, 1]))
+    except Exception:
+        return None, None
+
 @st.cache_data(ttl="1h")
 def fetch_targets_from_supabase():
     # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
@@ -1051,7 +1073,7 @@ try:
 
                     st.divider()
                     st.markdown(f"#### Provincial Coverage Map")
-                    st.caption(f"🎯 **Map data based on:** {exec_target_mode}")
+                    st.caption(f"Map data based on: {exec_target_mode}")
                     
                     abra_geo = fetch_abra_geojson()
                     
@@ -1063,9 +1085,37 @@ try:
                         df_geo_summary['Map_Location'] = df_geo_summary['Map_Location'].replace({
                             'SALAPADAN': 'SALLAPADAN',
                             'PENARRUBIA': 'PEŃARRUBIA',  
-                            'PEÑARRUBIA': 'PEŃARRUBIA',  # Map uses a weird Ń character
+                            'PEÑARRUBIA': 'PEŃARRUBIA',  
                             'LICUAN-BAAY (LICUAN)': 'LICUAN-BAAY'
                         })
+                        
+                        # Extract centroids and prepare label texts for the map
+                        mr_lons, mr_lats, mr_texts = [], [], []
+                        va_lons, va_lats, va_texts = [], [], []
+                        
+                        for feat in abra_geo.get('features', []):
+                            std_name = feat['properties'].get('Standard_Name', '')
+                            
+                            # Find the matching row in our summary dataframe
+                            match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
+                            if not match.empty:
+                                lon, lat = get_polygon_centroid(feat.get('geometry', {}))
+                                if lon is not None and lat is not None:
+                                    # Format the display name to Title Case
+                                    display_name = std_name.title()
+                                    
+                                    # Prepare MR Labels
+                                    mr_cov = match['MR Coverage %'].values[0]
+                                    mr_lons.append(lon)
+                                    mr_lats.append(lat)
+                                    mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
+                                    
+                                    # Prepare Vit A Labels (if available)
+                                    if 'Vit A Coverage %' in df_geo_summary.columns:
+                                        va_cov = match['Vit A Coverage %'].values[0]
+                                        va_lons.append(lon)
+                                        va_lats.append(lat)
+                                        va_texts.append(f"{display_name}<br>{va_cov:.1f}%")
                                                         
                         map_c1, map_c2 = st.columns(2)
                         
@@ -1075,7 +1125,7 @@ try:
                                 df_geo_summary,
                                 geojson=abra_geo,
                                 locations='Map_Location',
-                                featureidkey="properties.Standard_Name", # Look specifically at the name we cleaned
+                                featureidkey="properties.Standard_Name", 
                                 color='MR Coverage %',
                                 color_continuous_scale="RdYlGn", 
                                 range_color=[0, 100],
@@ -1086,6 +1136,18 @@ try:
                                 hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                             )
+                            
+                            # Overlay the text labels on the MR map
+                            fig_map_mr.add_trace(go.Scattermapbox(
+                                lon=mr_lons,
+                                lat=mr_lats,
+                                mode='text',
+                                text=mr_texts,
+                                textfont=dict(size=11, color='black'),
+                                hoverinfo='skip',
+                                showlegend=False
+                            ))
+                            
                             fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
                             st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                                                         
@@ -1107,6 +1169,18 @@ try:
                                     hover_name=geo_col,
                                     hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                                 )
+                                
+                                # Overlay the text labels on the Vit A map
+                                fig_map_va.add_trace(go.Scattermapbox(
+                                    lon=va_lons,
+                                    lat=va_lats,
+                                    mode='text',
+                                    text=va_texts,
+                                    textfont=dict(size=11, color='black'),
+                                    hoverinfo='skip',
+                                    showlegend=False
+                                ))
+                                
                                 fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
                                 st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
                             
