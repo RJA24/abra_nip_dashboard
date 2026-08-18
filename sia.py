@@ -2137,7 +2137,7 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True
+                    allow_unsafe_jscode=True,
                     key="va_aggrid_tally"
                 )
 
