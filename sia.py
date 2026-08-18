@@ -1202,9 +1202,16 @@ try:
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
-                        # FIX: Removed 'family' parameter. Mapbox will now correctly use its default font and render the text!
+                        # Trick Mapbox with a 1% opacity ghost pin to force labels to stay
                         fig_map_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, 
+                            mode='markers+text', 
+                            marker=dict(size=3, color='rgba(0,0,0,0.01)'), # 1% Opacity
+                            text=mr_texts, 
+                            textposition='middle center',
+                            textfont=dict(size=12, color='black'), 
+                            hoverinfo='skip', 
+                            showlegend=False
                         ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
