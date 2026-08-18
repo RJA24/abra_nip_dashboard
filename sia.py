@@ -1202,7 +1202,15 @@ try:
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         fig_map_mr.add_trace(go.Scattermapbox(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, 
+                            mode='markers+text', 
+                            marker=dict(size=1, opacity=0), # Invisible anchor!
+                            text=mr_texts, 
+                            textposition='middle center',
+                            textfont=dict(size=11, color='black', family="Arial Black"), 
+                            hoverinfo='skip', 
+                            showlegend=False
+                        ))
                         ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
@@ -1218,7 +1226,14 @@ try:
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
                             fig_map_va.add_trace(go.Scattermapbox(
-                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black', family="Arial"), hoverinfo='skip', showlegend=False
+                                lon=va_lons, lat=va_lats, 
+                                mode='markers+text', 
+                                marker=dict(size=1, opacity=0), # Invisible anchor!
+                                text=va_texts, 
+                                textposition='middle center',
+                                textfont=dict(size=11, color='black', family="Arial Black"), 
+                                hoverinfo='skip', 
+                                showlegend=False
                             ))
                             fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"), height=600)
                             st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
@@ -1294,12 +1309,13 @@ try:
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         
-                        # Stripped the invisible marker hack and reverted to clean, stable text labels
                         fig_map_brgy_mr.add_trace(go.Scattermapbox(
                             lon=mr_lons, lat=mr_lats, 
-                            mode='text', 
+                            mode='markers+text', 
+                            marker=dict(size=1, opacity=0), # Invisible anchor!
                             text=mr_texts, 
-                            textfont=dict(size=12, color='black', family='Arial'), 
+                            textposition='middle center',
+                            textfont=dict(size=11, color='black', family='Arial Black'), 
                             hoverinfo='skip', 
                             showlegend=False
                         ))
