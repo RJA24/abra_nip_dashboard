@@ -1288,35 +1288,23 @@ try:
                         cam_lat = np.mean(mr_lats) if mr_lats else 17.58
                         cam_lon = np.mean(mr_lons) if mr_lons else 120.80
                         
-                        map_c1, map_c2 = st.columns(2)
-                        with map_c1:
-                            st.markdown("**Measles-Rubella (MR) Coverage**")
-                            fig_map_brgy_mr = px.choropleth_mapbox(
-                                map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
-                                color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                                zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
-                                hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
-                            )
-                            fig_map_brgy_mr.add_trace(go.Scattermapbox(
-                                lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
-                            ))
-                            fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
-                            st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
-                                                        
-                        with map_c2:
-                            st.markdown("**Vitamin A Coverage**")
-                            if 'Vit A Coverage %' in map_data.columns:
-                                fig_map_brgy_va = px.choropleth_mapbox(
-                                    map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
-                                    color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                                    zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
-                                    hover_data={'Join_Key': False, 'Display_Name': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
-                                )
-                                fig_map_brgy_va.add_trace(go.Scattermapbox(
-                                    lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
-                                ))
-                                fig_map_brgy_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
-                                st.plotly_chart(fig_map_brgy_va, use_container_width=True, key="exec_map_brgy_va_unique")
+                        # Since Vitamin A has no barangay-level targets, render only the MR Map full-width
+                        st.markdown("**Measles-Rubella (MR) Coverage**")
+                        
+                        fig_map_brgy_mr = px.choropleth_mapbox(
+                            map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                            zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
+                            hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
+                        )
+                        
+                        fig_map_brgy_mr.add_trace(go.Scattermapbox(
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
+                        ))
+                        
+                        fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
+                        
+                        st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
                     else:
                         st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
 
