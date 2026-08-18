@@ -1211,7 +1211,6 @@ try:
                             hoverinfo='skip', 
                             showlegend=False
                         ))
-                        ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                         
