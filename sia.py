@@ -1206,7 +1206,7 @@ try:
                         fig_map_mr.add_trace(go.Scattermapbox(
                             lon=mr_lons, lat=mr_lats, 
                             mode='markers+text', 
-                            marker=dict(size=3, color='rgba(0,0,0,0.01)'), # 1% Opacity
+                            marker=dict(size=3, color='rgba(0,0,0,1)'), # 1% Opacity
                             text=mr_texts, 
                             textposition='middle center',
                             textfont=dict(size=12, color='black'), 
