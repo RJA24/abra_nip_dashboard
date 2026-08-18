@@ -64,22 +64,31 @@ def fetch_abra_geojson():
 @st.cache_data(ttl="24h")
 def fetch_barangay_geojson(target_muni):
     """
-    Fetches and prepares local barangay boundaries using the robust matching 
-    logic from the Dengue Surveillance App.
+    Fetches and prepares local barangay boundaries using the exact 
+    alphanumeric stripping logic from the Dengue Surveillance App.
     """
     import os
     import json
     import re
+    import unicodedata
     
     if not os.path.exists("abra_barangays.geojson"):
         return None
+        
+    # The Dengue App cleaner: strips all spaces, (), and special chars
+    def clean_brgy_name(raw_name):
+        if not isinstance(raw_name, str) and pd.isna(raw_name): return ""
+        raw = str(raw_name).upper()
+        raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
+        raw = re.sub(r'\(.*?\)', '', raw) 
+        raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
+        return re.sub(r'[^A-Z0-9]', '', raw)
         
     try:
         with open("abra_barangays.geojson", "r", encoding="utf-8") as f:
             data = json.load(f)
             features = []
             
-            # Clean the target municipality name down to pure letters
             target_alpha = re.sub(r'[^A-Z]', '', str(target_muni).upper())
             if "PENARRUBIA" in target_alpha or "PEÑARRUBIA" in target_alpha: target_alpha = "PENARRUBIA"
             if "LICUAN" in target_alpha or "BAAY" in target_alpha: target_alpha = "LICUANBAAY"
@@ -97,7 +106,7 @@ def fetch_barangay_geojson(target_muni):
                             muni_match = True
                             break
                             
-                # Extract the raw Barangay Name
+                # Extract and clean the raw Barangay Name
                 if muni_match:
                     brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4']
                     raw_brgy = "UNKNOWN"
@@ -107,6 +116,7 @@ def fetch_barangay_geojson(target_muni):
                             break
                     
                     feat['properties']['Original_Name'] = raw_brgy
+                    feat['properties']['Standard_Name'] = clean_brgy_name(raw_brgy)
                     features.append(feat)
             
             if features:
@@ -1208,29 +1218,40 @@ try:
                         import unicodedata
                         import re
                         
-                        # FIX: Bulletproof Geo-Matching identical to the Dengue App!
-                        # We strip ALL spaces, dashes, and special characters to force a perfect match.
-                        def make_join_key(raw_name):
+                        # Apply Dengue App logic to force a perfect background match
+                        def clean_brgy_name(raw_name):
                             if pd.isna(raw_name): return ""
-                            raw = unicodedata.normalize('NFKD', str(raw_name).upper()).encode('ASCII', 'ignore').decode('utf-8')
-                            raw = re.sub(r'\(.*?\)', '', raw)
+                            raw = str(raw_name).upper()
+                            raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
+                            raw = re.sub(r'\(.*?\)', '', raw) 
                             raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
                             return re.sub(r'[^A-Z0-9]', '', raw)
                             
-                        # Apply Join Key to our Database
-                        df_geo_summary['Join_Key'] = df_geo_summary[geo_col].apply(make_join_key)
-                        df_geo_summary['Display_Name'] = df_geo_summary[geo_col].str.title()
+                        # Extract the base map properties
+                        all_geojson_brgys = [f['properties']['Standard_Name'] for f in brgy_geo['features']]
+                        all_geojson_originals = [f['properties']['Original_Name'] for f in brgy_geo['features']]
+                        
+                        base_df = pd.DataFrame({
+                            "Join_Key": all_geojson_brgys, 
+                            "Map_Location": all_geojson_originals
+                        })
+                        
+                        # Prepare the active data
+                        curr_data = df_geo_summary.copy()
+                        curr_data["Join_Key"] = curr_data[geo_col].apply(clean_brgy_name)
+                        
+                        # Merge the map boundaries with our data (ensures unvaxxed areas render with 0)
+                        map_data = pd.merge(base_df, curr_data, on="Join_Key", how="left").fillna(0)
+                        
+                        # Format hover text beautifully
+                        map_data['Display_Name'] = map_data['Map_Location'].str.title()
                         
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
                         
                         for feat in brgy_geo.get('features', []):
-                            # Apply the exact same Join Key to the hidden Map Boundaries
-                            raw_name = feat['properties'].get('Original_Name', '')
-                            join_key = make_join_key(raw_name)
-                            feat['properties']['Join_Key'] = join_key 
-                            
-                            match = df_geo_summary[df_geo_summary['Join_Key'] == join_key]
+                            std_name = feat['properties'].get('Standard_Name', '')
+                            match = map_data[map_data['Join_Key'] == std_name]
                             
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
@@ -1241,7 +1262,7 @@ try:
                                     mr_lats.append(lat)
                                     mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
                                     
-                                    if 'Vit A Coverage %' in df_geo_summary.columns:
+                                    if 'Vit A Coverage %' in map_data.columns:
                                         va_cov = match['Vit A Coverage %'].values[0]
                                         va_lons.append(lon)
                                         va_lats.append(lat)
@@ -1254,7 +1275,7 @@ try:
                         with map_c1:
                             st.markdown("**Measles-Rubella (MR) Coverage**")
                             fig_map_brgy_mr = px.choropleth_mapbox(
-                                df_geo_summary, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Join_Key", 
+                                map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
                                 color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
                                 zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
                                 hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
@@ -1267,9 +1288,9 @@ try:
                                                         
                         with map_c2:
                             st.markdown("**Vitamin A Coverage**")
-                            if 'Vit A Coverage %' in df_geo_summary.columns:
+                            if 'Vit A Coverage %' in map_data.columns:
                                 fig_map_brgy_va = px.choropleth_mapbox(
-                                    df_geo_summary, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Join_Key", 
+                                    map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
                                     color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
                                     zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
                                     hover_data={'Join_Key': False, 'Display_Name': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
