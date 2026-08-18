@@ -64,20 +64,21 @@ def fetch_abra_geojson():
 @st.cache_data(ttl="24h")
 def fetch_barangay_geojson(target_muni):
     """
-    Fetches and prepares local barangay boundaries using the exact 
-    alphanumeric stripping logic from the Dengue Surveillance App.
+    Fetches and prepares local barangay boundaries using the robust matching 
+    and aggressive fallback search logic from the Dengue Surveillance App.
     """
     import os
     import json
     import re
     import unicodedata
+    import pandas as pd
     
     if not os.path.exists("abra_barangays.geojson"):
         return None
         
     # The Dengue App cleaner: strips all spaces, (), and special chars
     def clean_brgy_name(raw_name):
-        if not isinstance(raw_name, str) and pd.isna(raw_name): return ""
+        if pd.isna(raw_name): return ""
         raw = str(raw_name).upper()
         raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
         raw = re.sub(r'\(.*?\)', '', raw) 
@@ -92,6 +93,9 @@ def fetch_barangay_geojson(target_muni):
             target_alpha = re.sub(r'[^A-Z]', '', str(target_muni).upper())
             if "PENARRUBIA" in target_alpha or "PEÑARRUBIA" in target_alpha: target_alpha = "PENARRUBIA"
             if "LICUAN" in target_alpha or "BAAY" in target_alpha: target_alpha = "LICUANBAAY"
+            
+            # Master list of municipalities to prevent accidentally claiming a muni name as a barangay
+            all_munis = ["BANGUED", "BOLINEY", "BUCAY", "BUCLOC", "DAGUIOMAN", "DANGLAS", "DOLORES", "LAPAZ", "LACUB", "LAGANGILANG", "LAGAYAN", "LANGIDEN", "LICUANBAAY", "LUBA", "MALIBCONG", "MANABO", "PENARRUBIA", "PIDIGAN", "PILAR", "SALLAPADAN", "SANISIDRO", "SANJUAN", "SANQUINTIN", "TAYUM", "TINEG", "TUBO", "VILLAVICIOSA"]
             
             for feat in data.get('features', []):
                 props = feat.get('properties', {})
@@ -108,12 +112,25 @@ def fetch_barangay_geojson(target_muni):
                             
                 # Extract and clean the raw Barangay Name
                 if muni_match:
-                    brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4']
                     raw_brgy = "UNKNOWN"
+                    
+                    # 1. Try standard keys first
+                    brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4', 'NAME_3']
                     for k in brgy_keys:
-                        if k in props_upper:
+                        if k in props_upper and props_upper[k] not in ["", "UNKNOWN", "NONE", "NULL"]:
                             raw_brgy = props_upper[k]
                             break
+                            
+                    # 2. Aggressive Fallback: Scan all properties if standard keys fail
+                    if raw_brgy == "UNKNOWN" or re.sub(r'[^A-Z]', '', raw_brgy) in all_munis:
+                        for val in props.values():
+                            v_str = str(val).upper().strip()
+                            v_alpha = re.sub(r'[^A-Z]', '', v_str)
+                            # Ignore basic geographic labels and municipality names
+                            if v_str not in ["ABRA", "PHILIPPINES"] and v_alpha not in all_munis:
+                                if len(v_str) > 2:
+                                    raw_brgy = v_str
+                                    break
                     
                     feat['properties']['Original_Name'] = raw_brgy
                     feat['properties']['Standard_Name'] = clean_brgy_name(raw_brgy)
