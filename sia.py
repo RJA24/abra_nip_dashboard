@@ -64,12 +64,12 @@ def fetch_abra_geojson():
 @st.cache_data(ttl="24h")
 def fetch_barangay_geojson(target_muni):
     """
-    Fetches and universally cleans local barangay boundaries for a specific municipality
-    using the locally hosted abra_barangays.geojson file.
+    Fetches and prepares local barangay boundaries using the robust matching 
+    logic from the Dengue Surveillance App.
     """
     import os
     import json
-    import pandas as pd
+    import re
     
     if not os.path.exists("abra_barangays.geojson"):
         return None
@@ -78,28 +78,26 @@ def fetch_barangay_geojson(target_muni):
         with open("abra_barangays.geojson", "r", encoding="utf-8") as f:
             data = json.load(f)
             features = []
-            target = str(target_muni).strip().upper()
             
-            # Align specific municipality spelling differences between DB and Map
-            if target == "PEÑARRUBIA": target = "PENARRUBIA"
-            if target == "LICUAN-BAAY": target = "LICUAN-BAAY (LICUAN)"
+            # Clean the target municipality name down to pure letters
+            target_alpha = re.sub(r'[^A-Z]', '', str(target_muni).upper())
+            if "PENARRUBIA" in target_alpha or "PEÑARRUBIA" in target_alpha: target_alpha = "PENARRUBIA"
+            if "LICUAN" in target_alpha or "BAAY" in target_alpha: target_alpha = "LICUANBAAY"
             
             for feat in data.get('features', []):
                 props = feat.get('properties', {})
-                # Create an uppercase lookup dictionary for consistent targeting
                 props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
                 
-                # 1. Match the Municipality
-                muni_keys = ['ADM3_EN', 'MUN_NAME', 'NAME_3', 'MUNICIPALITY']
+                # Match the Municipality using strict alphanumeric stripping
                 muni_match = False
-                for k in muni_keys:
-                    if k in props_upper and target in props_upper[k]:
-                        muni_match = True
-                        break
-                if not muni_match and any(target in v for v in props_upper.values()):
-                    muni_match = True
-                        
-                # 2. If it is a match, safely extract the Barangay Name
+                for val in props_upper.values():
+                    val_alpha = re.sub(r'[^A-Z]', '', str(val))
+                    if target_alpha == val_alpha or target_alpha in val_alpha:
+                        if len(target_alpha) > 3:
+                            muni_match = True
+                            break
+                            
+                # Extract the raw Barangay Name
                 if muni_match:
                     brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4']
                     raw_brgy = "UNKNOWN"
@@ -109,11 +107,6 @@ def fetch_barangay_geojson(target_muni):
                             break
                     
                     feat['properties']['Original_Name'] = raw_brgy
-                    
-                    # 3. Apply the exact same master cleaner function to the map labels
-                    clean_series = standardize_geo_names(pd.Series([raw_brgy]))
-                    feat['properties']['Standard_Name'] = clean_series.iloc[0]
-                    
                     features.append(feat)
             
             if features:
@@ -196,7 +189,7 @@ def render_footer():
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=thumbnail_unscaled&_=20170706162937", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -1212,23 +1205,37 @@ try:
                     brgy_geo = fetch_barangay_geojson(selected_muni)
                     
                     if brgy_geo and not df_geo_summary.empty:
-                        # FIX: Force absolute UPPERCASE matching to prevent Plotly from drawing blank maps
-                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col].astype(str).str.upper().str.strip()
+                        import unicodedata
+                        import re
+                        
+                        # FIX: Bulletproof Geo-Matching identical to the Dengue App!
+                        # We strip ALL spaces, dashes, and special characters to force a perfect match.
+                        def make_join_key(raw_name):
+                            if pd.isna(raw_name): return ""
+                            raw = unicodedata.normalize('NFKD', str(raw_name).upper()).encode('ASCII', 'ignore').decode('utf-8')
+                            raw = re.sub(r'\(.*?\)', '', raw)
+                            raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
+                            return re.sub(r'[^A-Z0-9]', '', raw)
+                            
+                        # Apply Join Key to our Database
+                        df_geo_summary['Join_Key'] = df_geo_summary[geo_col].apply(make_join_key)
+                        df_geo_summary['Display_Name'] = df_geo_summary[geo_col].str.title()
                         
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
                         
                         for feat in brgy_geo.get('features', []):
-                            # Force the geojson standard name to UPPERCASE as well so it perfectly matches
-                            std_name = str(feat['properties'].get('Standard_Name', '')).upper().strip()
-                            feat['properties']['Standard_Name'] = std_name 
+                            # Apply the exact same Join Key to the hidden Map Boundaries
+                            raw_name = feat['properties'].get('Original_Name', '')
+                            join_key = make_join_key(raw_name)
+                            feat['properties']['Join_Key'] = join_key 
                             
-                            match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
+                            match = df_geo_summary[df_geo_summary['Join_Key'] == join_key]
                             
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
                                 if lon is not None and lat is not None:
-                                    display_name = std_name.title()
+                                    display_name = match['Display_Name'].values[0]
                                     mr_cov = match['MR Coverage %'].values[0]
                                     mr_lons.append(lon)
                                     mr_lats.append(lat)
@@ -1247,10 +1254,10 @@ try:
                         with map_c1:
                             st.markdown("**Measles-Rubella (MR) Coverage**")
                             fig_map_brgy_mr = px.choropleth_mapbox(
-                                df_geo_summary, geojson=brgy_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                df_geo_summary, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Join_Key", 
                                 color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                                zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name=geo_col,
-                                hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
+                                zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
+                                hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                             )
                             fig_map_brgy_mr.add_trace(go.Scattermapbox(
                                 lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
@@ -1262,10 +1269,10 @@ try:
                             st.markdown("**Vitamin A Coverage**")
                             if 'Vit A Coverage %' in df_geo_summary.columns:
                                 fig_map_brgy_va = px.choropleth_mapbox(
-                                    df_geo_summary, geojson=brgy_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                    df_geo_summary, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Join_Key", 
                                     color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
-                                    zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name=geo_col,
-                                    hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
+                                    zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
+                                    hover_data={'Join_Key': False, 'Display_Name': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                                 )
                                 fig_map_brgy_va.add_trace(go.Scattermapbox(
                                     lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
@@ -1885,7 +1892,8 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True  #  NEW: Required to run the bolding script!
+                    allow_unsafe_jscode=True
+                    key="mr_aggrid_tally"
                 )
 
                 # --- MR TALLY SHEET DOWNLOAD BUTTON ---
@@ -2129,7 +2137,8 @@ try:
                     theme="streamlit",
                     custom_css=grid_css,
                     fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True  #  NEW: Required to run the bolding script!
+                    allow_unsafe_jscode=True
+                    key="va_aggrid_tally"
                 )
 
                 # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
