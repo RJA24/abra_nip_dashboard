@@ -62,6 +62,79 @@ def fetch_abra_geojson():
     return None
 
 @st.cache_data(ttl="24h")
+def fetch_barangay_geojson(target_muni):
+    """
+    Fetches and universally cleans local barangay boundaries for a specific municipality
+    using the locally hosted abra_barangays.geojson file.
+    """
+    import os
+    import json
+    import re
+    
+    if not os.path.exists("abra_barangays.geojson"):
+        return None
+        
+    try:
+        with open("abra_barangays.geojson", "r", encoding="utf-8") as f:
+            data = json.load(f)
+            features = []
+            target = str(target_muni).strip().upper()
+            
+            # Align specific municipality spelling differences between DB and Map
+            if target == "PEÑARRUBIA": target = "PENARRUBIA"
+            if target == "LICUAN-BAAY": target = "LICUAN-BAAY (LICUAN)"
+            
+            for feat in data.get('features', []):
+                props = feat.get('properties', {})
+                props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
+                
+                # 1. Match the Municipality
+                muni_keys = ['ADM3_EN', 'MUN_NAME', 'NAME_3', 'MUNICIPALITY']
+                muni_match = False
+                for k in muni_keys:
+                    if k in props_upper and target in props_upper[k]:
+                        muni_match = True
+                        break
+                if not muni_match and any(target in v for v in props_upper.values()):
+                    muni_match = True
+                        
+                # 2. If it is a match, perfectly clean the Barangay Name
+                if muni_match:
+                    brgy_keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4']
+                    raw_brgy = "UNKNOWN"
+                    for k in brgy_keys:
+                        if k in props_upper:
+                            raw_brgy = str(props.get(k, props.get(k.lower(), props.get(k.capitalize(), ""))))
+                            break
+                    
+                    feat['properties']['Original_Name'] = raw_brgy
+                    
+                    # Apply identical cleaning logic to Standardize_Geo_Names
+                    s = str(raw_brgy).strip().title()
+                    s = s.replace('?', 'ñ').replace('ñA', 'ña').replace('ñE', 'ñe').replace('ñI', 'ñi').replace('ñO', 'ño').replace('ñU', 'ñu')
+                    s = re.sub(r'\s*\([Pp]ob.*?\)', '', s, flags=re.IGNORECASE)
+                    
+                    if not re.match(r'^Zone\s*\d+', s, re.IGNORECASE) and s.lower() != 'poblacion':
+                        s = re.sub(r'\s+Pob\.?$', '', s, flags=re.IGNORECASE)
+                        s = re.sub(r'\s+Poblacion$', '', s, flags=re.IGNORECASE)
+                        
+                    s = re.sub(r'\bPob\.\b', 'Poblacion', s, flags=re.IGNORECASE)
+                    s = re.sub(r'\bPob\b', 'Poblacion', s, flags=re.IGNORECASE)
+                    s = re.sub(r'\bSta\.\b', 'Santa', s, flags=re.IGNORECASE)
+                    s = re.sub(r'\bSta\b', 'Santa', s, flags=re.IGNORECASE)
+                    s = re.sub(r'\bSto\.\b', 'Santo', s, flags=re.IGNORECASE)
+                    s = re.sub(r'\bSto\b', 'Santo', s, flags=re.IGNORECASE)
+                    
+                    feat['properties']['Standard_Name'] = s.replace('  ', ' ').strip()
+                    features.append(feat)
+            
+            if features:
+                return {"type": "FeatureCollection", "features": features}
+            return None
+    except Exception:
+        return None
+
+@st.cache_data(ttl="24h")
 def fetch_car_geojson():
     # Use multiple fallback URLs to guarantee we get the data
     prov_urls = [
@@ -1186,6 +1259,74 @@ try:
                             
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
+
+                    elif view_mode == "Specific Municipality":
+                    st.divider()
+                    st.markdown(f"#### Barangay Coverage Map: {selected_muni}")
+                    st.caption(f"Map data based on: {exec_target_mode}")
+                    
+                    brgy_geo = fetch_barangay_geojson(selected_muni)
+                    
+                    if brgy_geo and not df_geo_summary.empty:
+                        df_geo_summary['Map_Location'] = df_geo_summary[geo_col].str.title().str.strip()
+                        
+                        mr_lons, mr_lats, mr_texts = [], [], []
+                        va_lons, va_lats, va_texts = [], [], []
+                        
+                        for feat in brgy_geo.get('features', []):
+                            std_name = feat['properties'].get('Standard_Name', '')
+                            match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
+                            
+                            if not match.empty:
+                                lon, lat = get_polygon_centroid(feat.get('geometry', {}))
+                                if lon is not None and lat is not None:
+                                    mr_cov = match['MR Coverage %'].values[0]
+                                    mr_lons.append(lon)
+                                    mr_lats.append(lat)
+                                    mr_texts.append(f"{std_name}<br>{mr_cov:.1f}%")
+                                    
+                                    if 'Vit A Coverage %' in df_geo_summary.columns:
+                                        va_cov = match['Vit A Coverage %'].values[0]
+                                        va_lons.append(lon)
+                                        va_lats.append(lat)
+                                        va_texts.append(f"{std_name}<br>{va_cov:.1f}%")
+                                                        
+                        cam_lat = np.mean(mr_lats) if mr_lats else 17.58
+                        cam_lon = np.mean(mr_lons) if mr_lons else 120.80
+                        
+                        map_c1, map_c2 = st.columns(2)
+                        with map_c1:
+                            st.markdown("**Measles-Rubella (MR) Coverage**")
+                            fig_map_brgy_mr = px.choropleth_mapbox(
+                                df_geo_summary, geojson=brgy_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                                zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name=geo_col,
+                                hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
+                            )
+                            fig_map_brgy_mr.add_trace(go.Scattermapbox(
+                                lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
+                            ))
+                            fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"))
+                            st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr")
+                                                        
+                        with map_c2:
+                            st.markdown("**Vitamin A Coverage**")
+                            if 'Vit A Coverage %' in df_geo_summary.columns:
+                                fig_map_brgy_va = px.choropleth_mapbox(
+                                    df_geo_summary, geojson=brgy_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
+                                    color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                                    zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name=geo_col,
+                                    hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
+                                )
+                                fig_map_brgy_va.add_trace(go.Scattermapbox(
+                                    lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=11, color='black'), hoverinfo='skip', showlegend=False
+                                ))
+                                fig_map_brgy_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"))
+                                st.plotly_chart(fig_map_brgy_va, use_container_width=True, key="exec_map_brgy_va")
+                    else:
+                        st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
+
+                        
                     
                 with st.expander("View Full Geographic Coverage Data"):
                     # Format to remove decimals and add comma separators
