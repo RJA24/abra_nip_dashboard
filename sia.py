@@ -221,7 +221,7 @@ def render_footer():
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png?utm_source=commons.wikimedia.org&utm_campaign=index&utm_content=thumbnail_unscaled&_=20170706162937", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra SIA 2026 Tracker", page_icon="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
