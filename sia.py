@@ -1550,8 +1550,9 @@ try:
                     # Full width bar chart
                     df_sorted_mr = df_view.sort_values(plot_col, ascending=True) 
                     fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
-                    fig_mr.update_layout(xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_mr, use_container_width=True, key="tgt_mr_bar")
+                    # MOBILE FIX: Projected MR Bar
+                    fig_mr.update_layout(dragmode=False, xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
+                    st.plotly_chart(fig_mr, use_container_width=True, key="tgt_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Targets', 'scale': 2}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1563,8 +1564,9 @@ try:
                             'Target': [df_view[c1_col].sum(), df_view[c2_col].sum(), df_view[c3_col].sum()]
                         })
                         fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
-                        fig_donut_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie")
+                        # MOBILE FIX: Projected MR Pie
+                    fig_donut_mr.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
+                    st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Pie', 'scale': 2}})
 
             # ==========================================
             # SUB-TAB 2: PROJECTED VITAMIN A
@@ -2593,8 +2595,31 @@ try:
                 if 'Vaccination Date' in df_vt.columns and 'Response Type' in df_vt.columns:
                     df_trend = df_vt.groupby(['Vaccination Date', 'Response Type'])['Grand total doses administered'].sum().reset_index()
                     fig_trend = px.line(df_trend, x='Vaccination Date', y='Grand total doses administered', color='Response Type', markers=True, color_discrete_sequence=['#1E88E5', '#F4511E'])
-                    fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Doses", height=450, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_trend, use_container_width=True, key="exec_trend")
+                    # MOBILE FIX: VaccTrack Daily Trend
+                    fig_trend.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        xaxis_title="", 
+                        yaxis_title="Total Doses", 
+                        height=450, 
+                        margin=dict(l=10, r=10, t=50, b=50), 
+                        legend_title_text="",
+                        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+                    )
+                    st.plotly_chart(
+                        fig_trend, 
+                        use_container_width=True, 
+                        key="exec_trend_unique", 
+                        config={
+                            'scrollZoom': False, 
+                            'displayModeBar': True, 
+                            'toImageButtonOptions': {
+                                'format': 'png', 
+                                'filename': 'VaccTrack_Daily_Trend', 
+                                'scale': 2
+                            }
+                        }
+                    )
                 else:
                     st.info("Insufficient date/type data for trend chart.")
                 
@@ -2620,8 +2645,32 @@ try:
                     # Dynamic height to accommodate all municipalities comfortably
                     chart_height = max(400, len(df_muni_total) * 40)
                     #  Also increased the right margin (r=40) so labels don't get cut off
-                    fig_muni.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=chart_height, margin=dict(l=0, r=40, t=10, b=0), yaxis={'categoryarray': df_muni_total['Municipality']})
-                    st.plotly_chart(fig_muni, use_container_width=True, key="exec_muni")
+                    # MOBILE FIX: VaccTrack Doses by Municipality
+                    fig_muni.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        xaxis_title="Total Doses", 
+                        yaxis_title="", 
+                        height=chart_height, 
+                        margin=dict(l=10, r=40, t=50, b=50), 
+                        yaxis={'categoryarray': df_muni_total['Municipality']},
+                        legend_title_text="",
+                        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+                    )
+                    st.plotly_chart(
+                        fig_muni, 
+                        use_container_width=True, 
+                        key="exec_muni_unique", 
+                        config={
+                            'scrollZoom': False, 
+                            'displayModeBar': True, 
+                            'toImageButtonOptions': {
+                                'format': 'png', 
+                                'filename': 'VaccTrack_By_Municipality', 
+                                'scale': 2
+                            }
+                        }
+                    )
                 else:
                     st.info("Insufficient municipality data for bar chart.")
                     
