@@ -1461,16 +1461,34 @@ try:
                 )
                 
                 fig_comp_cov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                # MOBILE FIX: Comparison Bar Chart
                 fig_comp_cov.update_layout(
+                    dragmode=False,
                     plot_bgcolor='rgba(0,0,0,0)', 
                     xaxis_title="Coverage (%)", 
                     yaxis_title="", 
                     height=chart_height_comp, 
-                    margin=dict(l=0, r=50, t=40, b=0), 
+                    margin=dict(l=10, r=50, t=85, b=50), 
+                    title=dict(text="Geographic Coverage Comparison", y=0.95, x=0.0),
                     legend_title_text="",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
                 )
-                st.plotly_chart(fig_comp_cov, use_container_width=True, key="exec_comp_cov")
+                st.plotly_chart(
+                    fig_comp_cov, 
+                    use_container_width=True, 
+                    key="exec_comp_cov_unique", 
+                    config={
+                        'scrollZoom': False, 
+                        'displayModeBar': True, 
+                        'toImageButtonOptions': {
+                            'format': 'png', 
+                            'filename': 'Coverage_Comparison', 
+                            'height': chart_height_comp, 
+                            'width': 1200, 
+                            'scale': 2
+                        }
+                    }
+                )
 
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
@@ -2262,8 +2280,30 @@ try:
                 df_sum['Short Reason'] = df_sum['Reason'].apply(lambda x: (str(x)[:85] + '...') if len(str(x)) > 85 else str(x))
                 
                 fig = px.bar(df_sum, x='Count', y='Short Reason', orientation='h', text_auto='.0f', title=title, color_discrete_sequence=[color])
-                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Cases", yaxis_title="", height=max(350, len(df_sum)*45), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig, use_container_width=True, key=title)
+                # MOBILE FIX: Deferral and Refusal Charts
+                fig.update_layout(
+                    dragmode=False, 
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    xaxis_title="Total Cases", 
+                    yaxis_title="", 
+                    height=max(350, len(df_sum)*45), 
+                    margin=dict(l=10, r=10, t=85, b=50), 
+                    title=dict(text=title, y=0.95, x=0.0)
+                )
+                st.plotly_chart(
+                    fig, 
+                    use_container_width=True, 
+                    key=f"{title}_unique", 
+                    config={
+                        'scrollZoom': False, 
+                        'displayModeBar': True, 
+                        'toImageButtonOptions': {
+                            'format': 'png', 
+                            'filename': f'{title.replace(" ", "_")}', 
+                            'scale': 2
+                        }
+                    }
+                )
             else:
                 st.info(f"No {title.lower()} have been recorded for this location yet.")
 
