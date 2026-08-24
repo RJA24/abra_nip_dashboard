@@ -1034,8 +1034,32 @@ try:
                         if va_95 > 0:
                             fig_trend.add_hline(y=va_95, line_dash="dash", line_color="rgba(244, 81, 30, 0.5)", annotation_text="95% Vit A Target", annotation_position="bottom right")
 
-                        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Total Cumulative Doses", legend_title_text="Program", height=500, margin=dict(l=0, r=0, t=40, b=0))
-                        st.plotly_chart(fig_trend, use_container_width=True)
+                        # MOBILE FIX: Burn-up Chart
+                        fig_trend.update_layout(
+                            dragmode=False, 
+                            plot_bgcolor='rgba(0,0,0,0)', 
+                            xaxis_title="", 
+                            yaxis_title="Total Cumulative Doses", 
+                            height=500, 
+                            margin=dict(l=10, r=10, t=50, b=50), 
+                            legend_title_text="",
+                            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+                        )
+                        st.plotly_chart(
+                            fig_trend, 
+                            use_container_width=True, 
+                            config={
+                                'scrollZoom': False, 
+                                'displayModeBar': True, 
+                                'toImageButtonOptions': {
+                                    'format': 'png', 
+                                    'filename': 'Cumulative_Burn_Up', 
+                                    'height': 500, 
+                                    'width': 1200, 
+                                    'scale': 2
+                                }
+                            }
+                        )
                         
                         
                 st.divider()
