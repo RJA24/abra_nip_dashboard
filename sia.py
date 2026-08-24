@@ -1164,16 +1164,34 @@ try:
                 
                 fig_geo_cov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
                 
+                # MOBILE FIX: Geographic Coverage Bar Chart
                 fig_geo_cov.update_layout(
+                    dragmode=False,
                     plot_bgcolor='rgba(0,0,0,0)', 
                     xaxis_title="Coverage (%)", 
                     yaxis_title="", 
                     height=chart_height, 
-                    margin=dict(l=0, r=50, t=40, b=0), 
+                    margin=dict(l=10, r=50, t=85, b=50), 
+                    title=dict(text=f"Coverage % by {geo_col}", y=0.95, x=0.0),
                     legend_title_text="",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) 
+                    legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5) 
                 )
-                st.plotly_chart(fig_geo_cov, use_container_width=True, key="exec_geo_cov")
+                st.plotly_chart(
+                    fig_geo_cov, 
+                    use_container_width=True, 
+                    key="exec_geo_cov_unique", 
+                    config={
+                        'scrollZoom': False, 
+                        'displayModeBar': True, 
+                        'toImageButtonOptions': {
+                            'format': 'png', 
+                            'filename': f'Abra_SIA_Coverage_{geo_col}', 
+                            'height': chart_height, 
+                            'width': 1200, 
+                            'scale': 2
+                        }
+                    }
+                )
                 
                 # ==========================================
                 #  CHOROPLETH COVERAGE MAP
