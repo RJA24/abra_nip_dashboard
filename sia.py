@@ -1572,17 +1572,25 @@ try:
                     st.divider()
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Projected MR Targets"):
-                        mr_proj_cols = ['Location', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'MR_6-12m_M', 'MR_6-12m_F', 'MR_13-23m_M', 'MR_13-23m_F', 'MR_24-59m_M', 'MR_24-59m_F']
+                        # Force Barangay-level data for the export
+                        if view_mode == "All Municipalities (Abra)":
+                            df_export_base_mr = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Province'] == 'Abra')]
+                        else:
+                            df_export_base_mr = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
+                            
+                        # Added 'Parent_Municipality' so the CSV is easy to filter
+                        mr_proj_cols = ['Parent_Municipality', 'Location', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'MR_6-12m_M', 'MR_6-12m_F', 'MR_13-23m_M', 'MR_13-23m_F', 'MR_24-59m_M', 'MR_24-59m_F']
                         
-                        # FIX: Removed the duplicate ['Location'] addition here
-                        df_export_mr_proj = df_view[[c for c in mr_proj_cols if c in df_view.columns]]
+                        df_export_mr_proj = df_export_base_mr[[c for c in mr_proj_cols if c in df_export_base_mr.columns]]
+                        df_export_mr_proj = df_export_mr_proj.rename(columns={'Parent_Municipality': 'Municipality', 'Location': 'Barangay'})
+                        
                         st.dataframe(df_export_mr_proj, use_container_width=True, hide_index=True)
                         
                         csv_mr_proj = df_export_mr_proj.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="Download Projected MR Targets (CSV)", 
                             data=csv_mr_proj, 
-                            file_name=f"Projected_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            file_name=f"Projected_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}_Barangay_Level.csv", 
                             mime="text/csv", 
                             key="dl_mr_proj"
                         )
@@ -1711,17 +1719,25 @@ try:
                     st.divider()
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Actual MR Targets"):
-                        mr_act_cols = ['Location', 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']
+                        # Force Barangay-level data for the export
+                        if view_mode == "All Municipalities (Abra)":
+                            df_export_base_mr_act = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Province'] == 'Abra')]
+                        else:
+                            df_export_base_mr_act = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Municipality'] == selected_muni)]
+
+                        # Added 'Parent_Municipality' so the CSV is easy to filter
+                        mr_act_cols = ['Parent_Municipality', 'Location', 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']
                         
-                        # FIX: Removed the duplicate ['Location'] addition here
-                        df_export_mr_act = df_view[[c for c in mr_act_cols if c in df_view.columns]]
+                        df_export_mr_act = df_export_base_mr_act[[c for c in mr_act_cols if c in df_export_base_mr_act.columns]]
+                        df_export_mr_act = df_export_mr_act.rename(columns={'Parent_Municipality': 'Municipality', 'Location': 'Barangay'})
+
                         st.dataframe(df_export_mr_act, use_container_width=True, hide_index=True)
                         
                         csv_mr_act = df_export_mr_act.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="Download Actual MR Targets (CSV)", 
                             data=csv_mr_act, 
-                            file_name=f"Actual_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            file_name=f"Actual_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}_Barangay_Level.csv", 
                             mime="text/csv", 
                             key="dl_mr_act"
                         )
