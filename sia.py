@@ -1599,8 +1599,9 @@ try:
                     # Full width bar chart
                     df_sorted_va = df_view_va.sort_values(plot_col_va, ascending=True) 
                     fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
-                    fig_va.update_layout(xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_va, use_container_width=True, key="tgt_va_bar")
+                    # MOBILE FIX: Projected Vit A Bar
+                    fig_va.update_layout(dragmode=False, xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
+                    st.plotly_chart(fig_va, use_container_width=True, key="tgt_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Targets', 'scale': 2}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1612,8 +1613,9 @@ try:
                             'Target': [df_view_va[c1_col_va].sum(), df_view_va[c2_col_va].sum()]
                         })
                         fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
-                        fig_donut_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie")
+                        # MOBILE FIX: Projected Vit A Pie
+                    fig_donut_va.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
+                    st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Pie', 'scale': 2}})
 
             # ==========================================
             # SUB-TAB 3: ACTUAL MR
@@ -1649,8 +1651,9 @@ try:
                     # Full width bar chart
                     df_sorted_act_mr = df_view.sort_values(act_plot_col, ascending=True) 
                     fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
-                    fig_act_mr.update_layout(xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_act_mr, use_container_width=True, key="tgt_act_mr_bar")
+                    # MOBILE FIX: Actual MR Bar
+                    fig_act_mr.update_layout(dragmode=False, xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
+                    st.plotly_chart(fig_act_mr, use_container_width=True, key="tgt_act_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Targets', 'scale': 2}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1662,8 +1665,9 @@ try:
                             'Target': [df_view[act_c1_col].sum(), df_view[act_c2_col].sum(), df_view[act_c3_col].sum()]
                         })
                         fig_donut_act_mr = px.pie(act_mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
-                        fig_donut_act_mr.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie")
+                        # MOBILE FIX: Actual MR Pie
+                    fig_donut_act_mr.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
+                    st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Pie', 'scale': 2}})
 
             # ==========================================
             # SUB-TAB 4: ACTUAL VITAMIN A
@@ -1696,8 +1700,9 @@ try:
                     # Full width bar chart
                     df_sorted_act_va = df_view_va.sort_values(act_plot_col_va, ascending=True) 
                     fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
-                    fig_act_va.update_layout(xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_act_va, use_container_width=True, key="tgt_act_va_bar")
+                    # MOBILE FIX: Actual Vit A Bar
+                    fig_act_va.update_layout(dragmode=False, xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
+                    st.plotly_chart(fig_act_va, use_container_width=True, key="tgt_act_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Targets', 'scale': 2}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1709,8 +1714,9 @@ try:
                             'Target': [df_view_va[act_c1_col_va].sum(), df_view_va[act_c2_col_va].sum()]
                         })
                         fig_donut_act_va = px.pie(act_va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
-                        fig_donut_act_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), height=400, margin=dict(l=0, r=0, t=30, b=0))
-                        st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie")
+                        # MOBILE FIX: Actual Vit A Pie
+                    fig_donut_act_va.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
+                    st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Pie', 'scale': 2}})
 
             # ==========================================
             # SUB-TAB 5: COMPARISON (PROJECTED VS ACTUAL)
@@ -1750,8 +1756,9 @@ try:
                     df_melt['Target Type'] = df_melt['Target Type'].replace({nat_col: 'Projected Target', act_col: 'Actual RHU Target'})
                     
                     fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
-                    fig_comp.update_layout(xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, legend_title_text="")
-                    st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar")
+                    # MOBILE FIX: Comparison Bar
+                    fig_comp.update_layout(dragmode=False, xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), legend_title_text="")
+                    st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Target_Variance_Analysis', 'scale': 2}})
                     
                     st.markdown("##### Detailed Breakdown")
                     df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
@@ -1822,15 +1829,17 @@ try:
             if 'Vaccination Date' in df_mr_filtered.columns and not df_mr_filtered['Vaccination Date'].isna().all():
                 df_time = df_mr_filtered.groupby(df_mr_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                 fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
-                fig_time.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_time, use_container_width=True, key="mr_timeline_chart")
+                # MOBILE FIX: MR Daily Trend Line
+                fig_time.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=10, r=10, t=85, b=50), title=dict(text="Daily Doses Administered Trend", y=0.95, x=0.0))
+                st.plotly_chart(fig_time, use_container_width=True, key="mr_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Daily_Trend', 'scale': 2}})
             
             # Full width Geographic Bar Chart
             if geo_col in df_mr_filtered.columns:
                 df_geo = df_mr_filtered.groupby(geo_col)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                 fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
-                fig_geo.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_geo, use_container_width=True, key="mr_geographic_chart")
+                # MOBILE FIX: MR Geographic Bar
+                fig_geo.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=10, r=50, t=85, b=50), title=dict(text=f"Doses Administered by {geo_col}", y=0.95, x=0.0))
+                st.plotly_chart(fig_geo, use_container_width=True, key="mr_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Doses_By_Geo', 'scale': 2}})
                 
             st.markdown("<br>", unsafe_allow_html=True)
             
@@ -1843,8 +1852,9 @@ try:
                 
                 df_age = pd.DataFrame({'Age Group': ['6-12m', '13-23m', '24-59m'], 'Doses': [mr_6_12, mr_13_23, mr_24_59]})
                 fig_age = px.pie(df_age, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
-                fig_age.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_age, use_container_width=True, key="mr_age_pie")
+                # MOBILE FIX: MR Age Pie
+                fig_age.update_layout(dragmode=False, title=dict(text="By Age Group", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
+                st.plotly_chart(fig_age, use_container_width=True, key="mr_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Age', 'scale': 2}})
                 
             with pc2:
                 mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
@@ -1852,8 +1862,9 @@ try:
                 
                 df_gender = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [mr_male, mr_female]})
                 fig_gender = px.pie(df_gender, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
-                fig_gender.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_gender, use_container_width=True, key="mr_gender_pie")
+                # MOBILE FIX: MR Gender Pie
+                fig_gender.update_layout(dragmode=False, title=dict(text="By Gender", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
+                st.plotly_chart(fig_gender, use_container_width=True, key="mr_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Gender', 'scale': 2}})
                 
             # ==========================================
             #  DAILY TALLY SHEET GRID (MR) - AGGRID
@@ -2068,15 +2079,17 @@ try:
             if 'Vaccination Date' in df_vita_filtered.columns and not df_vita_filtered['Vaccination Date'].isna().all():
                 df_time_va = df_vita_filtered.groupby(df_vita_filtered['Vaccination Date'].dt.date)['Total Doses'].sum().reset_index()
                 fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
-                fig_time_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_time_va, use_container_width=True, key="vita_timeline_chart")
+                # MOBILE FIX: Vit A Daily Trend Line
+                fig_time_va.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=10, r=10, t=85, b=50), title=dict(text="Daily Doses Administered Trend", y=0.95, x=0.0))
+                st.plotly_chart(fig_time_va, use_container_width=True, key="vita_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Daily_Trend', 'scale': 2}})
             
             # Full width Geographic Bar Chart
             if geo_col_va in df_vita_filtered.columns:
                 df_geo_va = df_vita_filtered.groupby(geo_col_va)['Total Doses'].sum().reset_index().sort_values('Total Doses', ascending=True)
                 fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
-                fig_geo_va.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_geo_va, use_container_width=True, key="vita_geographic_chart")
+                # MOBILE FIX: Vit A Geographic Bar
+                fig_geo_va.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=10, r=50, t=85, b=50), title=dict(text=f"Doses Administered by {geo_col_va}", y=0.95, x=0.0))
+                st.plotly_chart(fig_geo_va, use_container_width=True, key="vita_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Doses_By_Geo', 'scale': 2}})
                 
             st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -2088,8 +2101,9 @@ try:
                 
                 df_age_va = pd.DataFrame({'Age Group': ['6-11m', '12-59m'], 'Doses': [va_6_11, va_12_59]})
                 fig_age_va = px.pie(df_age_va, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#00ACC1', '#8E24AA'])
-                fig_age_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_age_va, use_container_width=True, key="vita_age_pie")
+                # MOBILE FIX: Vit A Age Pie
+                fig_age_va.update_layout(dragmode=False, title=dict(text="By Age Group", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
+                st.plotly_chart(fig_age_va, use_container_width=True, key="vita_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Age', 'scale': 2}})
                 
             with pc2_va:
                 va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
@@ -2097,8 +2111,9 @@ try:
                 
                 df_gender_va = pd.DataFrame({'Gender': ['Male', 'Female'], 'Doses': [va_male, va_female]})
                 fig_gender_va = px.pie(df_gender_va, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
-                fig_gender_va.update_layout(legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5), margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig_gender_va, use_container_width=True, key="vita_gender_pie")
+                # MOBILE FIX: Vit A Gender Pie
+                fig_gender_va.update_layout(dragmode=False, title=dict(text="By Gender", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
+                st.plotly_chart(fig_gender_va, use_container_width=True, key="vita_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Gender', 'scale': 2}})
 
             # ==========================================
             #  DAILY TALLY SHEET GRID (VIT A) - AGGRID
@@ -3091,16 +3106,31 @@ try:
                 fig_prov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
                 
                 chart_height_reg = max(400, len(reg_table) * 60)
+                # MOBILE FIX: CAR Coverage by Province Bar Chart
                 fig_prov.update_layout(
+                    dragmode=False,
                     plot_bgcolor='rgba(0,0,0,0)', 
                     xaxis_title="Coverage (%)", 
                     yaxis_title="", 
                     height=chart_height_reg, 
-                    margin=dict(l=0, r=50, t=10, b=0), 
+                    margin=dict(l=10, r=50, t=50, b=50), 
                     legend_title_text="",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
                 )
-                st.plotly_chart(fig_prov, use_container_width=True, key="exec_prov_cov")
+                st.plotly_chart(
+                    fig_prov, 
+                    use_container_width=True, 
+                    key="exec_prov_cov", 
+                    config={
+                        'scrollZoom': False, 
+                        'displayModeBar': True, 
+                        'toImageButtonOptions': {
+                            'format': 'png', 
+                            'filename': 'CAR_Provincial_Coverage', 
+                            'scale': 2
+                        }
+                    }
+                )
                 
                 # 7. Detailed Regional Coverage Table
                 st.markdown("#### 📋 Regional Coverage Breakdown")
