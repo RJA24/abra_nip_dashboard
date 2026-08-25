@@ -1573,7 +1573,9 @@ try:
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Projected MR Targets"):
                         mr_proj_cols = ['Location', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'MR_6-12m_M', 'MR_6-12m_F', 'MR_13-23m_M', 'MR_13-23m_F', 'MR_24-59m_M', 'MR_24-59m_F']
-                        df_export_mr_proj = df_view[['Location'] + [c for c in mr_proj_cols if c in df_view.columns]]
+                        
+                        # FIX: Removed the duplicate ['Location'] addition here
+                        df_export_mr_proj = df_view[[c for c in mr_proj_cols if c in df_view.columns]]
                         st.dataframe(df_export_mr_proj, use_container_width=True, hide_index=True)
                         
                         csv_mr_proj = df_export_mr_proj.to_csv(index=False).encode('utf-8')
@@ -1639,7 +1641,9 @@ try:
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Projected Vit A Targets"):
                         va_proj_cols = ['Location', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total_M', 'VitA_Total_F', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F']
-                        df_export_va_proj = df_view_va[['Location'] + [c for c in va_proj_cols if c in df_view_va.columns]]
+                        
+                        # FIX: Removed the duplicate ['Location'] addition here
+                        df_export_va_proj = df_view_va[[c for c in va_proj_cols if c in df_view_va.columns]]
                         st.dataframe(df_export_va_proj, use_container_width=True, hide_index=True)
                         
                         csv_va_proj = df_export_va_proj.to_csv(index=False).encode('utf-8')
@@ -1708,7 +1712,9 @@ try:
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Actual MR Targets"):
                         mr_act_cols = ['Location', 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']
-                        df_export_mr_act = df_view[['Location'] + [c for c in mr_act_cols if c in df_view.columns]]
+                        
+                        # FIX: Removed the duplicate ['Location'] addition here
+                        df_export_mr_act = df_view[[c for c in mr_act_cols if c in df_view.columns]]
                         st.dataframe(df_export_mr_act, use_container_width=True, hide_index=True)
                         
                         csv_mr_act = df_export_mr_act.to_csv(index=False).encode('utf-8')
@@ -1774,7 +1780,9 @@ try:
                     st.markdown("#### Raw Data Export")
                     with st.expander("View & Download Actual Vit A Targets"):
                         va_act_cols = ['Location', 'Act_VitA_Total', 'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total_M', 'Act_VitA_Total_F', 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F']
-                        df_export_va_act = df_view_va[['Location'] + [c for c in va_act_cols if c in df_view_va.columns]]
+                        
+                        # FIX: Removed the duplicate ['Location'] addition here
+                        df_export_va_act = df_view_va[[c for c in va_act_cols if c in df_view_va.columns]]
                         st.dataframe(df_export_va_act, use_container_width=True, hide_index=True)
                         
                         csv_va_act = df_export_va_act.to_csv(index=False).encode('utf-8')
