@@ -365,6 +365,8 @@ def check_hashes(password, hashed_text):
 # ==========================================
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'active_program' not in st.session_state:         
+    st.session_state['active_program'] = None
 if 'username' not in st.session_state: 
     st.session_state['username'] = ""
 if 'user_name' not in st.session_state:
@@ -421,8 +423,9 @@ if not st.session_state.get('logged_in', False):
     col1, col2, col3 = st.columns([1, 2.5, 1]) 
     
     with col2:
-        st.markdown("<h1 style='text-align: center;'>Abra SIA 2026</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: gray; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
+        # --- UPDATED: New NIP Branding ---
+        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px; text-transform: uppercase;'>National Immunization Program</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #475569; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
         with st.form("welcome_form", border=True):
             st.markdown("### 👋 Welcome")
@@ -478,6 +481,99 @@ if not st.session_state.get('logged_in', False):
     st.stop()
 
 # ==========================================
+# 4.5. THE PROGRAM ROUTING MENU
+# ==========================================
+# If the user is logged in, but hasn't picked a program yet, show the big buttons!
+if st.session_state.get('logged_in', False) and st.session_state.get('active_program') is None:
+    
+    # Keep the beautiful mountain background active
+    bg_css = """
+    <style>
+    .stApp {
+        background: linear-gradient(rgba(240, 242, 246, 0.4), rgba(240, 242, 246, 0.4)), 
+        url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true") !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-attachment: fixed !important;
+    }
+    header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
+    
+    /* 🎨 CSS Magic for the Giant Translucent Pill Buttons */
+    div.element-container:has(.big-btn-marker) + div.element-container button {
+        height: 180px !important;
+        border-radius: 90px !important; 
+        background-color: rgba(255, 255, 255, 0.45) !important; 
+        backdrop-filter: blur(10px) !important;
+        border: 2px solid rgba(255, 255, 255, 0.6) !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+        transition: all 0.3s ease-in-out !important;
+    }
+    div.element-container:has(.big-btn-marker) + div.element-container button p {
+        font-size: 36px !important;
+        font-family: "Arial Black", Impact, sans-serif !important;
+        font-weight: 900 !important;
+        color: #000000 !important;
+        letter-spacing: 2px !important;
+    }
+    div.element-container:has(.big-btn-marker) + div.element-container button:hover {
+        background-color: rgba(255, 255, 255, 0.7) !important;
+        transform: translateY(-5px) !important;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2) !important;
+    }
+    </style>
+    """
+    st.markdown(bg_css, unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # 🏛️ Logos and Title
+    c_logo1, c_logo2, c_logo3 = st.columns([1, 2, 1])
+    with c_logo2:
+        st.markdown(
+            '''
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" width="90" style="margin-right: 15px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.2));">
+                <img src="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true" width="90" style="filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.2));">
+            </div>
+            ''', 
+            unsafe_allow_html=True
+        )
+        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px;'>NATIONAL IMMUNIZATION PROGRAM</h1>", unsafe_allow_html=True)
+    
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+
+    # 🔘 The Big Buttons
+    col_gap1, col_btn1, col_gap2, col_btn2, col_gap3 = st.columns([1, 3, 0.5, 3, 1])
+    
+    with col_btn1:
+        st.markdown('<span class="big-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("MR SIA", use_container_width=True):
+            st.session_state['active_program'] = 'SIA'
+            st.rerun()
+            
+    with col_btn2:
+        st.markdown('<span class="big-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("SBI", use_container_width=True):
+            st.session_state['active_program'] = 'SBI'
+            st.rerun()
+
+    # Stop execution here so the dashboard underneath doesn't load yet
+    st.stop()
+
+
+# ==========================================
+# 4.6. THE SBI PLACEHOLDER (UNDER CONSTRUCTION)
+# ==========================================
+if st.session_state.get('active_program') == 'SBI':
+    st.title("School-Based Immunization (SBI)")
+    st.info("🚧 The SBI Command Center is currently under construction and will be deployed shortly.")
+    
+    if st.button("⬅️ Return to Main Menu"):
+        st.session_state['active_program'] = None
+        st.rerun()
+        
+    st.stop() # Stops execution so the SIA code below doesn't run
+
+# ==========================================
 # MAIN DASHBOARD CODE (Only runs if logged in)
 # ==========================================
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
@@ -529,6 +625,11 @@ with st.sidebar:
     
     st.divider()
     
+    # --- NEW: Navigation Button ---
+    if st.button("⬅️ Main Menu", use_container_width=True):
+        st.session_state['active_program'] = None
+        st.rerun()
+        
     # 2. Dynamic Filters (Expanded by default to prevent dropdown cutoffs)
     with st.expander("🎛️ DASHBOARD FILTERS", expanded=True):
         view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"])
