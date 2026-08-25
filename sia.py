@@ -1971,137 +1971,57 @@ try:
             st.divider()
             st.markdown("#### Daily Tally Sheet")
             st.caption("MR") 
-                        
             if not df_mr_filtered.empty and 'Vaccination Date' in df_mr_filtered.columns:
                 df_tally_mr = df_mr_filtered.copy()
-                
-                # Convert to datetime and extract just the day number
                 df_tally_mr['Vaccination Date'] = pd.to_datetime(df_tally_mr['Vaccination Date'], errors='coerce')
                 df_tally_mr = df_tally_mr.dropna(subset=['Vaccination Date'])
+                
+                # --- NEW: Dynamic Month Filter ---
+                df_tally_mr['Month'] = df_tally_mr['Vaccination Date'].dt.strftime('%B %Y')
+                available_months_mr = df_tally_mr['Month'].unique().tolist()
+                
+                if available_months_mr:
+                    selected_month_mr = st.selectbox("Select Month to Display:", available_months_mr, key="month_mr_tally")
+                    df_tally_mr = df_tally_mr[df_tally_mr['Month'] == selected_month_mr]
+                else:
+                    selected_month_mr = "Unknown_Month"
+                
                 df_tally_mr['Day'] = df_tally_mr['Vaccination Date'].dt.day.astype(int)
-                
-                # Create the pivot table
-                tally_grid_mr = pd.pivot_table(
-                    df_tally_mr, 
-                    values='Total Doses', 
-                    index='Municipality', 
-                    columns='Day', 
-                    aggfunc='sum',
-                    fill_value=0
-                )
-                
-                # 1. Force all 27 Abra Municipalities
+                tally_grid_mr = pd.pivot_table(df_tally_mr, values='Total Doses', index='Municipality', columns='Day', aggfunc='sum', fill_value=0)
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
-                
-                # 2. Force columns 1 through 31 for the days
                 days_cols = list(range(1, 32))
                 tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
-                
-                # 3. Calculate the Total Column (Summing the 31 days)
                 tally_grid_mr['Total'] = tally_grid_mr[days_cols].sum(axis=1)
-                
-                # 4. Extract the TOTAL Row data BEFORE we finalize the grid
                 total_series_mr = tally_grid_mr.sum(numeric_only=True)
-                
-                # 5. Reorder Columns and keep ONLY municipalities in the main grid
                 tally_grid_mr = tally_grid_mr[['Total'] + days_cols]
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis)
-                
-                # 6. Replace zeros with empty strings
                 tally_grid_mr = tally_grid_mr.replace(0, "")
-                
-                # 7. Prep for AgGrid
                 tally_grid_mr = tally_grid_mr.reset_index()
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
-                
-                # 8.  NEW: Format the Pinned Total Row so AgGrid can freeze it
                 pinned_total_mr = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_mr.get(col, 0)
                     pinned_total_mr[str(col)] = "" if val == 0 else int(val)
-                
-                # ==========================================
-                # MR AGGRID CONFIGURATION FIX
-                # ==========================================
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
-                
-                #  NEW: Custom sort function to force AgGrid to read text as numbers
-                numeric_sort = JsCode("""
-                function(a, b) {
-                    var numA = (a === "" || a === null) ? 0 : Number(a);
-                    var numB = (b === "" || b === null) ? 0 : Number(b);
-                    return numA - numB;
-                }
-                """)
-                
-                gb_mr.configure_default_column(
-                    sortable=False, filter=False, resizable=True, 
-                    width=40, minWidth=40, suppressMenu=True 
-                )
-                
-                gb_mr.configure_column(
-                    "Municipality", pinned='left', 
-                    width=150, minWidth=150, 
-                    sortable=True, filter=True, suppressMenu=False
-                )
-                
-                #  NEW: Added the 'comparator' parameter to the Total column
-                gb_mr.configure_column(
-                    "Total", pinned='left', 
-                    width=65, minWidth=65, 
-                    sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"},
-                    comparator=numeric_sort
-                )
-                
+                numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
+                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                gb_mr.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
+                gb_mr.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort)
                 gridOptions_mr = gb_mr.build()
                 gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] 
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
-                
-                #  NEW: Make the TOTAL row bold with a slight background color
-                bold_total_row = JsCode("""
-                function(params) {
-                    if (params.data.Municipality === 'TOTAL') {
-                        return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'};
-                    }
-                }
-                """)
+                bold_total_row = JsCode("""function(params) { if (params.data.Municipality === 'TOTAL') { return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }""")
                 gridOptions_mr['getRowStyle'] = bold_total_row
-                
-                #  THE BRUTE FORCE CSS FIX 
-                grid_css = {
-                    ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
-                    ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
-                    ".ag-row": {"border-bottom": "none !important"} 
-                }
-                
-                AgGrid(
-                    tally_grid_mr,
-                    gridOptions=gridOptions_mr,
-                    height=620,
-                    theme="streamlit",
-                    custom_css=grid_css,
-                    fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True,
-                    key="mr_aggrid_tally"
-                )
-
-                # --- MR TALLY SHEET DOWNLOAD BUTTON ---
+                grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
+                AgGrid(tally_grid_mr, gridOptions=gridOptions_mr, height=620, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key="mr_aggrid_tally")
                 st.markdown("<br>", unsafe_allow_html=True)
-                #  NEW: Stitch the pinned row back onto the data for the CSV export
                 df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
                 csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
-                st.download_button(
-                    label=" Download MR Tally Sheet (CSV)",
-                    data=csv_tally_mr,
-                    file_name=f"MR_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
-                    mime="text/csv",
-                    key=f"dl_mr_tally_{location_label}"
-                )
-            else:
-                st.info("Awaiting vaccination date records to generate the tally board.")
+                # --- UPDATED: Dynamic CSV Filename ---
+                st.download_button(label=" Download MR Tally Sheet (CSV)", data=csv_tally_mr, file_name=f"MR_Daily_Tally_{selected_month_mr.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_mr_tally_{location_label}")
+            else: st.info("Awaiting vaccination date records to generate the tally board.")
             
             st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw MR Accomplishment Data"):
@@ -2220,137 +2140,57 @@ try:
             st.divider()
             st.markdown("####  Daily Tally Sheet")
             st.caption("Vitamin A")
-                        
             if not df_vita_filtered.empty and 'Vaccination Date' in df_vita_filtered.columns:
                 df_tally_va = df_vita_filtered.copy()
-                
-                # Convert to datetime and extract just the day number
                 df_tally_va['Vaccination Date'] = pd.to_datetime(df_tally_va['Vaccination Date'], errors='coerce')
                 df_tally_va = df_tally_va.dropna(subset=['Vaccination Date'])
+                
+                # --- NEW: Dynamic Month Filter ---
+                df_tally_va['Month'] = df_tally_va['Vaccination Date'].dt.strftime('%B %Y')
+                available_months_va = df_tally_va['Month'].unique().tolist()
+                
+                if available_months_va:
+                    selected_month_va = st.selectbox("Select Month to Display:", available_months_va, key="month_va_tally")
+                    df_tally_va = df_tally_va[df_tally_va['Month'] == selected_month_va]
+                else:
+                    selected_month_va = "Unknown_Month"
+                
                 df_tally_va['Day'] = df_tally_va['Vaccination Date'].dt.day.astype(int)
-                
-                # Create the pivot table
-                tally_grid_va = pd.pivot_table(
-                    df_tally_va, 
-                    values='Total Doses', 
-                    index='Municipality', 
-                    columns='Day', 
-                    aggfunc='sum',
-                    fill_value=0
-                )
-                
-                # 1. Force all 27 Abra Municipalities
+                tally_grid_va = pd.pivot_table(df_tally_va, values='Total Doses', index='Municipality', columns='Day', aggfunc='sum', fill_value=0)
                 tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
-                
-                # 2. Force columns 1 through 31 for the days
                 days_cols = list(range(1, 32))
                 tally_grid_va = tally_grid_va.reindex(columns=days_cols, fill_value=0)
-                
-                # 3. Calculate the Total Column (Summing the 31 days)
                 tally_grid_va['Total'] = tally_grid_va[days_cols].sum(axis=1)
-                
-                # 4. Extract the TOTAL Row data BEFORE we finalize the grid
                 total_series_va = tally_grid_va.sum(numeric_only=True)
-                
-                # 5. Reorder Columns and keep ONLY municipalities in the main grid
                 tally_grid_va = tally_grid_va[['Total'] + days_cols]
                 tally_grid_va = tally_grid_va.reindex(abra_munis)
-                
-                # 6. Replace zeros with empty strings
                 tally_grid_va = tally_grid_va.replace(0, "")
-                
-                # 7. Prep for AgGrid
                 tally_grid_va = tally_grid_va.reset_index()
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
-                
-                # 8.  NEW: Format the Pinned Total Row so AgGrid can freeze it
                 pinned_total_va = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_va.get(col, 0)
                     pinned_total_va[str(col)] = "" if val == 0 else int(val)
-                
-                # ==========================================
-                # VIT A AGGRID CONFIGURATION FIX
-                # ==========================================
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
-                
-                #  NEW: Custom sort function to force AgGrid to read text as numbers
-                numeric_sort_va = JsCode("""
-                function(a, b) {
-                    var numA = (a === "" || a === null) ? 0 : Number(a);
-                    var numB = (b === "" || b === null) ? 0 : Number(b);
-                    return numA - numB;
-                }
-                """)
-                
-                gb_va.configure_default_column(
-                    sortable=False, filter=False, resizable=True, 
-                    width=40, minWidth=40, suppressMenu=True 
-                )
-                
-                gb_va.configure_column(
-                    "Municipality", pinned='left', 
-                    width=150, minWidth=150, 
-                    sortable=True, filter=True, suppressMenu=False
-                )
-                
-                #  NEW: Added the 'comparator' parameter to the Total column
-                gb_va.configure_column(
-                    "Total", pinned='left', 
-                    width=65, minWidth=65, 
-                    sortable=True, filter=False, suppressMenu=True,
-                    cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"},
-                    comparator=numeric_sort_va
-                )
-                
+                numeric_sort_va = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
+                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                gb_va.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
+                gb_va.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort_va)
                 gridOptions_va = gb_va.build()
                 gridOptions_va['pinnedTopRowData'] = [pinned_total_va] 
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
-                
-                #  NEW: Make the TOTAL row bold with a slight background color
-                bold_total_row_va = JsCode("""
-                function(params) {
-                    if (params.data.Municipality === 'TOTAL') {
-                        return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'};
-                    }
-                }
-                """)
+                bold_total_row_va = JsCode("""function(params) { if (params.data.Municipality === 'TOTAL') { return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }""")
                 gridOptions_va['getRowStyle'] = bold_total_row_va
-                
-                #  THE BRUTE FORCE CSS FIX 
-                grid_css = {
-                    ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
-                    ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
-                    ".ag-row": {"border-bottom": "none !important"} 
-                }
-                
-                AgGrid(
-                    tally_grid_va,
-                    gridOptions=gridOptions_va,
-                    height=620,  
-                    theme="streamlit",
-                    custom_css=grid_css,
-                    fit_columns_on_grid_load=False,
-                    allow_unsafe_jscode=True,
-                    key="va_aggrid_tally"
-                )
-
-                # --- VIT A TALLY SHEET DOWNLOAD BUTTON ---
+                grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
+                AgGrid(tally_grid_va, gridOptions=gridOptions_va, height=620, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key="va_aggrid_tally")
                 st.markdown("<br>", unsafe_allow_html=True)
-                #  NEW: Stitch the pinned row back onto the data for the CSV export
                 df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
                 csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
-                st.download_button(
-                    label=" Download Vit A Tally Sheet (CSV)",
-                    data=csv_tally_va,
-                    file_name=f"VitA_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv",
-                    mime="text/csv",
-                    key=f"dl_va_tally_{location_label}"
-                )
-            else:
-                st.info("Awaiting vaccination date records to generate the tally board.")
+                # --- UPDATED: Dynamic CSV Filename ---
+                st.download_button(label=" Download Vit A Tally Sheet (CSV)", data=csv_tally_va, file_name=f"VitA_Daily_Tally_{selected_month_va.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_va_tally_{location_label}")
+            else: st.info("Awaiting vaccination date records to generate the tally board.")
             
             st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
@@ -2791,87 +2631,56 @@ try:
                 # 6. AgGrid Daily Tally Sheets (Separated MR and Vit A)
                 st.divider()
                 st.markdown("####  VaccTrack Daily Tally Sheets")
-                
                 def build_vt_tally(df_subset, prog_name, color_hex):
                     if df_subset.empty:
                         st.info(f"No {prog_name} data available for the tally sheet.")
                         return
-                    
                     df_tally = df_subset.copy()
+                    
+                    # --- NEW: Dynamic Month Filter ---
+                    df_tally['Month'] = df_tally['Vaccination Date'].dt.strftime('%B %Y')
+                    available_months = df_tally['Month'].unique().tolist()
+                    
+                    if available_months:
+                        selected_month = st.selectbox(f"Select Month to Display:", available_months, key=f"month_vt_{prog_name.replace(' ', '_')}")
+                        df_tally = df_tally[df_tally['Month'] == selected_month]
+                    else:
+                        selected_month = "Unknown_Month"
+                        
                     df_tally['Day'] = df_tally['Vaccination Date'].dt.day.astype(int)
-                    
-                    tally_grid = pd.pivot_table(
-                        df_tally, 
-                        values='Grand total doses administered', 
-                        index='Municipality', 
-                        columns='Day', 
-                        aggfunc='sum',
-                        fill_value=0
-                    )
-                    
+                    tally_grid = pd.pivot_table(df_tally, values='Grand total doses administered', index='Municipality', columns='Day', aggfunc='sum', fill_value=0)
                     tally_grid = tally_grid.reindex(abra_munis, fill_value=0)
                     days_cols = list(range(1, 32))
                     tally_grid = tally_grid.reindex(columns=days_cols, fill_value=0)
-                    
-                    # Calculate Total Column
                     tally_grid['Total'] = tally_grid[days_cols].sum(axis=1)
-                    
-                    # Extract Total Row
                     total_series = tally_grid.sum(numeric_only=True)
-                    
                     tally_grid = tally_grid[['Total'] + days_cols]
                     tally_grid = tally_grid.reindex(abra_munis)
                     tally_grid = tally_grid.replace(0, "")
-                    
                     tally_grid = tally_grid.reset_index()
                     tally_grid.columns = tally_grid.columns.astype(str)
-                    
                     pinned_total = {"Municipality": "TOTAL"}
                     for col in ['Total'] + days_cols:
                         val = total_series.get(col, 0)
                         pinned_total[str(col)] = "" if val == 0 else int(val)
-                        
                     gb_vt = GridOptionsBuilder.from_dataframe(tally_grid)
-                    numeric_sort = JsCode("""
-                    function(a, b) {
-                        var numA = (a === "" || a === null) ? 0 : Number(a);
-                        var numB = (b === "" || b === null) ? 0 : Number(b);
-                        return numA - numB;
-                    }
-                    """)
+                    numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
                     gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                     gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                    
-                    #  Apply the specific program color (Blue for MR, Orange for Vit A)
                     gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, comparator=numeric_sort)
-                    
                     gridOptions_vt = gb_vt.build()
                     gridOptions_vt['pinnedTopRowData'] = [pinned_total]
                     gridOptions_vt['rowHeight'] = 20
                     gridOptions_vt['headerHeight'] = 40
-                    
-                    grid_css = {
-                        ".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"},
-                        ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"},
-                        ".ag-row": {"border-bottom": "none !important"} 
-                    }
-                    
+                    grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
                     st.caption(f"**{prog_name}**")
-                    AgGrid(
-                        tally_grid,
-                        gridOptions=gridOptions_vt,
-                        height=650,
-                        theme="streamlit",
-                        custom_css=grid_css,
-                        fit_columns_on_grid_load=False,
-                        allow_unsafe_jscode=True,
-                        key=f"vt_grid_{prog_name.replace(' ', '_')}" # Ensure unique keys for AgGrid
-                    )
-                    
+                    AgGrid(tally_grid, gridOptions=gridOptions_vt, height=650, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key=f"vt_grid_{prog_name.replace(' ', '_')}")
                     st.markdown("<br>", unsafe_allow_html=True)
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
                     csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
-                    st.download_button(label=f" Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
+                    
+                    # --- UPDATED: Dynamic CSV Filename ---
+                    st.download_button(label=f" Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{selected_month.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
                     st.markdown("<br>", unsafe_allow_html=True)
 
                 if 'Vaccination Date' in df_vt.columns and 'Municipality' in df_vt.columns:
