@@ -1568,6 +1568,23 @@ try:
                     fig_donut_mr.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
                     st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Pie', 'scale': 2}})
 
+                    # --- RAW DATA EXPORT ---
+                    st.divider()
+                    st.markdown("#### Raw Data Export")
+                    with st.expander("View & Download Projected MR Targets"):
+                        mr_proj_cols = ['Location', 'MR_6-59m_Total', 'MR_6-12m_Total', 'MR_13-23m_Total', 'MR_24-59m_Total', 'MR_6-59m_M', 'MR_6-59m_F', 'MR_6-12m_M', 'MR_6-12m_F', 'MR_13-23m_M', 'MR_13-23m_F', 'MR_24-59m_M', 'MR_24-59m_F']
+                        df_export_mr_proj = df_view[['Location'] + [c for c in mr_proj_cols if c in df_view.columns]]
+                        st.dataframe(df_export_mr_proj, use_container_width=True, hide_index=True)
+                        
+                        csv_mr_proj = df_export_mr_proj.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download Projected MR Targets (CSV)", 
+                            data=csv_mr_proj, 
+                            file_name=f"Projected_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            mime="text/csv", 
+                            key="dl_mr_proj"
+                        )
+
             # ==========================================
             # SUB-TAB 2: PROJECTED VITAMIN A
             # ==========================================
@@ -1616,6 +1633,23 @@ try:
                         # MOBILE FIX: Projected Vit A Pie
                     fig_donut_va.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
                     st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Pie', 'scale': 2}})
+
+                    # --- RAW DATA EXPORT ---
+                    st.divider()
+                    st.markdown("#### Raw Data Export")
+                    with st.expander("View & Download Projected Vit A Targets"):
+                        va_proj_cols = ['Location', 'VitA_Total', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total_M', 'VitA_Total_F', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F']
+                        df_export_va_proj = df_view_va[['Location'] + [c for c in va_proj_cols if c in df_view_va.columns]]
+                        st.dataframe(df_export_va_proj, use_container_width=True, hide_index=True)
+                        
+                        csv_va_proj = df_export_va_proj.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download Projected Vit A Targets (CSV)", 
+                            data=csv_va_proj, 
+                            file_name=f"Projected_VitA_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            mime="text/csv", 
+                            key="dl_va_proj"
+                        )
 
             # ==========================================
             # SUB-TAB 3: ACTUAL MR
@@ -1669,6 +1703,23 @@ try:
                     fig_donut_act_mr.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
                     st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Pie', 'scale': 2}})
 
+                    # --- RAW DATA EXPORT ---
+                    st.divider()
+                    st.markdown("#### Raw Data Export")
+                    with st.expander("View & Download Actual MR Targets"):
+                        mr_act_cols = ['Location', 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']
+                        df_export_mr_act = df_view[['Location'] + [c for c in mr_act_cols if c in df_view.columns]]
+                        st.dataframe(df_export_mr_act, use_container_width=True, hide_index=True)
+                        
+                        csv_mr_act = df_export_mr_act.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download Actual MR Targets (CSV)", 
+                            data=csv_mr_act, 
+                            file_name=f"Actual_MR_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            mime="text/csv", 
+                            key="dl_mr_act"
+                        )
+
             # ==========================================
             # SUB-TAB 4: ACTUAL VITAMIN A
             # ==========================================
@@ -1718,6 +1769,23 @@ try:
                     fig_donut_act_va.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
                     st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Pie', 'scale': 2}})
 
+                    # --- RAW DATA EXPORT ---
+                    st.divider()
+                    st.markdown("#### Raw Data Export")
+                    with st.expander("View & Download Actual Vit A Targets"):
+                        va_act_cols = ['Location', 'Act_VitA_Total', 'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total_M', 'Act_VitA_Total_F', 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F']
+                        df_export_va_act = df_view_va[['Location'] + [c for c in va_act_cols if c in df_view_va.columns]]
+                        st.dataframe(df_export_va_act, use_container_width=True, hide_index=True)
+                        
+                        csv_va_act = df_export_va_act.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="Download Actual Vit A Targets (CSV)", 
+                            data=csv_va_act, 
+                            file_name=f"Actual_VitA_Targets_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                            mime="text/csv", 
+                            key="dl_va_act"
+                        )
+
             # ==========================================
             # SUB-TAB 5: COMPARISON (PROJECTED VS ACTUAL)
             # ==========================================
@@ -1761,11 +1829,18 @@ try:
                     st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Target_Variance_Analysis', 'scale': 2}})
                     
                     st.markdown("##### Detailed Breakdown")
-                    df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={
-                        nat_col: 'Projected Target',
-                        act_col: 'Actual Target'
-                    })
+                    df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={nat_col: 'Projected Target', act_col: 'Actual Target'})
                     st.dataframe(df_table, use_container_width=True, hide_index=True)
+                    
+                    # --- RAW DATA EXPORT ---
+                    csv_comp = df_table.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Download Comparison Data (CSV)", 
+                        data=csv_comp, 
+                        file_name=f"Target_Comparison_{location_label.replace(', ', '_').replace(' ', '_')}.csv", 
+                        mime="text/csv", 
+                        key="dl_compare"
+                    )
 
     # ==========================================
     # MR ACCOMPLISHMENT TAB
