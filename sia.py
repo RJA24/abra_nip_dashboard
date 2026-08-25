@@ -3852,6 +3852,6 @@ try:
                     st.warning(f"Could not load Access Logs: {e}")
 
 except Exception as e:
-    st.error(f"Dashboard Error: {e}")
+    st.error(f"Dashboard Error: test {e}")
 
 render_footer()
