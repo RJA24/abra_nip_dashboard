@@ -425,7 +425,7 @@ if not st.session_state.get('logged_in', False):
         st.markdown("<p style='text-align: center; color: gray; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
         with st.form("welcome_form", border=True):
-            st.markdown("### 👋 Welcome Test")
+            st.markdown("### 👋 Welcome")
             st.caption("Please enter your name to access the dashboard.")
             
             visitor_name = st.text_input("Your Name", placeholder="e.g., Dr. Cruz / DOH Rep", label_visibility="collapsed").strip()
