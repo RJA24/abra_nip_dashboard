@@ -1,7 +1,8 @@
 streamlit
 pandas
 st-gsheets-connection
-plotly
+plotly>=5.18.0
+requests
 pytz
 supabase
 streamlit-autorefresh
