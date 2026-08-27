@@ -1336,7 +1336,7 @@ try:
                         st.markdown("**Measles-Rubella (MR) Coverage**")
                         fig_map_mr = px.choropleth_mapbox(
                             df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
-                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="open-street-map",
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
@@ -1353,7 +1353,7 @@ try:
                         if 'Vit A Coverage %' in df_geo_summary.columns:
                             fig_map_va = px.choropleth_mapbox(
                                 df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
-                                color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                                color='Vit A Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="open-street-map",
                                 zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
@@ -1424,7 +1424,7 @@ try:
                         
                         fig_map_brgy_mr = px.choropleth_mapbox(
                             map_data, geojson=brgy_geo, locations='Join_Key', featureidkey="properties.Standard_Name", 
-                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="carto-positron",
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], mapbox_style="open-street-map",
                             zoom=11.5, center={"lat": cam_lat, "lon": cam_lon}, opacity=0.7, hover_name='Display_Name',
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
@@ -3364,7 +3364,7 @@ try:
                     color='Coverage %',
                     color_continuous_scale="RdYlGn", 
                     range_color=[0, 100],
-                    mapbox_style="carto-positron",
+                    mapbox_style="open-street-map",
                     zoom=6.8,
                     center={"lat": 17.35, "lon": 121.1}, 
                     opacity=0.75,
