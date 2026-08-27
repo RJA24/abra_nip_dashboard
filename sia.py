@@ -1341,7 +1341,7 @@ try:
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         fig_map_mr.add_trace(go.Scattermap(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=10, color='black'), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=9, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         fig_map_mr.update_layout(
                             margin={"r":0,"t":0,"l":0,"b":0}, 
@@ -1362,7 +1362,7 @@ try:
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
                             fig_map_va.add_trace(go.Scattermap(
-                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=10, color='black'), hoverinfo='skip', showlegend=False
+                                lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=9, color='black'), hoverinfo='skip', showlegend=False
                             ))
                             fig_map_va.update_layout(
                                 margin={"r":0,"t":0,"l":0,"b":0}, 
@@ -1438,7 +1438,7 @@ try:
                         )
                         
                         fig_map_brgy_mr.add_trace(go.Scattermap(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=9, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         
                         fig_map_brgy_mr.update_layout(
