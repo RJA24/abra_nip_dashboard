@@ -3398,7 +3398,7 @@ try:
                     lon=df_map['lon'].tolist(),
                     mode='text',
                     text=df_map['LabelText'].tolist(),
-                    textfont=dict(size=16, color='black'), 
+                    textfont=dict(size=12, color='black'), 
                     textposition='middle center',
                     showlegend=False, 
                     hoverinfo='skip'  
