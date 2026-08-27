@@ -6,4 +6,3 @@ pytz
 supabase
 streamlit-autorefresh
 streamlit-aggrid
-st-gsheets-connection
