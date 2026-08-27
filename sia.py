@@ -1312,17 +1312,29 @@ try:
                         mr_lons, mr_lats, mr_texts = [], [], []
                         va_lons, va_lats, va_texts = [], [], []
                         
+                        # --- NEW: Manual Coordinate Nudges to Prevent Label Collision ---
+                        # Adjusting by 0.01 moves the label roughly 1 kilometer.
+                        label_nudges = {
+                            'MANABO': {'lat': 0.00, 'lon': 0.015},       # Nudged East
+                            'PILAR': {'lat': -0.015, 'lon': 0.00},       # Nudged South
+                            'PEŃARRUBIA': {'lat': -0.01, 'lon': 0.01},   # Nudged South-East
+                            'LANGIDEN': {'lat': 0.00, 'lon': -0.015},    # Nudged West
+                            'LAGANGILANG': {'lat': 0.015, 'lon': 0.015}  # Nudged North-East
+                        }
+                        
                         for feat in abra_geo.get('features', []):
                             std_name = feat['properties'].get('Standard_Name', '')
                             match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
                             if not match.empty:
                                 lon, lat = get_polygon_centroid(feat.get('geometry', {}))
                                 if lon is not None and lat is not None:
+                                    
+                                    # Apply the manual nudge if the municipality is in our list
+                                    if std_name in label_nudges:
+                                        lat += label_nudges[std_name]['lat']
+                                        lon += label_nudges[std_name]['lon']
+                                        
                                     display_name = std_name.title()
-                                    mr_cov = match['MR Coverage %'].values[0]
-                                    mr_lons.append(lon)
-                                    mr_lats.append(lat)
-                                    mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
                                     
                                     if 'Vit A Coverage %' in df_geo_summary.columns:
                                         va_cov = match['Vit A Coverage %'].values[0]
