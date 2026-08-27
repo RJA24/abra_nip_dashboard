@@ -221,7 +221,7 @@ def render_footer():
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="Abra NIP Dashboard", page_icon="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra NIP Dashboard", page_icon="https://github.com/RJA24/abra_nip_dashboard/blob/main/PHO%20logo.png?raw=true?raw=true", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
