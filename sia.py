@@ -1319,7 +1319,7 @@ try:
                             'PILAR': {'lat': -0.015, 'lon': 0.00},       # Nudged South
                             'PEŃARRUBIA': {'lat': 0.01, 'lon': -0.01},   # Nudged South-East
                             'LANGIDEN': {'lat': 0.00, 'lon': -0.015},    # Nudged West
-                            'LAGANGILANG': {'lat': 0.015, 'lon': 0.015}  # Nudged North-East
+                            'LAGANGILANG': {'lat': -0.015, 'lon': 0.020}  # Nudged North-East
                         }
                         
                         for feat in abra_geo.get('features', []):
