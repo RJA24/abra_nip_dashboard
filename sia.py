@@ -1336,7 +1336,7 @@ try:
                         st.markdown("**Measles-Rubella (MR) Coverage**")
                         fig_map_mr = px.choropleth_map(
                             df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
-                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], map_style="transparent",  #  NEW: Transparent map style for better mobile rendering
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], map_style="carto-positron",  #  NEW: Transparent map style for better mobile rendering
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
