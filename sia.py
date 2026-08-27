@@ -1336,15 +1336,19 @@ try:
                         st.markdown("**Measles-Rubella (MR) Coverage**")
                         fig_map_mr = px.choropleth_map(
                             df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
-                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], map_style="white-bg",  #  NEW: Transparent map style for better mobile rendering
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], map_style="white-bg",
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
-                        # FIX: Removed 'family' parameter. map will now correctly use its default font and render the text!
                         fig_map_mr.add_trace(go.Scattermap(
                             lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
-                        fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
+                        fig_map_mr.update_layout(
+                            margin={"r":0,"t":0,"l":0,"b":0}, 
+                            coloraxis_colorbar=dict(title="MR %"), 
+                            height=600,
+                            map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                        )
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                         
                         st.markdown("<br>", unsafe_allow_html=True)
@@ -1357,11 +1361,15 @@ try:
                                 zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
-                            # FIX: Removed 'family' parameter here too.
                             fig_map_va.add_trace(go.Scattermap(
                                 lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                             ))
-                            fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"), height=600)
+                            fig_map_va.update_layout(
+                                margin={"r":0,"t":0,"l":0,"b":0}, 
+                                coloraxis_colorbar=dict(title="Vit A %"), 
+                                height=600,
+                                map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                            )
                             st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
@@ -1429,12 +1437,16 @@ try:
                             hover_data={'Join_Key': False, 'Display_Name': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
                         
-                        # FIX: Removed 'family' parameter here as well!
                         fig_map_brgy_mr.add_trace(go.Scattermap(
                             lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         
-                        fig_map_brgy_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
+                        fig_map_brgy_mr.update_layout(
+                            margin={"r":0,"t":0,"l":0,"b":0}, 
+                            coloraxis_colorbar=dict(title="MR %"), 
+                            height=600,
+                            map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                        )
                         st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
                     else:
                         st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
@@ -3372,7 +3384,6 @@ try:
                     hover_data={'Location': False, target_col: True, 'Grand total doses administered': True, 'Unvaccinated': True}
                 )
                 
-                # Clean up the tooltip formatting for the choropleth layer
                 fig_map_car.update_traces(
                     hovertemplate="<b>%{hovertext}</b><br><br>" +
                                     "Coverage: <b>%{z:.1f}%</b><br>" +
@@ -3382,16 +3393,12 @@ try:
                     selector=dict(type='choroplethmap')
                 )
                 
-                # Add the text labels on top of the map
                 fig_map_car.add_trace(go.Scattermap(
                     lat=df_map['lat'].tolist(),
                     lon=df_map['lon'].tolist(),
                     mode='text',
                     text=df_map['LabelText'].tolist(),
-                    textfont=dict(
-                        size=16, 
-                        color='black'
-                    ), 
+                    textfont=dict(size=16, color='black'), 
                     textposition='middle center',
                     showlegend=False, 
                     hoverinfo='skip'  
@@ -3400,7 +3407,8 @@ try:
                 fig_map_car.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     coloraxis_colorbar=dict(title="Coverage %"),
-                    height=550
+                    height=550,
+                    map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
                 )
                 
                 st.plotly_chart(fig_map_car, use_container_width=True, key="map_car")
