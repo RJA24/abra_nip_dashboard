@@ -1335,6 +1335,10 @@ try:
                                         lon += label_nudges[std_name]['lon']
                                         
                                     display_name = std_name.title()
+                                    mr_cov = match['MR Coverage %'].values[0]
+                                    mr_lons.append(lon)
+                                    mr_lats.append(lat)
+                                    mr_texts.append(f"{display_name}<br>{mr_cov:.1f}%")
                                     
                                     if 'Vit A Coverage %' in df_geo_summary.columns:
                                         va_cov = match['Vit A Coverage %'].values[0]
