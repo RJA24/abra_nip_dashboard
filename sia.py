@@ -1340,8 +1340,8 @@ try:
                             zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
-                        # FIX: Removed 'family' parameter. Mapbox will now correctly use its default font and render the text!
-                        fig_map_mr.add_trace(go.Scattermapbox(
+                        # FIX: Removed 'family' parameter. map will now correctly use its default font and render the text!
+                        fig_map_mr.add_trace(go.Scattermap(
                             lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
@@ -1358,7 +1358,7 @@ try:
                                 hover_data={'Map_Location': False, 'Vit A Target': ':,', 'Vit A Administered': ':,', 'Vit A Deficit (to 95%)': ':,.0f'}
                             )
                             # FIX: Removed 'family' parameter here too.
-                            fig_map_va.add_trace(go.Scattermapbox(
+                            fig_map_va.add_trace(go.Scattermap(
                                 lon=va_lons, lat=va_lats, mode='text', text=va_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                             ))
                             fig_map_va.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="Vit A %"), height=600)
@@ -1430,7 +1430,7 @@ try:
                         )
                         
                         # FIX: Removed 'family' parameter here as well!
-                        fig_map_brgy_mr.add_trace(go.Scattermapbox(
+                        fig_map_brgy_mr.add_trace(go.Scattermap(
                             lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
                         ))
                         
@@ -3379,11 +3379,11 @@ try:
                                     "Target: %{customdata[0]:,.0f}<br>" +
                                     "Vaccinated: %{customdata[1]:,.0f}<br>" +
                                     "Unvaccinated: %{customdata[2]:,.0f}<extra></extra>",
-                    selector=dict(type='choroplethmapbox')
+                    selector=dict(type='choroplethmap')
                 )
                 
                 # Add the text labels on top of the map
-                fig_map_car.add_trace(go.Scattermapbox(
+                fig_map_car.add_trace(go.Scattermap(
                     lat=df_map['lat'].tolist(),
                     lon=df_map['lon'].tolist(),
                     mode='text',
