@@ -1315,7 +1315,7 @@ try:
                         # --- NEW: Manual Coordinate Nudges to Prevent Label Collision ---
                         # Adjusting by 0.01 moves the label roughly 1 kilometer.
                         label_nudges = {
-                            'MANABO': {'lat': 0.00, 'lon': 0.015},       # Nudged East
+                            'MANABO': {'lat': 0.00, 'lon': -0.015},       # Nudged East
                             'PILAR': {'lat': -0.015, 'lon': 0.00},       # Nudged South
                             'PEŃARRUBIA': {'lat': -0.01, 'lon': 0.01},   # Nudged South-East
                             'LANGIDEN': {'lat': 0.00, 'lon': -0.015},    # Nudged West
