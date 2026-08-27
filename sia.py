@@ -1347,7 +1347,7 @@ try:
                             margin={"r":0,"t":0,"l":0,"b":0}, 
                             coloraxis_colorbar=dict(title="MR %"), 
                             height=600,
-                            map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                            map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
                         st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
                         
@@ -1368,7 +1368,7 @@ try:
                                 margin={"r":0,"t":0,"l":0,"b":0}, 
                                 coloraxis_colorbar=dict(title="Vit A %"), 
                                 height=600,
-                                map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                                map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                             )
                             st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
                     else:
@@ -1445,7 +1445,7 @@ try:
                             margin={"r":0,"t":0,"l":0,"b":0}, 
                             coloraxis_colorbar=dict(title="MR %"), 
                             height=600,
-                            map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                            map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
                         st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
                     else:
@@ -3408,7 +3408,7 @@ try:
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     coloraxis_colorbar=dict(title="Coverage %"),
                     height=550,
-                    map=dict(layers=[dict(sourcetype="raster", source=["https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}.png"], below="traces")])
+                    map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                 )
                 
                 st.plotly_chart(fig_map_car, use_container_width=True, key="map_car")
