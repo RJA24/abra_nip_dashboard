@@ -424,7 +424,7 @@ if not st.session_state.get('logged_in', False):
     
     with col2:
         # --- UPDATED: New NIP Branding ---
-        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px; text-transform: uppercase;'>Nationaler Immunization Program</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px; text-transform: uppercase;'>Nationalers Immunization Program</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #475569; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
         
         with st.form("welcome_form", border=True):
