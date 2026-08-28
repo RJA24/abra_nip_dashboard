@@ -85,15 +85,28 @@ def fetch_barangay_geojson(target_muni):
         raw = str(raw_name).upper()
         raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
         raw_alpha = re.sub(r'[^A-Z]', '', raw)
+        
+        # --- THE SAFETY NET ---
+        # If it has a direction, it's definitely a barangay, so protect it!
+        is_brgy_leak = any(x in raw_alpha for x in ["NORTE", "SUR", "EAST", "WEST", "PROPER", "POBLACION"])
+        
         if "LICUAN" in raw_alpha or "BAAY" in raw_alpha: return "LICUAN-BAAY"
         if "PENAR" in raw_alpha or "RUBIA" in raw_alpha: return "PEÑARRUBIA"
         if "PAZ" in raw_alpha: return "LA PAZ"
-        if "JUAN" in raw_alpha: return "SAN JUAN"
-        if "ISIDRO" in raw_alpha: return "SAN ISIDRO"
-        if "QUINTIN" in raw_alpha: return "SAN QUINTIN"
+        
+        # --- YOUR RESTORED PREVIOUS CODE (Protected!) ---
+        # Only apply these strict rules if it's NOT a barangay
+        if not is_brgy_leak:
+            if "JUAN" in raw_alpha: return "SAN JUAN"
+            if "ISIDRO" in raw_alpha: return "SAN ISIDRO"
+            if "QUINTIN" in raw_alpha: return "SAN QUINTIN"
+            
         for muni in ALL_ABRA_MUNICIPALITIES:
             if re.sub(r'[^A-Z]', '', muni.replace("Ñ", "N")) in raw_alpha:
+                if is_brgy_leak: 
+                    continue # Skip it if it's a hijacked barangay
                 return muni
+                
         return raw_name
 
     def clean_brgy_name(raw_name):
