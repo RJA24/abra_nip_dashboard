@@ -1753,7 +1753,7 @@ try:
             except Exception as e:
                 # Fallback if Kaleido isn't installed yet
                 st.button("📕 PDF Generator Loading...", disabled=True, use_container_width=True)
-                st.caption("Please ensure `kaleido` is in your requirements.txt to enable PDF export.")
+                
 
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
