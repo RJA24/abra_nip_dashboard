@@ -1667,29 +1667,72 @@ try:
         df_master_report = df_master_report[['Municipality', 'Barangay', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage']]
         df_master_report = df_master_report.sort_values(by=['Municipality', 'Barangay'])
         
-        # 7. Render Streamlit Dataframe with Beautiful Formatting
-        st.dataframe(
-            df_master_report.style.format({
-                'MR Vaccinated': '{:,.0f}',
-                'Projected Target': '{:,.0f}',
-                'Projected Coverage': '{:.1f}%',
-                'Actual Target': '{:,.0f}',
-                'Actual Coverage': '{:.1f}%'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        # 8. Render the CSV Export Button
-        csv_master = df_master_report.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=" Download Master Coverage Report (CSV)",
-            data=csv_master,
-            file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
-            mime="text/csv",
-            key="dl_master_brgy_cov"
-        )
-
+        # 7. Render as Plotly Table for PNG Export
+                import plotly.graph_objects as go
+                
+                # Format the numbers as strings so they look perfect in the image
+                formatted_cells = [
+                    df_master_report['Municipality'],
+                    df_master_report['Barangay'],
+                    df_master_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                    df_master_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_master_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
+                    df_master_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_master_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
+                ]
+                
+                # Dynamically calculate height so the PNG doesn't cut off any rows
+                table_height = max(400, len(df_master_report) * 35 + 60)
+                
+                fig_master_table = go.Figure(data=[go.Table(
+                    header=dict(
+                        values=[f"<b>{c}</b>" for c in df_master_report.columns],
+                        fill_color='#0033A0',
+                        font=dict(color='white', size=13),
+                        align='center',
+                        height=40
+                    ),
+                    cells=dict(
+                        values=formatted_cells,
+                        # Creates an alternating gray/white row pattern for readability
+                        fill_color=[['#f0f2f6', '#ffffff'] * (len(df_master_report) // 2 + 1)],
+                        font=dict(color='#1E293B', size=12),
+                        align=['left', 'left', 'center', 'center', 'center', 'center', 'center'],
+                        height=35
+                    )
+                )])
+                
+                fig_master_table.update_layout(
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    height=table_height
+                )
+                
+                st.plotly_chart(
+                    fig_master_table, 
+                    use_container_width=True, 
+                    key="master_brgy_table_png",
+                    config={
+                        'displayModeBar': True,
+                        'toImageButtonOptions': {
+                            'format': 'png',
+                            'filename': f'Master_Barangay_Coverage_{location_label.replace(", ", "_")}',
+                            'height': table_height,
+                            'width': 1200,
+                            'scale': 2 # Doubles the resolution for a crisp download
+                        }
+                    }
+                )
+                
+                # 8. Render the CSV Export Button
+                st.markdown("<br>", unsafe_allow_html=True)
+                csv_master = df_master_report.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label=" Download Master Coverage Report (CSV)",
+                    data=csv_master,
+                    file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
+                    mime="text/csv",
+                    key="dl_master_brgy_cov"
+                )
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
         df_targets = fetch_targets_from_supabase()
