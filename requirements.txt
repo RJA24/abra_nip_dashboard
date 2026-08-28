@@ -8,4 +8,3 @@ streamlit-autorefresh
 streamlit-aggrid
 folium
 streamlit-folium
-kaleido==0.1.0.post1
