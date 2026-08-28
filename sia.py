@@ -1723,16 +1723,38 @@ try:
             }
         )
         
-        # 8. Render the CSV Export Button
+        # 8. Render the Export Buttons (CSV and PDF) Side-by-Side
         st.markdown("<br>", unsafe_allow_html=True)
-        csv_master = df_master_report.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=" Download Master Coverage Report (CSV)",
-            data=csv_master,
-            file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
-            mime="text/csv",
-            key="dl_master_brgy_cov"
-        )
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            csv_master = df_master_report.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📄 Download Report (CSV)",
+                data=csv_master,
+                file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
+                mime="text/csv",
+                key="dl_master_brgy_cov",
+                use_container_width=True
+            )
+            
+        with col_btn2:
+            try:
+                # Generates the PDF in the background using Kaleido
+                pdf_bytes = fig_master_table.to_image(format="pdf", width=1200, height=table_height)
+                st.download_button(
+                    label="📕 Download Report (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.pdf",
+                    mime="application/pdf",
+                    key="dl_master_brgy_pdf",
+                    use_container_width=True
+                )
+            except Exception as e:
+                # Fallback if Kaleido isn't installed yet
+                st.button("📕 PDF Generator Loading...", disabled=True, use_container_width=True)
+                st.caption("Please ensure `kaleido` is in your requirements.txt to enable PDF export.")
+
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
         df_targets = fetch_targets_from_supabase()
