@@ -1613,6 +1613,82 @@ try:
                         }
                     }
                 )
+    # ==========================================
+    # MASTER BARANGAY COVERAGE TABLE
+    # ==========================================
+    st.divider()
+    st.markdown("#### Master Barangay Coverage Report")
+    st.write("Comprehensive breakdown of MR doses administered against both Projected and Actual targets.")
+    
+    with st.expander("📥 View & Download Detailed Master Table", expanded=False):
+        
+        # 1. Fetch & Clean Target Data
+        df_master_tgt = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Province'] == 'Abra')].copy()
+        df_master_tgt = df_master_tgt[['Parent_Municipality', 'Location', 'MR_6-59m_Total', 'Act_MR_6-59m_Total']]
+        df_master_tgt = df_master_tgt.rename(columns={
+            'Parent_Municipality': 'Municipality',
+            'Location': 'Barangay',
+            'MR_6-59m_Total': 'Projected Target',
+            'Act_MR_6-59m_Total': 'Actual Target'
+        })
+        
+        # 2. Fetch & Clean Live Accomplishment Data
+        if not df_mr_live.empty and 'Barangay' in df_mr_live.columns and 'Municipality' in df_mr_live.columns:
+            df_master_doses = df_mr_live.copy()
+            mr_cols_master = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+            
+            for c in mr_cols_master:
+                if c in df_master_doses.columns:
+                    df_master_doses[c] = pd.to_numeric(df_master_doses[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+            
+            df_master_doses['MR Vaccinated'] = df_master_doses[[c for c in mr_cols_master if c in df_master_doses.columns]].sum(axis=1)
+            df_master_doses['Barangay'] = standardize_geo_names(df_master_doses['Barangay'])
+            
+            df_brgy_doses = df_master_doses.groupby(['Municipality', 'Barangay'])['MR Vaccinated'].sum().reset_index()
+        else:
+            df_brgy_doses = pd.DataFrame(columns=['Municipality', 'Barangay', 'MR Vaccinated'])
+            
+        # 3. Merge Targets and Doses
+        df_master_report = pd.merge(df_master_tgt, df_brgy_doses, on=['Municipality', 'Barangay'], how='left').fillna(0)
+        
+        # 4. Apply Geographic Filters (If specific municipality is selected in sidebar)
+        if view_mode == "Specific Municipality":
+            df_master_report = df_master_report[df_master_report['Municipality'] == selected_muni]
+            
+        # 5. Calculate Dual Coverages safely
+        df_master_report['Projected Coverage'] = df_master_report.apply(
+            lambda row: (row['MR Vaccinated'] / row['Projected Target'] * 100) if row['Projected Target'] > 0 else 0, axis=1
+        )
+        df_master_report['Actual Coverage'] = df_master_report.apply(
+            lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
+        )
+        
+        # 6. Reorder & Sort Columns for a professional layout
+        df_master_report = df_master_report[['Municipality', 'Barangay', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage']]
+        df_master_report = df_master_report.sort_values(by=['Municipality', 'Barangay'])
+        
+        # 7. Render Streamlit Dataframe with Beautiful Formatting
+        st.dataframe(
+            df_master_report.style.format({
+                'MR Vaccinated': '{:,.0f}',
+                'Projected Target': '{:,.0f}',
+                'Projected Coverage': '{:.1f}%',
+                'Actual Target': '{:,.0f}',
+                'Actual Coverage': '{:.1f}%'
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # 8. Render the CSV Export Button
+        csv_master = df_master_report.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label=" Download Master Coverage Report (CSV)",
+            data=csv_master,
+            file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
+            mime="text/csv",
+            key="dl_master_brgy_cov"
+        )
 
     with tab_target:
         st.markdown("### Provincial Target Baseline Overview")
