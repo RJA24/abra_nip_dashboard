@@ -892,6 +892,22 @@ def fetch_vacctrack_data():
         st.cache_data.clear()
         return pd.DataFrame()
 
+@st.cache_data(ttl="1h")
+def fetch_opt_data():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Pulls exactly from the new 2026 OPT sheet you created
+        df_opt = conn.read(spreadsheet=sheet_url, worksheet="2026 OPT", ttl="1h")
+        
+        if df_opt.empty:
+            st.cache_data.clear()
+            return pd.DataFrame()
+            
+        return df_opt
+    except Exception as e:
+        st.cache_data.clear()
+        return pd.DataFrame()
+
 def standardize_geo_names(series):
     """
     Universally cleans and standardizes geographic names to prevent 
@@ -1746,6 +1762,111 @@ try:
                 mime="text/csv",
                 key="dl_master_brgy_cov"
             )
+
+        # ==========================================
+            # MASTER BARANGAY & OPT COVERAGE TABLE
+            # ==========================================
+            st.divider()
+            st.markdown("#### Master Barangay & OPT Coverage Report")
+            st.write("Detailed barangay breakdown including the 2026 OPT baseline at the municipal level.")
+            
+            with st.expander("📥 View & Download Barangay OPT Report", expanded=False):
+                # 1. Fetch OPT data
+                df_opt = fetch_opt_data()
+                if not df_opt.empty and 'Municipality' in df_opt.columns and '6-59 months' in df_opt.columns:
+                    # Run it through the master cleaner so the names match perfectly
+                    df_opt['Municipality'] = standardize_geo_names(df_opt['Municipality'])
+                    df_opt['6-59m OPT'] = pd.to_numeric(df_opt['6-59 months'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                    # Convert to a dictionary for instant mapping
+                    opt_dict = df_opt.set_index('Municipality')['6-59m OPT'].to_dict()
+                else:
+                    opt_dict = {}
+
+                # 2. Copy the existing master report to maintain identical columns
+                df_opt_report = df_master_report.copy()
+                
+                # 3. Inject the OPT data exactly where requested (Index 1 = after Municipality)
+                df_opt_report.insert(1, '6-59m OPT', df_opt_report['Municipality'].map(opt_dict).fillna(0))
+                
+                # 4. Render Streamlit Dataframe
+                st.dataframe(
+                    df_opt_report.style.format({
+                        '6-59m OPT': '{:,.0f}',
+                        'MR Vaccinated': '{:,.0f}',
+                        'Projected Target': '{:,.0f}',
+                        'Projected Coverage': '{:.1f}%',
+                        'Actual Target': '{:,.0f}',
+                        'Actual Coverage': '{:.1f}%',
+                        'Target Difference': '{:,.0f}'
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # 5. Render as Plotly Table for High-Res PNG Export
+                formatted_cells_opt = [
+                    df_opt_report['Municipality'],
+                    df_opt_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
+                    df_opt_report['Barangay'],
+                    df_opt_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                    df_opt_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_opt_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
+                    df_opt_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_opt_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%"),
+                    df_opt_report['Target Difference'].apply(lambda x: f"{x:,.0f}")
+                ]
+                
+                table_height_opt = max(400, len(df_opt_report) * 35 + 60)
+                
+                fig_opt_table = go.Figure(data=[go.Table(
+                    header=dict(
+                        values=[f"<b>{c}</b>" for c in df_opt_report.columns],
+                        fill_color='#00ACC1', # Teal header to distinguish from the blue table above
+                        font=dict(color='white', size=13),
+                        align='center',
+                        height=40
+                    ),
+                    cells=dict(
+                        values=formatted_cells_opt,
+                        fill_color=[['#f0f2f6', '#ffffff'] * (len(df_opt_report) // 2 + 1)],
+                        font=dict(color='#1E293B', size=12),
+                        align=['left', 'center', 'left', 'center', 'center', 'center', 'center', 'center', 'center'],
+                        height=35
+                    )
+                )])
+                
+                fig_opt_table.update_layout(
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    height=table_height_opt
+                )
+                
+                st.plotly_chart(
+                    fig_opt_table, 
+                    use_container_width=True, 
+                    key="brgy_opt_table_png",
+                    config={
+                        'displayModeBar': True,
+                        'toImageButtonOptions': {
+                            'format': 'png',
+                            'filename': f'Barangay_OPT_Coverage_{location_label.replace(", ", "_")}',
+                            'height': table_height_opt,
+                            'width': 1200,
+                            'scale': 2
+                        }
+                    }
+                )
+                
+                # 6. Render the Export Button
+                st.markdown("<br>", unsafe_allow_html=True)
+                csv_brgy_opt = df_opt_report.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📄 Download Barangay & OPT Report (CSV)",
+                    data=csv_brgy_opt,
+                    file_name=f"Barangay_OPT_Coverage_{location_label.replace(', ', '_')}.csv",
+                    mime="text/csv",
+                    key="dl_brgy_opt_cov",
+                    use_container_width=True
+                )
                       
 
     with tab_target:
