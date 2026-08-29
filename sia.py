@@ -1626,126 +1626,126 @@ try:
                         }
                     }
                 )
-    # ==========================================
-    # MASTER BARANGAY COVERAGE TABLE
-    # ==========================================
-    st.divider()
-    st.markdown("#### Master Barangay Coverage Report")
-    st.write("Comprehensive breakdown of MR doses administered against both Projected and Actual targets.")
-    
-    with st.expander("📥 View & Download Detailed Master Table", expanded=False):
+        # ==========================================
+        # MASTER BARANGAY COVERAGE TABLE
+        # ==========================================
+        st.divider()
+        st.markdown("#### Master Barangay Coverage Report")
+        st.write("Comprehensive breakdown of MR doses administered against both Projected and Actual targets.")
         
-        # 1. Fetch & Clean Target Data
-        df_master_tgt = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Province'] == 'Abra')].copy()
-        df_master_tgt = df_master_tgt[['Parent_Municipality', 'Location', 'MR_6-59m_Total', 'Act_MR_6-59m_Total']]
-        df_master_tgt = df_master_tgt.rename(columns={
-            'Parent_Municipality': 'Municipality',
-            'Location': 'Barangay',
-            'MR_6-59m_Total': 'Projected Target',
-            'Act_MR_6-59m_Total': 'Actual Target'
-        })
-        
-        # 2. Fetch & Clean Live Accomplishment Data
-        if not df_mr_live.empty and 'Barangay' in df_mr_live.columns and 'Municipality' in df_mr_live.columns:
-            df_master_doses = df_mr_live.copy()
-            mr_cols_master = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+        with st.expander("📥 View & Download Detailed Master Table", expanded=False):
             
-            for c in mr_cols_master:
-                if c in df_master_doses.columns:
-                    df_master_doses[c] = pd.to_numeric(df_master_doses[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+            # 1. Fetch & Clean Target Data
+            df_master_tgt = df_targets[(df_targets['Level'] == 'Barangay') & (df_targets['Parent_Province'] == 'Abra')].copy()
+            df_master_tgt = df_master_tgt[['Parent_Municipality', 'Location', 'MR_6-59m_Total', 'Act_MR_6-59m_Total']]
+            df_master_tgt = df_master_tgt.rename(columns={
+                'Parent_Municipality': 'Municipality',
+                'Location': 'Barangay',
+                'MR_6-59m_Total': 'Projected Target',
+                'Act_MR_6-59m_Total': 'Actual Target'
+            })
             
-            df_master_doses['MR Vaccinated'] = df_master_doses[[c for c in mr_cols_master if c in df_master_doses.columns]].sum(axis=1)
-            df_master_doses['Barangay'] = standardize_geo_names(df_master_doses['Barangay'])
+            # 2. Fetch & Clean Live Accomplishment Data
+            if not df_mr_live.empty and 'Barangay' in df_mr_live.columns and 'Municipality' in df_mr_live.columns:
+                df_master_doses = df_mr_live.copy()
+                mr_cols_master = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+                
+                for c in mr_cols_master:
+                    if c in df_master_doses.columns:
+                        df_master_doses[c] = pd.to_numeric(df_master_doses[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
+                
+                df_master_doses['MR Vaccinated'] = df_master_doses[[c for c in mr_cols_master if c in df_master_doses.columns]].sum(axis=1)
+                df_master_doses['Barangay'] = standardize_geo_names(df_master_doses['Barangay'])
+                
+                df_brgy_doses = df_master_doses.groupby(['Municipality', 'Barangay'])['MR Vaccinated'].sum().reset_index()
+            else:
+                df_brgy_doses = pd.DataFrame(columns=['Municipality', 'Barangay', 'MR Vaccinated'])
+                
+            # 3. Merge Targets and Doses
+            df_master_report = pd.merge(df_master_tgt, df_brgy_doses, on=['Municipality', 'Barangay'], how='left').fillna(0)
             
-            df_brgy_doses = df_master_doses.groupby(['Municipality', 'Barangay'])['MR Vaccinated'].sum().reset_index()
-        else:
-            df_brgy_doses = pd.DataFrame(columns=['Municipality', 'Barangay', 'MR Vaccinated'])
-            
-        # 3. Merge Targets and Doses
-        df_master_report = pd.merge(df_master_tgt, df_brgy_doses, on=['Municipality', 'Barangay'], how='left').fillna(0)
-        
-        # 4. Apply Geographic Filters (If specific municipality is selected in sidebar)
-        if view_mode == "Specific Municipality":
-            df_master_report = df_master_report[df_master_report['Municipality'] == selected_muni]
-            
-        # 5. Calculate Dual Coverages safely
-        df_master_report['Projected Coverage'] = df_master_report.apply(
-            lambda row: (row['MR Vaccinated'] / row['Projected Target'] * 100) if row['Projected Target'] > 0 else 0, axis=1
-        )
-        df_master_report['Actual Coverage'] = df_master_report.apply(
-            lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
-        )
-        
-        # 6. Reorder & Sort Columns for a professional layout
-        df_master_report = df_master_report[['Municipality', 'Barangay', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage']]
-        df_master_report = df_master_report.sort_values(by=['Municipality', 'Barangay'])
-        
-        # 7. Render as Plotly Table for PNG Export
-        import plotly.graph_objects as go
-        
-        # Format the numbers as strings so they look perfect in the image
-        formatted_cells = [
-            df_master_report['Municipality'],
-            df_master_report['Barangay'],
-            df_master_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
-            df_master_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
-            df_master_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
-            df_master_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
-            df_master_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
-        ]
-        
-        # Dynamically calculate height so the PNG doesn't cut off any rows
-        table_height = max(400, len(df_master_report) * 35 + 60)
-        
-        fig_master_table = go.Figure(data=[go.Table(
-            header=dict(
-                values=[f"<b>{c}</b>" for c in df_master_report.columns],
-                fill_color='#0033A0',
-                font=dict(color='white', size=13),
-                align='center',
-                height=40
-            ),
-            cells=dict(
-                values=formatted_cells,
-                # Creates an alternating gray/white row pattern for readability
-                fill_color=[['#f0f2f6', '#ffffff'] * (len(df_master_report) // 2 + 1)],
-                font=dict(color='#1E293B', size=12),
-                align=['left', 'left', 'center', 'center', 'center', 'center', 'center'],
-                height=35
+            # 4. Apply Geographic Filters (If specific municipality is selected in sidebar)
+            if view_mode == "Specific Municipality":
+                df_master_report = df_master_report[df_master_report['Municipality'] == selected_muni]
+                
+            # 5. Calculate Dual Coverages safely
+            df_master_report['Projected Coverage'] = df_master_report.apply(
+                lambda row: (row['MR Vaccinated'] / row['Projected Target'] * 100) if row['Projected Target'] > 0 else 0, axis=1
             )
-        )])
-        
-        fig_master_table.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=table_height
-        )
-        
-        st.plotly_chart(
-            fig_master_table, 
-            use_container_width=True, 
-            key="master_brgy_table_png",
-            config={
-                'displayModeBar': True,
-                'toImageButtonOptions': {
-                    'format': 'png',
-                    'filename': f'Master_Barangay_Coverage_{location_label.replace(", ", "_")}',
-                    'height': table_height,
-                    'width': 1200,
-                    'scale': 2 # Doubles the resolution for a crisp download
+            df_master_report['Actual Coverage'] = df_master_report.apply(
+                lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
+            )
+            
+            # 6. Reorder & Sort Columns for a professional layout
+            df_master_report = df_master_report[['Municipality', 'Barangay', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage']]
+            df_master_report = df_master_report.sort_values(by=['Municipality', 'Barangay'])
+            
+            # 7. Render as Plotly Table for PNG Export
+            import plotly.graph_objects as go
+            
+            # Format the numbers as strings so they look perfect in the image
+            formatted_cells = [
+                df_master_report['Municipality'],
+                df_master_report['Barangay'],
+                df_master_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                df_master_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
+                df_master_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
+                df_master_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
+                df_master_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
+            ]
+            
+            # Dynamically calculate height so the PNG doesn't cut off any rows
+            table_height = max(400, len(df_master_report) * 35 + 60)
+            
+            fig_master_table = go.Figure(data=[go.Table(
+                header=dict(
+                    values=[f"<b>{c}</b>" for c in df_master_report.columns],
+                    fill_color='#0033A0',
+                    font=dict(color='white', size=13),
+                    align='center',
+                    height=40
+                ),
+                cells=dict(
+                    values=formatted_cells,
+                    # Creates an alternating gray/white row pattern for readability
+                    fill_color=[['#f0f2f6', '#ffffff'] * (len(df_master_report) // 2 + 1)],
+                    font=dict(color='#1E293B', size=12),
+                    align=['left', 'left', 'center', 'center', 'center', 'center', 'center'],
+                    height=35
+                )
+            )])
+            
+            fig_master_table.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0),
+                height=table_height
+            )
+            
+            st.plotly_chart(
+                fig_master_table, 
+                use_container_width=True, 
+                key="master_brgy_table_png",
+                config={
+                    'displayModeBar': True,
+                    'toImageButtonOptions': {
+                        'format': 'png',
+                        'filename': f'Master_Barangay_Coverage_{location_label.replace(", ", "_")}',
+                        'height': table_height,
+                        'width': 1200,
+                        'scale': 2 # Doubles the resolution for a crisp download
+                    }
                 }
-            }
-        )
-        
-        # 8. Render the CSV Export Button
-        st.markdown("<br>", unsafe_allow_html=True)
-        csv_master = df_master_report.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label=" Download Master Coverage Report (CSV)",
-            data=csv_master,
-            file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
-            mime="text/csv",
-            key="dl_master_brgy_cov"
-        )
+            )
+            
+            # 8. Render the CSV Export Button
+            st.markdown("<br>", unsafe_allow_html=True)
+            csv_master = df_master_report.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=" Download Master Coverage Report (CSV)",
+                data=csv_master,
+                file_name=f"Master_Barangay_Coverage_{location_label.replace(', ', '_')}.csv",
+                mime="text/csv",
+                key="dl_master_brgy_cov"
+            )
                       
 
     with tab_target:
