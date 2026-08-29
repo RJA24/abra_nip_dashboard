@@ -1782,71 +1782,71 @@ try:
                     opt_dict = {}
 
                 # 2. Aggregate the existing master report strictly to the Municipal level
-                    df_muni_report = df_master_report.groupby('Municipality').agg({
-                        'MR Vaccinated': 'sum',
-                        'Actual Target': 'sum'
-                    }).reset_index()
-                    
-                    # 3. Inject the OPT data right next to the Municipality column
-                    df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
-                    
-                    # 4. Calculate Coverage
-                    df_muni_report['Actual Coverage'] = df_muni_report.apply(
-                        lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
+                df_muni_report = df_master_report.groupby('Municipality').agg({
+                    'MR Vaccinated': 'sum',
+                    'Actual Target': 'sum'
+                }).reset_index()
+                
+                # 3. Inject the OPT data right next to the Municipality column
+                df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
+                
+                # 4. Calculate Coverage
+                df_muni_report['Actual Coverage'] = df_muni_report.apply(
+                    lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
+                )
+                
+                # --- THE FIX: Locked in exactly 5 columns, dropping the diff ---
+                df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'Actual Target', 'MR Vaccinated', 'Actual Coverage']]
+                
+                # 5. Render as Plotly Table for High-Res PNG Export
+                formatted_cells_opt = [
+                    df_muni_report['Municipality'],
+                    df_muni_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
+                ]
+                
+                table_height_opt = max(400, len(df_muni_report) * 35 + 60)
+                
+                fig_opt_table = go.Figure(data=[go.Table(
+                    header=dict(
+                        values=[f"<b>{c}</b>" for c in df_muni_report.columns],
+                        fill_color='#00ACC1', 
+                        font=dict(color='white', size=13),
+                        align='center',
+                        height=40
+                    ),
+                    cells=dict(
+                        values=formatted_cells_opt,
+                        fill_color=[['#f0f2f6', '#ffffff'] * (len(df_muni_report) // 2 + 1)],
+                        font=dict(color='#1E293B', size=12),
+                        # Adjusted to exactly 5 alignments
+                        align=['left', 'center', 'center', 'center', 'center'], 
+                        height=35
                     )
-                    
-                    # --- THE FIX: Locked in exactly 5 columns, dropping the diff ---
-                    df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'Actual Target', 'MR Vaccinated', 'Actual Coverage']]
-                    
-                    # 5. Render as Plotly Table for High-Res PNG Export
-                    formatted_cells_opt = [
-                        df_muni_report['Municipality'],
-                        df_muni_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
-                        df_muni_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
-                        df_muni_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
-                        df_muni_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
-                    ]
-                    
-                    table_height_opt = max(400, len(df_muni_report) * 35 + 60)
-                    
-                    fig_opt_table = go.Figure(data=[go.Table(
-                        header=dict(
-                            values=[f"<b>{c}</b>" for c in df_muni_report.columns],
-                            fill_color='#00ACC1', 
-                            font=dict(color='white', size=13),
-                            align='center',
-                            height=40
-                        ),
-                        cells=dict(
-                            values=formatted_cells_opt,
-                            fill_color=[['#f0f2f6', '#ffffff'] * (len(df_muni_report) // 2 + 1)],
-                            font=dict(color='#1E293B', size=12),
-                            # Adjusted to exactly 5 alignments
-                            align=['left', 'center', 'center', 'center', 'center'], 
-                            height=35
-                        )
-                    )])
-                    
-                    fig_opt_table.update_layout(
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        height=table_height_opt
-                    )
-                    
-                    st.plotly_chart(
-                        fig_opt_table, 
-                        use_container_width=True, 
-                        key="muni_opt_table_png",
-                        config={
-                            'displayModeBar': True,
-                            'toImageButtonOptions': {
-                                'format': 'png',
-                                'filename': 'Municipal_OPT_Coverage_Abra',
-                                'height': table_height_opt,
-                                'width': 1200,
-                                'scale': 2
-                            }
+                )])
+                
+                fig_opt_table.update_layout(
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    height=table_height_opt
+                )
+                
+                st.plotly_chart(
+                    fig_opt_table, 
+                    use_container_width=True, 
+                    key="muni_opt_table_png",
+                    config={
+                        'displayModeBar': True,
+                        'toImageButtonOptions': {
+                            'format': 'png',
+                            'filename': 'Municipal_OPT_Coverage_Abra',
+                            'height': table_height_opt,
+                            'width': 1200,
+                            'scale': 2
                         }
-                    )
+                    }
+                )
                 
                 # 7. Render the Export Button
                 st.markdown("<br>", unsafe_allow_html=True)
