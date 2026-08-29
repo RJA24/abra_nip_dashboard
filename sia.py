@@ -1799,10 +1799,10 @@ try:
                 df_muni_report['Target Difference'] = df_muni_report['Actual Target'] - df_muni_report['Projected Target']
                 
                 # 4. Inject the OPT data right next to the Municipality column
-                    df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
-                    
-                    # --- THE FIX: Force the exact column order so headers match the data cells ---
-                    df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage', 'Target Difference']]
+                df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
+                
+                # --- THE FIX: Force the exact column order so headers match the data cells ---
+                df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage', 'Target Difference']]
                 
                 # # 5. Render Streamlit Dataframe
                 # st.dataframe(
