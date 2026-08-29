@@ -1784,51 +1784,31 @@ try:
                 # 2. Aggregate the existing master report strictly to the Municipal level
                 df_muni_report = df_master_report.groupby('Municipality').agg({
                     'MR Vaccinated': 'sum',
-                    'Projected Target': 'sum',
                     'Actual Target': 'sum'
                 }).reset_index()
                 
-                # 3. Safely calculate Coverages and Differences at the Municipal Level
-                df_muni_report['Projected Coverage'] = df_muni_report.apply(
-                    lambda row: (row['MR Vaccinated'] / row['Projected Target'] * 100) if row['Projected Target'] > 0 else 0, axis=1
-                )
+                # 3. Inject the OPT data right next to the Municipality column
+                df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
+                
+                # 4. Calculate Coverage and the new OPT vs Actual comparison
                 df_muni_report['Actual Coverage'] = df_muni_report.apply(
                     lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
                 )
-                # This prevents the KeyError by generating the column fresh!
-                df_muni_report['Target Difference'] = df_muni_report['Actual Target'] - df_muni_report['Projected Target']
                 
-                # 4. Inject the OPT data right next to the Municipality column
-                df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
+                # --- THE FIX: Compare Actual Target directly against the OPT baseline ---
+                df_muni_report['OPT vs Actual Diff'] = df_muni_report['Actual Target'] - df_muni_report['6-59m OPT']
                 
-                # --- THE FIX: Force the exact column order so headers match the data cells ---
-                df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'MR Vaccinated', 'Projected Target', 'Projected Coverage', 'Actual Target', 'Actual Coverage', 'Target Difference']]
-                
-                # # 5. Render Streamlit Dataframe
-                # st.dataframe(
-                #     df_muni_report.style.format({
-                #         '6-59m OPT': '{:,.0f}',
-                #         'MR Vaccinated': '{:,.0f}',
-                #         'Projected Target': '{:,.0f}',
-                #         'Projected Coverage': '{:.1f}%',
-                #         'Actual Target': '{:,.0f}',
-                #         'Actual Coverage': '{:.1f}%',
-                #         'Target Difference': '{:,.0f}'
-                #     }),
-                #     use_container_width=True,
-                #     hide_index=True
-                # )
+                # 5. Lock in the exact column order for a logical visual flow
+                df_muni_report = df_muni_report[['Municipality', '6-59m OPT', 'Actual Target', 'OPT vs Actual Diff', 'MR Vaccinated', 'Actual Coverage']]
                 
                 # 6. Render as Plotly Table for High-Res PNG Export
                 formatted_cells_opt = [
                     df_muni_report['Municipality'],
                     df_muni_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
-                    df_muni_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
-                    df_muni_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
-                    df_muni_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
                     df_muni_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
-                    df_muni_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%"),
-                    df_muni_report['Target Difference'].apply(lambda x: f"{x:,.0f}")
+                    df_muni_report['OPT vs Actual Diff'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%")
                 ]
                 
                 table_height_opt = max(400, len(df_muni_report) * 35 + 60)
@@ -1836,7 +1816,7 @@ try:
                 fig_opt_table = go.Figure(data=[go.Table(
                     header=dict(
                         values=[f"<b>{c}</b>" for c in df_muni_report.columns],
-                        fill_color='#00ACC1', # Teal header for distinction
+                        fill_color='#00ACC1', 
                         font=dict(color='white', size=13),
                         align='center',
                         height=40
@@ -1845,7 +1825,8 @@ try:
                         values=formatted_cells_opt,
                         fill_color=[['#f0f2f6', '#ffffff'] * (len(df_muni_report) // 2 + 1)],
                         font=dict(color='#1E293B', size=12),
-                        align=['left', 'center', 'center', 'center', 'center', 'center', 'center', 'center'],
+                        # Ensure exactly 6 alignments for the 6 columns
+                        align=['left', 'center', 'center', 'center', 'center', 'center'], 
                         height=35
                     )
                 )])
