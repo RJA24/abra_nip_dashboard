@@ -578,7 +578,7 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 # ==========================================
 if st.session_state.get('active_program') == 'SBI':
     st.title("School-Based Immunization (SBI)")
-    st.info("🚧 The SBI Command Center is currently under construction and will be deployed shortly.")
+    st.info("Wala ka pang makikita dito Chesster haha. This section is still under construction. Please check back later for updates.")
     
     if st.button("⬅️ Return to Main Menu"):
         st.session_state['active_program'] = None
