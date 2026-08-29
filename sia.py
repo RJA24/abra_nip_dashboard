@@ -1764,33 +1764,46 @@ try:
             )
 
         # ==========================================
-            # MASTER BARANGAY & OPT COVERAGE TABLE
-            # ==========================================
+        # MASTER MUNICIPAL & OPT COVERAGE TABLE
+        # ==========================================
+        if view_mode == "All Municipalities (Abra)":
             st.divider()
-            st.markdown("#### Master Barangay & OPT Coverage Report")
-            st.write("Detailed barangay breakdown including the 2026 OPT baseline at the municipal level.")
+            st.markdown("#### Master Municipal & OPT Coverage Report")
+            st.write("Detailed municipal breakdown including the 2026 OPT baseline.")
             
-            with st.expander("📥 View & Download Barangay OPT Report", expanded=False):
+            with st.expander("📥 View & Download Municipal OPT Report", expanded=False):
                 # 1. Fetch OPT data
                 df_opt = fetch_opt_data()
                 if not df_opt.empty and 'Municipality' in df_opt.columns and '6-59 months' in df_opt.columns:
-                    # Run it through the master cleaner so the names match perfectly
                     df_opt['Municipality'] = standardize_geo_names(df_opt['Municipality'])
                     df_opt['6-59m OPT'] = pd.to_numeric(df_opt['6-59 months'].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                    # Convert to a dictionary for instant mapping
                     opt_dict = df_opt.set_index('Municipality')['6-59m OPT'].to_dict()
                 else:
                     opt_dict = {}
 
-                # 2. Copy the existing master report to maintain identical columns
-                df_opt_report = df_master_report.copy()
+                # 2. Aggregate the existing master report strictly to the Municipal level
+                df_muni_report = df_master_report.groupby('Municipality').agg({
+                    'MR Vaccinated': 'sum',
+                    'Projected Target': 'sum',
+                    'Actual Target': 'sum'
+                }).reset_index()
                 
-                # 3. Inject the OPT data exactly where requested (Index 1 = after Municipality)
-                df_opt_report.insert(1, '6-59m OPT', df_opt_report['Municipality'].map(opt_dict).fillna(0))
+                # 3. Safely calculate Coverages and Differences at the Municipal Level
+                df_muni_report['Projected Coverage'] = df_muni_report.apply(
+                    lambda row: (row['MR Vaccinated'] / row['Projected Target'] * 100) if row['Projected Target'] > 0 else 0, axis=1
+                )
+                df_muni_report['Actual Coverage'] = df_muni_report.apply(
+                    lambda row: (row['MR Vaccinated'] / row['Actual Target'] * 100) if row['Actual Target'] > 0 else 0, axis=1
+                )
+                # This prevents the KeyError by generating the column fresh!
+                df_muni_report['Target Difference'] = df_muni_report['Actual Target'] - df_muni_report['Projected Target']
                 
-                # 4. Render Streamlit Dataframe
+                # 4. Inject the OPT data right next to the Municipality column
+                df_muni_report.insert(1, '6-59m OPT', df_muni_report['Municipality'].map(opt_dict).fillna(0))
+                
+                # 5. Render Streamlit Dataframe
                 st.dataframe(
-                    df_opt_report.style.format({
+                    df_muni_report.style.format({
                         '6-59m OPT': '{:,.0f}',
                         'MR Vaccinated': '{:,.0f}',
                         'Projected Target': '{:,.0f}',
@@ -1803,34 +1816,33 @@ try:
                     hide_index=True
                 )
                 
-                # 5. Render as Plotly Table for High-Res PNG Export
+                # 6. Render as Plotly Table for High-Res PNG Export
                 formatted_cells_opt = [
-                    df_opt_report['Municipality'],
-                    df_opt_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
-                    df_opt_report['Barangay'],
-                    df_opt_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
-                    df_opt_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
-                    df_opt_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
-                    df_opt_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
-                    df_opt_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%"),
-                    df_opt_report['Target Difference'].apply(lambda x: f"{x:,.0f}")
+                    df_muni_report['Municipality'],
+                    df_muni_report['6-59m OPT'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['MR Vaccinated'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Projected Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Projected Coverage'].apply(lambda x: f"{x:.1f}%"),
+                    df_muni_report['Actual Target'].apply(lambda x: f"{x:,.0f}"),
+                    df_muni_report['Actual Coverage'].apply(lambda x: f"{x:.1f}%"),
+                    df_muni_report['Target Difference'].apply(lambda x: f"{x:,.0f}")
                 ]
                 
-                table_height_opt = max(400, len(df_opt_report) * 35 + 60)
+                table_height_opt = max(400, len(df_muni_report) * 35 + 60)
                 
                 fig_opt_table = go.Figure(data=[go.Table(
                     header=dict(
-                        values=[f"<b>{c}</b>" for c in df_opt_report.columns],
-                        fill_color='#00ACC1', # Teal header to distinguish from the blue table above
+                        values=[f"<b>{c}</b>" for c in df_muni_report.columns],
+                        fill_color='#00ACC1', # Teal header for distinction
                         font=dict(color='white', size=13),
                         align='center',
                         height=40
                     ),
                     cells=dict(
                         values=formatted_cells_opt,
-                        fill_color=[['#f0f2f6', '#ffffff'] * (len(df_opt_report) // 2 + 1)],
+                        fill_color=[['#f0f2f6', '#ffffff'] * (len(df_muni_report) // 2 + 1)],
                         font=dict(color='#1E293B', size=12),
-                        align=['left', 'center', 'left', 'center', 'center', 'center', 'center', 'center', 'center'],
+                        align=['left', 'center', 'center', 'center', 'center', 'center', 'center', 'center'],
                         height=35
                     )
                 )])
@@ -1843,12 +1855,12 @@ try:
                 st.plotly_chart(
                     fig_opt_table, 
                     use_container_width=True, 
-                    key="brgy_opt_table_png",
+                    key="muni_opt_table_png",
                     config={
                         'displayModeBar': True,
                         'toImageButtonOptions': {
                             'format': 'png',
-                            'filename': f'Barangay_OPT_Coverage_{location_label.replace(", ", "_")}',
+                            'filename': 'Municipal_OPT_Coverage_Abra',
                             'height': table_height_opt,
                             'width': 1200,
                             'scale': 2
@@ -1856,15 +1868,15 @@ try:
                     }
                 )
                 
-                # 6. Render the Export Button
+                # 7. Render the Export Button
                 st.markdown("<br>", unsafe_allow_html=True)
-                csv_brgy_opt = df_opt_report.to_csv(index=False).encode('utf-8')
+                csv_muni_opt = df_muni_report.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📄 Download Barangay & OPT Report (CSV)",
-                    data=csv_brgy_opt,
-                    file_name=f"Barangay_OPT_Coverage_{location_label.replace(', ', '_')}.csv",
+                    label="📄 Download Municipal OPT Report (CSV)",
+                    data=csv_muni_opt,
+                    file_name="Municipal_OPT_Coverage_Abra.csv",
                     mime="text/csv",
-                    key="dl_brgy_opt_cov",
+                    key="dl_muni_opt_cov",
                     use_container_width=True
                 )
                       
