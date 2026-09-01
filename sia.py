@@ -1344,11 +1344,33 @@ try:
                         # --- NEW: Manual Coordinate Nudges to Prevent Label Collision ---
                         # Adjusting by 0.01 moves the label roughly 1 kilometer.
                         label_nudges = {
-                            'MANABO': {'lat': -0.015, 'lon': -0.015},       # Nudged East
-                            'PILAR': {'lat': -0.015, 'lon': 0.00},       # Nudged South
-                            'PEŃARRUBIA': {'lat': 0.01, 'lon': -0.01},   # Nudged South-East
-                            'LANGIDEN': {'lat': 0.00, 'lon': -0.015},    # Nudged West
-                            'LAGANGILANG': {'lat': -0.015, 'lon': 0.020}  # Nudged North-East
+                            'BANGUED': {'lat': -0.015, 'lon': -0.015},
+                            'BOLINEY': {'lat': -0.015, 'lon': -0.015},
+                            'BUCAY': {'lat': -0.015, 'lon': -0.015},
+                            'BUCLOC': {'lat': -0.015, 'lon': -0.015},
+                            'DAGUIOMAN': {'lat': -0.015, 'lon': -0.015},
+                            'DANGLAS': {'lat': -0.015, 'lon': -0.015},
+                            'DOLORES': {'lat': -0.015, 'lon': -0.015},
+                            'LA PAZ': {'lat': -0.015, 'lon': -0.015},
+                            'LACUB': {'lat': -0.015, 'lon': -0.015},
+                            'LAGANGILANG': {'lat': -0.015, 'lon': -0.015},
+                            'LAGAYAN': {'lat': -0.015, 'lon': -0.015},
+                            'LANGIDEN': {'lat': -0.015, 'lon': -0.015},
+                            'LICUAN-BAAY': {'lat': -0.015, 'lon': -0.015},
+                            'LUBA': {'lat': -0.015, 'lon': -0.015},
+                            'MALIBCONG': {'lat': -0.015, 'lon': -0.015},
+                            'MANABO': {'lat': -0.015, 'lon': -0.015},       
+                            'PEŃARRUBIA': {'lat': 0.01, 'lon': -0.01},
+                            'PIDIGAN': {'lat': -0.015, 'lon': 0.00},
+                            'PILAR': {'lat': -0.015, 'lon': 0.00},  
+                            'SALLAPADAN': {'lat': -0.015, 'lon': 0.00},  
+                            'SAN ISIDRO': {'lat': -0.015, 'lon': 0.00},  
+                            'SAN JUAN': {'lat': -0.015, 'lon': 0.00},  
+                            'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
+                            'TAYUM': {'lat': -0.015, 'lon': 0.00},       
+                            'TINEG': {'lat': 0.00, 'lon': -0.015},
+                            'TUBO': {'lat': -0.015, 'lon': 0.00},     
+                            'VILLAVICIOSA': {'lat': -0.015, 'lon': 0.020}  
                         }
                         
                         for feat in abra_geo.get('features', []):
