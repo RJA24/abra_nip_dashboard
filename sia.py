@@ -1362,7 +1362,7 @@ try:
                             'MANABO': {'lat': -0.015, 'lon': -0.015},       
                             'PEŃARRUBIA': {'lat': -0.01, 'lon': -0.01},
                             'PIDIGAN': {'lat': -0.015, 'lon': 0.00},
-                            'PILAR': {'lat': -0.015, 'lon': 0.00},  
+                            'PILAR': {'lat': -0.015, 'lon': -0.02},  
                             'SALLAPADAN': {'lat': -0.015, 'lon': 0.00},  
                             'SAN ISIDRO': {'lat': +0.015, 'lon': -0.015},  
                             'SAN JUAN': {'lat': -0.015, 'lon': 0.00},  
