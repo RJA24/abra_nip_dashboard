@@ -1365,7 +1365,7 @@ try:
                             'PILAR': {'lat': -0.015, 'lon': -0.02},  
                             'SALLAPADAN': {'lat': +0.020, 'lon': +0.015},  
                             'SAN ISIDRO': {'lat': +0.015, 'lon': -0.015},  
-                            'SAN JUAN': {'lat': -0.015, 'lon': 0.00},  
+                            'SAN JUAN': {'lat': 0.0, 'lon': +0.015},  
                             'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
                             'TAYUM': {'lat': -0.015, 'lon': 0.00},       
                             'TINEG': {'lat': 0.00, 'lon': -0.015},
