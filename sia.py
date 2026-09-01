@@ -1363,7 +1363,7 @@ try:
                             'PEŃARRUBIA': {'lat': -0.01, 'lon': -0.01},
                             'PIDIGAN': {'lat': -0.015, 'lon': 0.00},
                             'PILAR': {'lat': -0.015, 'lon': -0.02},  
-                            'SALLAPADAN': {'lat': -0.015, 'lon': 0.00},  
+                            'SALLAPADAN': {'lat': +0.020, 'lon': +0.015},  
                             'SAN ISIDRO': {'lat': +0.015, 'lon': -0.015},  
                             'SAN JUAN': {'lat': -0.015, 'lon': 0.00},  
                             'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
