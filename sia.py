@@ -1344,7 +1344,7 @@ try:
                         # --- NEW: Manual Coordinate Nudges to Prevent Label Collision ---
                         # Adjusting by 0.01 moves the label roughly 1 kilometer.
                         label_nudges = {
-                            'BANGUED': {'lat': -0.015, 'lon': -0.015},
+                            'BANGUED': {'lat': +0.015, 'lon': -0.015},
                             'BOLINEY': {'lat': -0.015, 'lon': -0.015},
                             'BUCAY': {'lat': -0.015, 'lon': -0.015},
                             'BUCLOC': {'lat': -0.015, 'lon': -0.015},
