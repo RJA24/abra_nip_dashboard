@@ -1357,7 +1357,7 @@ try:
                             'LAGAYAN': {'lat': -0.015, 'lon': -0.015},
                             'LANGIDEN': {'lat': +0.015, 'lon': -0.025},
                             'LICUAN-BAAY': {'lat': -0.015, 'lon': -0.015},
-                            'LUBA': {'lat': -0.015, 'lon': -0.015},
+                            'LUBA': {'lat': 0.0, 'lon': 0.0},
                             'MALIBCONG': {'lat': -0.015, 'lon': -0.015},
                             'MANABO': {'lat': -0.005, 'lon': -0.020},       
                             'PEŃARRUBIA': {'lat': -0.01, 'lon': -0.01},
@@ -1368,8 +1368,8 @@ try:
                             'SAN JUAN': {'lat': 0.0, 'lon': +0.015},  
                             'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
                             'TAYUM': {'lat': -0.015, 'lon': 0.00},       
-                            'TINEG': {'lat': 0.00, 'lon': -0.015},
-                            'TUBO': {'lat': -0.015, 'lon': 0.00},     
+                            'TINEG': {'lat': -0.04, 'lon': -0.015},
+                            'TUBO': {'lat': +0.04, 'lon': 0.00},     
                             'VILLAVICIOSA': {'lat': -0.020, 'lon': +0.015}  
                         }
                         
