@@ -1416,7 +1416,7 @@ try:
                             height=600,
                             map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
-                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr")
+                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_MR_Map', 'scale': 3}})
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         
@@ -1437,7 +1437,7 @@ try:
                                 height=600,
                                 map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                             )
-                            st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va")
+                            st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_VitA_Map', 'scale': 3}})
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
 
@@ -1514,7 +1514,7 @@ try:
                             height=600,
                             map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
-                        st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique")
+                        st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'{selected_muni}_Barangay_Map', 'scale': 3}})
                     else:
                         st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
 
@@ -3696,7 +3696,7 @@ try:
                     map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                 )
                 
-                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car")
+                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'CAR_Regional_Map', 'scale': 3}})
             else:
                 st.warning("Regional map boundary data could not be loaded or processed.")
 
