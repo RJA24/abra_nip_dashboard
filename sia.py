@@ -1368,8 +1368,8 @@ try:
                             'SAN JUAN': {'lat': 0.0, 'lon': +0.015},  
                             'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
                             'TAYUM': {'lat': -0.015, 'lon': 0.00},       
-                            'TINEG': {'lat': -0.04, 'lon': -0.015},
-                            'TUBO': {'lat': +0.04, 'lon': 0.00},     
+                            'TINEG': {'lat': -0.06, 'lon': -0.025},
+                            'TUBO': {'lat': +0.06, 'lon': +0.025},     
                             'VILLAVICIOSA': {'lat': -0.020, 'lon': +0.015}  
                         }
                         
