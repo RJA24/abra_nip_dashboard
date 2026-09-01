@@ -1398,30 +1398,25 @@ try:
                                         va_texts.append(f"{display_name}<br>{va_cov:.1f}%")
                                                         
                         # ==================================
-                        # 1 COLUMN PROVINCIAL MAP LAYOUT (PURE VECTOR)
+                        # 1 COLUMN PROVINCIAL MAP LAYOUT
                         # ==================================
                         st.markdown("**Measles-Rubella (MR) Coverage**")
-                        
-                        # Use px.choropleth instead of px.choropleth_mapbox
-                        fig_map_mr = px.choropleth(
+                        fig_map_mr = px.choropleth_map(
                             df_geo_summary, geojson=abra_geo, locations='Map_Location', featureidkey="properties.Standard_Name", 
-                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], 
-                            hover_name=geo_col,
+                            color='MR Coverage %', color_continuous_scale="RdYlGn", range_color=[0, 100], map_style="white-bg",
+                            zoom=9.2, center={"lat": 17.58, "lon": 120.80}, opacity=0.7, hover_name=geo_col,
                             hover_data={'Map_Location': False, 'MR Target': ':,', 'MR Administered': ':,', 'MR Deficit (to 95%)': ':,.0f'}
                         )
-                        
-                        # Add the text labels using Scattergeo instead of Scattermapbox
-                        fig_map_mr.add_trace(go.Scattergeo(
-                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=12, color='black'), hoverinfo='skip', showlegend=False
+                        fig_map_mr.add_trace(go.Scattermap(
+                            lon=mr_lons, lat=mr_lats, mode='text', text=mr_texts, textfont=dict(size=9, color='black'), hoverinfo='skip', showlegend=False
                         ))
-                        
-                        # Automatically zoom to Abra and hide the default world globe background
-                        fig_map_mr.update_geos(fitbounds="locations", visible=False)
-                        
-                        fig_map_mr.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, coloraxis_colorbar=dict(title="MR %"), height=600)
-                        
-                        # Now scale: 4 (or higher) will be flawlessly crisp!
-                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_MR_Map', 'scale': 4}})
+                        fig_map_mr.update_layout(
+                            margin={"r":0,"t":0,"l":0,"b":0}, 
+                            coloraxis_colorbar=dict(title="MR %"), 
+                            height=600,
+                            map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
+                        )
+                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_MR_Map', 'scale': 6}})
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         
