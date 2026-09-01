@@ -1370,7 +1370,7 @@ try:
                             'TAYUM': {'lat': -0.015, 'lon': 0.00},       
                             'TINEG': {'lat': 0.00, 'lon': -0.015},
                             'TUBO': {'lat': -0.015, 'lon': 0.00},     
-                            'VILLAVICIOSA': {'lat': -0.015, 'lon': 0.020}  
+                            'VILLAVICIOSA': {'lat': -0.020, 'lon': +0.015}  
                         }
                         
                         for feat in abra_geo.get('features', []):
