@@ -1350,7 +1350,7 @@ try:
                             'BUCLOC': {'lat': -0.015, 'lon': -0.015},
                             'DAGUIOMAN': {'lat': -0.015, 'lon': -0.015},
                             'DANGLAS': {'lat': -0.015, 'lon': -0.015},
-                            'DOLORES': {'lat': +0.015, 'lon': -0.015},
+                            'DOLORES': {'lat': -0.015, 'lon': +0.015},
                             'LA PAZ': {'lat': -0.015, 'lon': -0.015},
                             'LACUB': {'lat': -0.015, 'lon': -0.015},
                             'LAGANGILANG': {'lat': -0.015, 'lon': +0.015},
