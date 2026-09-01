@@ -1346,7 +1346,7 @@ try:
                         label_nudges = {
                             'BANGUED': {'lat': +0.015, 'lon': -0.015},
                             'BOLINEY': {'lat': -0.015, 'lon': -0.015},
-                            'BUCAY': {'lat': -0.015, 'lon': -0.015},
+                            'BUCAY': {'lat': -0.025, 'lon': -0.020},
                             'BUCLOC': {'lat': -0.015, 'lon': -0.015},
                             'DAGUIOMAN': {'lat': -0.015, 'lon': -0.015},
                             'DANGLAS': {'lat': -0.015, 'lon': -0.015},
