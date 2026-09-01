@@ -1353,7 +1353,7 @@ try:
                             'DOLORES': {'lat': +0.015, 'lon': -0.015},
                             'LA PAZ': {'lat': -0.015, 'lon': -0.015},
                             'LACUB': {'lat': -0.015, 'lon': -0.015},
-                            'LAGANGILANG': {'lat': -0.015, 'lon': -0.015},
+                            'LAGANGILANG': {'lat': -0.015, 'lon': +0.015},
                             'LAGAYAN': {'lat': -0.015, 'lon': -0.015},
                             'LANGIDEN': {'lat': +0.015, 'lon': -0.015},
                             'LICUAN-BAAY': {'lat': -0.015, 'lon': -0.015},
