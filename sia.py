@@ -1359,7 +1359,7 @@ try:
                             'LICUAN-BAAY': {'lat': -0.015, 'lon': -0.015},
                             'LUBA': {'lat': -0.015, 'lon': -0.015},
                             'MALIBCONG': {'lat': -0.015, 'lon': -0.015},
-                            'MANABO': {'lat': -0.015, 'lon': -0.015},       
+                            'MANABO': {'lat': -0.005, 'lon': -0.020},       
                             'PEŃARRUBIA': {'lat': -0.01, 'lon': -0.01},
                             'PIDIGAN': {'lat': 0.0, 'lon': 0.00},
                             'PILAR': {'lat': -0.015, 'lon': -0.02},  
