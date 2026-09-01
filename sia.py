@@ -1181,7 +1181,7 @@ try:
                                     'filename': 'Cumulative_Burn_Up', 
                                     'height': 500, 
                                     'width': 1200, 
-                                    'scale': 4
+                                    'scale': 6
                                 }
                             }
                         )
@@ -1313,7 +1313,7 @@ try:
                             'filename': f'Abra_SIA_Coverage_{geo_col}', 
                             'height': chart_height, 
                             'width': 1200, 
-                            'scale': 4
+                            'scale': 6
                         }
                     }
                 )
@@ -1416,7 +1416,7 @@ try:
                             height=600,
                             map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
-                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_MR_Map', 'scale': 4}})
+                        st.plotly_chart(fig_map_mr, use_container_width=True, key="exec_map_mr", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_MR_Map', 'scale': 6}})
                         
                         st.markdown("<br>", unsafe_allow_html=True)
                         
@@ -1437,7 +1437,7 @@ try:
                                 height=600,
                                 map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                             )
-                            st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_VitA_Map', 'scale': 4}})
+                            st.plotly_chart(fig_map_va, use_container_width=True, key="exec_map_va", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Abra_Provincial_VitA_Map', 'scale': 6}})
                     else:
                         st.warning("Map boundary data could not be loaded or dataset is empty.")
 
@@ -1514,7 +1514,7 @@ try:
                             height=600,
                             map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                         )
-                        st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'{selected_muni}_Barangay_Map', 'scale': 4}})
+                        st.plotly_chart(fig_map_brgy_mr, use_container_width=True, key="exec_map_brgy_mr_unique", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': f'{selected_muni}_Barangay_Map', 'scale': 6}})
                     else:
                         st.info(f"Local map boundaries for {selected_muni} could not be found. Please ensure 'abra_barangays.geojson' is uploaded to the root directory.")
 
@@ -1660,7 +1660,7 @@ try:
                             'filename': 'Coverage_Comparison', 
                             'height': chart_height_comp, 
                             'width': 1200, 
-                            'scale': 4
+                            'scale': 6
                         }
                     }
                 )
@@ -1769,7 +1769,7 @@ try:
                         'filename': f'Master_Barangay_Coverage_{location_label.replace(", ", "_")}',
                         'height': table_height,
                         'width': 1200,
-                        'scale': 4 # Doubles the resolution for a crisp download
+                        'scale': 6 # Doubles the resolution for a crisp download
                     }
                 }
             )
@@ -1865,7 +1865,7 @@ try:
                             'filename': 'Municipal_OPT_Coverage_Abra',
                             'height': table_height_opt,
                             'width': 1200,
-                            'scale': 4
+                            'scale': 6
                         }
                     }
                 )
@@ -1945,7 +1945,7 @@ try:
                     fig_mr = px.bar(df_sorted_mr, x=plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#1E88E5'])
                     # MOBILE FIX: Projected MR Bar
                     fig_mr.update_layout(dragmode=False, xaxis_title=chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
-                    st.plotly_chart(fig_mr, use_container_width=True, key="tgt_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Targets', 'scale': 4}})
+                    st.plotly_chart(fig_mr, use_container_width=True, key="tgt_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Targets', 'scale': 6}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -1959,7 +1959,7 @@ try:
                         fig_donut_mr = px.pie(mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                         # MOBILE FIX: Projected MR Pie
                     fig_donut_mr.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
-                    st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Pie', 'scale': 4}})
+                    st.plotly_chart(fig_donut_mr, use_container_width=True, key="tgt_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_MR_Pie', 'scale': 6}})
 
                     # --- RAW DATA EXPORT ---
                     st.divider()
@@ -2021,7 +2021,7 @@ try:
                     fig_va = px.bar(df_sorted_va, x=plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#F4511E'])
                     # MOBILE FIX: Projected Vit A Bar
                     fig_va.update_layout(dragmode=False, xaxis_title=chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
-                    st.plotly_chart(fig_va, use_container_width=True, key="tgt_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Targets', 'scale': 4}})
+                    st.plotly_chart(fig_va, use_container_width=True, key="tgt_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Targets', 'scale': 6}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -2035,7 +2035,7 @@ try:
                         fig_donut_va = px.pie(va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                         # MOBILE FIX: Projected Vit A Pie
                     fig_donut_va.update_layout(dragmode=False, title=dict(text=f"Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
-                    st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Pie', 'scale': 4}})
+                    st.plotly_chart(fig_donut_va, use_container_width=True, key="tgt_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Projected_VitA_Pie', 'scale': 6}})
 
                     # --- RAW DATA EXPORT ---
                     st.divider()
@@ -2092,7 +2092,7 @@ try:
                     fig_act_mr = px.bar(df_sorted_act_mr, x=act_plot_col, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#43A047'])
                     # MOBILE FIX: Actual MR Bar
                     fig_act_mr.update_layout(dragmode=False, xaxis_title=act_chart_title, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
-                    st.plotly_chart(fig_act_mr, use_container_width=True, key="tgt_act_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Targets', 'scale': 4}})
+                    st.plotly_chart(fig_act_mr, use_container_width=True, key="tgt_act_mr_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Targets', 'scale': 6}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -2106,7 +2106,7 @@ try:
                         fig_donut_act_mr = px.pie(act_mr_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                         # MOBILE FIX: Actual MR Pie
                     fig_donut_act_mr.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
-                    st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Pie', 'scale': 4}})
+                    st.plotly_chart(fig_donut_act_mr, use_container_width=True, key="tgt_act_mr_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_MR_Pie', 'scale': 6}})
 
                     # --- RAW DATA EXPORT ---
                     st.divider()
@@ -2168,7 +2168,7 @@ try:
                     fig_act_va = px.bar(df_sorted_act_va, x=act_plot_col_va, y='Location', orientation='h', text_auto='.0f', color_discrete_sequence=['#00ACC1'])
                     # MOBILE FIX: Actual Vit A Bar
                     fig_act_va.update_layout(dragmode=False, xaxis_title=act_chart_title_va, yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50))
-                    st.plotly_chart(fig_act_va, use_container_width=True, key="tgt_act_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Targets', 'scale': 4}})
+                    st.plotly_chart(fig_act_va, use_container_width=True, key="tgt_act_va_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Targets', 'scale': 6}})
                     
                     st.markdown("<br>", unsafe_allow_html=True)
                     
@@ -2182,7 +2182,7 @@ try:
                         fig_donut_act_va = px.pie(act_va_age_data, names='Age Group', values='Target', hole=0.4, title=f"Actual Age Distribution ({gender_filter})", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                         # MOBILE FIX: Actual Vit A Pie
                     fig_donut_act_va.update_layout(dragmode=False, title=dict(text=f"Actual Age Distribution ({gender_filter})", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), height=400, margin=dict(l=10, r=10, t=85, b=50))
-                    st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Pie', 'scale': 4}})
+                    st.plotly_chart(fig_donut_act_va, use_container_width=True, key="tgt_act_va_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Actual_VitA_Pie', 'scale': 6}})
 
                     # --- RAW DATA EXPORT ---
                     st.divider()
@@ -2243,7 +2243,7 @@ try:
                     fig_comp = px.bar(df_melt, x='Target Count', y='Location', color='Target Type', barmode='group', orientation='h', color_discrete_sequence=['#1E88E5', '#43A047'])
                     # MOBILE FIX: Comparison Bar
                     fig_comp.update_layout(dragmode=False, xaxis_title="Eligible Children Count", yaxis_title="", plot_bgcolor='rgba(0,0,0,0)', height=600, margin=dict(l=10, r=10, t=50, b=50), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), legend_title_text="")
-                    st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Target_Variance_Analysis', 'scale': 4}})
+                    st.plotly_chart(fig_comp, use_container_width=True, key="tgt_comp_bar", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'Target_Variance_Analysis', 'scale': 6}})
                     
                     st.markdown("##### Detailed Breakdown")
                     df_table = df_comp[['Location', nat_col, act_col, 'Variance']].rename(columns={nat_col: 'Projected Target', act_col: 'Actual Target'})
@@ -2323,7 +2323,7 @@ try:
                 fig_time = px.line(df_time, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#1E88E5'])
                 # MOBILE FIX: MR Daily Trend Line
                 fig_time.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=10, r=10, t=85, b=50), title=dict(text="Daily Doses Administered Trend", y=0.95, x=0.0))
-                st.plotly_chart(fig_time, use_container_width=True, key="mr_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Daily_Trend', 'scale': 4}})
+                st.plotly_chart(fig_time, use_container_width=True, key="mr_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Daily_Trend', 'scale': 6}})
             
             # Full width Geographic Bar Chart
             if geo_col in df_mr_filtered.columns:
@@ -2331,7 +2331,7 @@ try:
                 fig_geo = px.bar(df_geo, x='Total Doses', y=geo_col, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col}", color_discrete_sequence=['#1E88E5'])
                 # MOBILE FIX: MR Geographic Bar
                 fig_geo.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=10, r=50, t=85, b=50), title=dict(text=f"Doses Administered by {geo_col}", y=0.95, x=0.0))
-                st.plotly_chart(fig_geo, use_container_width=True, key="mr_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Doses_By_Geo', 'scale': 4}})
+                st.plotly_chart(fig_geo, use_container_width=True, key="mr_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_Doses_By_Geo', 'scale': 6}})
                 
             st.markdown("<br>", unsafe_allow_html=True)
             
@@ -2346,7 +2346,7 @@ try:
                 fig_age = px.pie(df_age, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#E53935', '#FFB300', '#43A047'])
                 # MOBILE FIX: MR Age Pie
                 fig_age.update_layout(dragmode=False, title=dict(text="By Age Group", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
-                st.plotly_chart(fig_age, use_container_width=True, key="mr_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Age', 'scale': 4}})
+                st.plotly_chart(fig_age, use_container_width=True, key="mr_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Age', 'scale': 6}})
                 
             with pc2:
                 mr_male = df_mr_filtered[['MR 6-12 Male', 'MR 13-23 Male', 'MR 24-59 Male']].sum().sum()
@@ -2356,7 +2356,7 @@ try:
                 fig_gender = px.pie(df_gender, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
                 # MOBILE FIX: MR Gender Pie
                 fig_gender.update_layout(dragmode=False, title=dict(text="By Gender", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
-                st.plotly_chart(fig_gender, use_container_width=True, key="mr_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Gender', 'scale': 4}})
+                st.plotly_chart(fig_gender, use_container_width=True, key="mr_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'MR_By_Gender', 'scale': 6}})
                 
             # ==========================================
             #  DAILY TALLY SHEET GRID (MR) - AGGRID
@@ -2493,7 +2493,7 @@ try:
                 fig_time_va = px.line(df_time_va, x='Vaccination Date', y='Total Doses', markers=True, title="Daily Doses Administered Trend", color_discrete_sequence=['#F4511E'])
                 # MOBILE FIX: Vit A Daily Trend Line
                 fig_time_va.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="", yaxis_title="Doses", margin=dict(l=10, r=10, t=85, b=50), title=dict(text="Daily Doses Administered Trend", y=0.95, x=0.0))
-                st.plotly_chart(fig_time_va, use_container_width=True, key="vita_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Daily_Trend', 'scale': 4}})
+                st.plotly_chart(fig_time_va, use_container_width=True, key="vita_timeline_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Daily_Trend', 'scale': 6}})
             
             # Full width Geographic Bar Chart
             if geo_col_va in df_vita_filtered.columns:
@@ -2501,7 +2501,7 @@ try:
                 fig_geo_va = px.bar(df_geo_va, x='Total Doses', y=geo_col_va, orientation='h', text_auto='.0f', title=f"Doses Administered by {geo_col_va}", color_discrete_sequence=['#F4511E'])
                 # MOBILE FIX: Vit A Geographic Bar
                 fig_geo_va.update_layout(dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Total Doses", yaxis_title="", height=600, margin=dict(l=10, r=50, t=85, b=50), title=dict(text=f"Doses Administered by {geo_col_va}", y=0.95, x=0.0))
-                st.plotly_chart(fig_geo_va, use_container_width=True, key="vita_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Doses_By_Geo', 'scale': 4}})
+                st.plotly_chart(fig_geo_va, use_container_width=True, key="vita_geographic_chart", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_Doses_By_Geo', 'scale': 6}})
                 
             st.markdown("<br>", unsafe_allow_html=True)
                 
@@ -2515,7 +2515,7 @@ try:
                 fig_age_va = px.pie(df_age_va, names='Age Group', values='Doses', hole=0.4, title="By Age Group", color_discrete_sequence=['#00ACC1', '#8E24AA'])
                 # MOBILE FIX: Vit A Age Pie
                 fig_age_va.update_layout(dragmode=False, title=dict(text="By Age Group", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
-                st.plotly_chart(fig_age_va, use_container_width=True, key="vita_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Age', 'scale': 4}})
+                st.plotly_chart(fig_age_va, use_container_width=True, key="vita_age_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Age', 'scale': 6}})
                 
             with pc2_va:
                 va_male = df_vita_filtered[['VitA 6-11 Male', 'VitA 12-59 Male']].sum().sum()
@@ -2525,7 +2525,7 @@ try:
                 fig_gender_va = px.pie(df_gender_va, names='Gender', values='Doses', hole=0.4, title="By Gender", color_discrete_sequence=['#1E88E5', '#D81B60'])
                 # MOBILE FIX: Vit A Gender Pie
                 fig_gender_va.update_layout(dragmode=False, title=dict(text="By Gender", y=0.95, x=0.0), legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5), margin=dict(l=10, r=10, t=85, b=50))
-                st.plotly_chart(fig_gender_va, use_container_width=True, key="vita_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Gender', 'scale': 4}})
+                st.plotly_chart(fig_gender_va, use_container_width=True, key="vita_gender_pie", config={'scrollZoom': False, 'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'VitA_By_Gender', 'scale': 6}})
 
             # ==========================================
             #  DAILY TALLY SHEET GRID (VIT A) - AGGRID
@@ -2649,7 +2649,7 @@ try:
                         'toImageButtonOptions': {
                             'format': 'png', 
                             'filename': f'{title.replace(" ", "_")}', 
-                            'scale': 4
+                            'scale': 6
                         }
                     }
                 )
@@ -2963,7 +2963,7 @@ try:
                             'toImageButtonOptions': {
                                 'format': 'png', 
                                 'filename': 'VaccTrack_Daily_Trend', 
-                                'scale': 4
+                                'scale': 6
                             }
                         }
                     )
@@ -3014,7 +3014,7 @@ try:
                             'toImageButtonOptions': {
                                 'format': 'png', 
                                 'filename': 'VaccTrack_By_Municipality', 
-                                'scale': 4
+                                'scale': 6
                             }
                         }
                     )
@@ -3428,7 +3428,7 @@ try:
                         'toImageButtonOptions': {
                             'format': 'png', 
                             'filename': 'CAR_Provincial_Coverage', 
-                            'scale': 4
+                            'scale': 6
                         }
                     }
                 )
@@ -3696,7 +3696,7 @@ try:
                     map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
                 )
                 
-                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'CAR_Regional_Map', 'scale': 4}})
+                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'CAR_Regional_Map', 'scale': 6}})
             else:
                 st.warning("Regional map boundary data could not be loaded or processed.")
 
