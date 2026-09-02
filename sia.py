@@ -2384,32 +2384,44 @@ try:
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis, fill_value=0)
                 days_cols = list(range(1, 32))
                 tally_grid_mr = tally_grid_mr.reindex(columns=days_cols, fill_value=0)
+                # --- MR TALLY FIX ---
                 tally_grid_mr['Total'] = tally_grid_mr[days_cols].sum(axis=1)
                 total_series_mr = tally_grid_mr.sum(numeric_only=True)
                 tally_grid_mr = tally_grid_mr[['Total'] + days_cols]
-                tally_grid_mr = tally_grid_mr.reindex(abra_munis)
-                tally_grid_mr = tally_grid_mr.replace(0, "")
+                # Force pure integers to prevent PyArrow crashes
+                tally_grid_mr = tally_grid_mr.reindex(abra_munis).fillna(0).astype(int) 
+                
                 tally_grid_mr = tally_grid_mr.reset_index()
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
+                
                 pinned_total_mr = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_mr.get(col, 0)
-                    pinned_total_mr[str(col)] = "" if val == 0 else int(val)
+                    pinned_total_mr[str(col)] = int(val) 
+                    
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
-                numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
-                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                
+                # Javascript to visually hide zeros on the frontend
+                hide_zero_mr = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
+                
+                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_mr)
                 gb_mr.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                gb_mr.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort)
+                gb_mr.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"})
+                
                 gridOptions_mr = gb_mr.build()
                 gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] 
                 gridOptions_mr['rowHeight'] = 20
                 gridOptions_mr['headerHeight'] = 40
+                
                 bold_total_row = JsCode("""function(params) { if (params.data.Municipality === 'TOTAL') { return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }""")
                 gridOptions_mr['getRowStyle'] = bold_total_row
                 grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
+                
                 AgGrid(tally_grid_mr, gridOptions=gridOptions_mr, height=620, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key="mr_aggrid_tally")
                 st.markdown("<br>", unsafe_allow_html=True)
+                
                 df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
+                df_csv_mr = df_csv_mr.replace(0, "") # Keep CSV exports clean with blanks
                 csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
@@ -2553,32 +2565,43 @@ try:
                 tally_grid_va = tally_grid_va.reindex(abra_munis, fill_value=0)
                 days_cols = list(range(1, 32))
                 tally_grid_va = tally_grid_va.reindex(columns=days_cols, fill_value=0)
+                # --- VIT A TALLY FIX ---
                 tally_grid_va['Total'] = tally_grid_va[days_cols].sum(axis=1)
                 total_series_va = tally_grid_va.sum(numeric_only=True)
                 tally_grid_va = tally_grid_va[['Total'] + days_cols]
-                tally_grid_va = tally_grid_va.reindex(abra_munis)
-                tally_grid_va = tally_grid_va.replace(0, "")
+                # Force pure integers
+                tally_grid_va = tally_grid_va.reindex(abra_munis).fillna(0).astype(int) 
+                
                 tally_grid_va = tally_grid_va.reset_index()
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
+                
                 pinned_total_va = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_va.get(col, 0)
-                    pinned_total_va[str(col)] = "" if val == 0 else int(val)
+                    pinned_total_va[str(col)] = int(val) 
+                    
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
-                numeric_sort_va = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
-                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                
+                hide_zero_va = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
+                
+                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_va)
                 gb_va.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                gb_va.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort_va)
+                gb_va.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"})
+                
                 gridOptions_va = gb_va.build()
                 gridOptions_va['pinnedTopRowData'] = [pinned_total_va] 
                 gridOptions_va['rowHeight'] = 20
                 gridOptions_va['headerHeight'] = 40
+                
                 bold_total_row_va = JsCode("""function(params) { if (params.data.Municipality === 'TOTAL') { return {'font-size': '14px', 'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }""")
                 gridOptions_va['getRowStyle'] = bold_total_row_va
                 grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
+                
                 AgGrid(tally_grid_va, gridOptions=gridOptions_va, height=620, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key="va_aggrid_tally")
                 st.markdown("<br>", unsafe_allow_html=True)
+                
                 df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
+                df_csv_va = df_csv_va.replace(0, "") # Keep CSV exports clean with blanks
                 csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
@@ -3045,31 +3068,41 @@ try:
                     tally_grid = tally_grid.reindex(abra_munis, fill_value=0)
                     days_cols = list(range(1, 32))
                     tally_grid = tally_grid.reindex(columns=days_cols, fill_value=0)
+                    # --- VACCTRACK TALLY FIX ---
                     tally_grid['Total'] = tally_grid[days_cols].sum(axis=1)
                     total_series = tally_grid.sum(numeric_only=True)
                     tally_grid = tally_grid[['Total'] + days_cols]
-                    tally_grid = tally_grid.reindex(abra_munis)
-                    tally_grid = tally_grid.replace(0, "")
+                    # Force pure integers
+                    tally_grid = tally_grid.reindex(abra_munis).fillna(0).astype(int) 
+                    
                     tally_grid = tally_grid.reset_index()
                     tally_grid.columns = tally_grid.columns.astype(str)
+                    
                     pinned_total = {"Municipality": "TOTAL"}
                     for col in ['Total'] + days_cols:
                         val = total_series.get(col, 0)
-                        pinned_total[str(col)] = "" if val == 0 else int(val)
+                        pinned_total[str(col)] = int(val) 
+                        
                     gb_vt = GridOptionsBuilder.from_dataframe(tally_grid)
-                    numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
-                    gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
+                    
+                    hide_zero_vt = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
+                    
+                    gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_vt)
                     gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, comparator=numeric_sort)
+                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex})
+                    
                     gridOptions_vt = gb_vt.build()
                     gridOptions_vt['pinnedTopRowData'] = [pinned_total]
                     gridOptions_vt['rowHeight'] = 20
                     gridOptions_vt['headerHeight'] = 40
+                    
                     grid_css = {".ag-header-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important"}, ".ag-cell": {"border-right": "1px solid #d3d3d3 !important", "border-bottom": "1px solid #d3d3d3 !important", "display": "flex", "align-items": "center"}, ".ag-row": {"border-bottom": "none !important"}}
                     st.caption(f"**{prog_name}**")
                     AgGrid(tally_grid, gridOptions=gridOptions_vt, height=650, theme="streamlit", custom_css=grid_css, fit_columns_on_grid_load=False, allow_unsafe_jscode=True, key=f"vt_grid_{prog_name.replace(' ', '_')}")
                     st.markdown("<br>", unsafe_allow_html=True)
+                    
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
+                    df_csv_vt = df_csv_vt.replace(0, "") # Keep CSV exports clean with blanks
                     csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
                     
                     # --- UPDATED: Dynamic CSV Filename ---
