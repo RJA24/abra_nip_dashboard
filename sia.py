@@ -2420,7 +2420,8 @@ try:
                     if col == 'Total':
                         gb_mr.configure_column(col, pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, valueFormatter=hide_zero_js)
                     else:
-                        gb_mr.configure_column(col, valueFormatter=hide_zero_js)
+                        # FIX: Added filter=False and suppressMenu=True to hide the pyramid
+                        gb_mr.configure_column(col, sortable=False, filter=False, suppressMenu=True, valueFormatter=hide_zero_js)
                 
                 gridOptions_mr = gb_mr.build()
                 gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] 
@@ -2613,7 +2614,8 @@ try:
                     if col == 'Total':
                         gb_va.configure_column(col, pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, valueFormatter=hide_zero_js)
                     else:
-                        gb_va.configure_column(col, valueFormatter=hide_zero_js)
+                        # FIX: Hide the pyramid icon
+                        gb_va.configure_column(col, sortable=False, filter=False, suppressMenu=True, valueFormatter=hide_zero_js)
                 
                 gridOptions_va = gb_va.build()
                 gridOptions_va['pinnedTopRowData'] = [pinned_total_va] 
@@ -3128,7 +3130,8 @@ try:
                         if col == 'Total':
                             gb_vt.configure_column(col, pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, valueFormatter=hide_zero_js)
                         else:
-                            gb_vt.configure_column(col, valueFormatter=hide_zero_js)
+                            # FIX: Hide the pyramid icon
+                            gb_vt.configure_column(col, sortable=False, filter=False, suppressMenu=True, valueFormatter=hide_zero_js)
                     
                     gridOptions_vt = gb_vt.build()
                     gridOptions_vt['pinnedTopRowData'] = [pinned_total]
