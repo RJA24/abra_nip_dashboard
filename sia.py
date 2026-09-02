@@ -2277,19 +2277,36 @@ try:
             elif view_mode == "Specific Municipality":
                 df_mr_filtered = df_mr_filtered[df_mr_filtered['Municipality'] == selected_muni]
             
-            mr_dose_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
+            # --- DYNAMIC FILTER LOGIC (AGE & GENDER) ---
+            mr_genders = ["Male"] if gender_filter == "Male" else ["Female"] if gender_filter == "Female" else ["Male", "Female"]
+            mr_t_gen = "_M" if gender_filter == "Male" else "_F" if gender_filter == "Female" else "_Total"
+            
+            if "6 - 12 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 6-12"], "6-12m"
+            elif "13 - 23 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 13-23"], "13-23m"
+            elif "24 - 59 months" in age_filter:
+                mr_ages, mr_t_age = ["MR 24-59"], "24-59m"
+            else:
+                mr_ages, mr_t_age = ["MR 6-12", "MR 13-23", "MR 24-59"], "6-59m"
+
+            mr_dose_cols = [f"{age} {gen}" for age in mr_ages for gen in mr_genders]
+            mr_target_col = f'MR_{mr_t_age}{mr_t_gen}'
+            act_mr_target_col = f'Act_MR_{mr_t_age}{mr_t_gen}'
             
             for col in mr_dose_cols:
                 if col in df_mr_filtered.columns:
                     df_mr_filtered[col] = pd.to_numeric(df_mr_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
             
-            df_mr_filtered['Total Doses'] = df_mr_filtered[mr_dose_cols].sum(axis=1).astype(int)
+            df_mr_filtered['Total Doses'] = df_mr_filtered[[c for c in mr_dose_cols if c in df_mr_filtered.columns]].sum(axis=1).astype(int)
             total_mr_doses = df_mr_filtered['Total Doses'].sum()
         else:
             df_mr_filtered = pd.DataFrame()
+            mr_target_col = 'MR_6-59m_Total'
+            act_mr_target_col = 'Act_MR_6-59m_Total'
 
-        nat_target = df_view['MR_6-59m_Total'].sum()
-        act_target = df_view['Act_MR_6-59m_Total'].sum() if 'Act_MR_6-59m_Total' in df_view.columns else 0
+        nat_target = df_view[mr_target_col].sum() if not df_view.empty and mr_target_col in df_view.columns else 0
+        act_target = df_view[act_mr_target_col].sum() if not df_view.empty and act_mr_target_col in df_view.columns else 0
 
         nat_cov = (total_mr_doses / nat_target * 100) if nat_target > 0 else 0
         act_cov = (total_mr_doses / act_target * 100) if act_target > 0 else 0
@@ -2475,19 +2492,39 @@ try:
             elif view_mode == "Specific Municipality":
                 df_vita_filtered = df_vita_filtered[df_vita_filtered['Municipality'] == selected_muni]
             
-            vita_dose_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
+            # --- DYNAMIC FILTER LOGIC (AGE & GENDER) ---
+            va_genders = ["Male"] if gender_filter == "Male" else ["Female"] if gender_filter == "Female" else ["Male", "Female"]
+            va_t_gen = "_M" if gender_filter == "Male" else "_F" if gender_filter == "Female" else "_Total"
+            
+            if "6 - 11 months" in age_filter:
+                va_ages, va_t_age = ["VitA 6-11"], "6-11m"
+            elif "12 - 59 months" in age_filter:
+                va_ages, va_t_age = ["VitA 12-59"], "12-59m"
+            else:
+                va_ages, va_t_age = ["VitA 6-11", "VitA 12-59"], "Total"
+            
+            vita_dose_cols = [f"{age} {gen}" for age in va_ages for gen in va_genders]
+            
+            if va_t_age == "Total":
+                va_target_col = f'VitA_Total{va_t_gen.replace("_Total", "")}'
+                act_va_target_col = f'Act_VitA_Total{va_t_gen.replace("_Total", "")}'
+            else:
+                va_target_col = f'VitA_{va_t_age}{va_t_gen}'
+                act_va_target_col = f'Act_VitA_{va_t_age}{va_t_gen}'
             
             for col in vita_dose_cols:
                 if col in df_vita_filtered.columns:
                     df_vita_filtered[col] = pd.to_numeric(df_vita_filtered[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
             
-            df_vita_filtered['Total Doses'] = df_vita_filtered[vita_dose_cols].sum(axis=1).astype(int)
+            df_vita_filtered['Total Doses'] = df_vita_filtered[[c for c in vita_dose_cols if c in df_vita_filtered.columns]].sum(axis=1).astype(int)
             total_vita_doses = df_vita_filtered['Total Doses'].sum()
         else:
             df_vita_filtered = pd.DataFrame()
+            va_target_col = 'VitA_Total'
+            act_va_target_col = 'Act_VitA_Total'
             
-        nat_target_va = df_view_va['VitA_Total'].sum() if not df_view_va.empty else 0
-        act_target_va = df_view_va['Act_VitA_Total'].sum() if not df_view_va.empty and 'Act_VitA_Total' in df_view_va.columns else 0
+        nat_target_va = df_view_va[va_target_col].sum() if not df_view_va.empty and va_target_col in df_view_va.columns else 0
+        act_target_va = df_view_va[act_va_target_col].sum() if not df_view_va.empty and act_va_target_col in df_view_va.columns else 0
 
         nat_cov_va = (total_vita_doses / nat_target_va * 100) if nat_target_va > 0 else 0
         act_cov_va = (total_vita_doses / act_target_va * 100) if act_target_va > 0 else 0
