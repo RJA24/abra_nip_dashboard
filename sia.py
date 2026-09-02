@@ -2388,8 +2388,11 @@ try:
                 tally_grid_mr['Total'] = tally_grid_mr[days_cols].sum(axis=1)
                 total_series_mr = tally_grid_mr.sum(numeric_only=True)
                 tally_grid_mr = tally_grid_mr[['Total'] + days_cols]
-                # Force pure integers to prevent PyArrow crashes
+                
+                # 1. Clean math by forcing integers
                 tally_grid_mr = tally_grid_mr.reindex(abra_munis).fillna(0).astype(int) 
+                # 2. Force to string BEFORE replacing to avoid PyArrow mixed-type crashes
+                tally_grid_mr = tally_grid_mr.astype(str).replace("0", "")
                 
                 tally_grid_mr = tally_grid_mr.reset_index()
                 tally_grid_mr.columns = tally_grid_mr.columns.astype(str)
@@ -2397,16 +2400,14 @@ try:
                 pinned_total_mr = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_mr.get(col, 0)
-                    pinned_total_mr[str(col)] = int(val) 
+                    pinned_total_mr[str(col)] = "" if val == 0 else str(int(val))
                     
                 gb_mr = GridOptionsBuilder.from_dataframe(tally_grid_mr)
+                numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
                 
-                # Javascript to visually hide zeros on the frontend
-                hide_zero_mr = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
-                
-                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_mr)
+                gb_mr.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                 gb_mr.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                gb_mr.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"})
+                gb_mr.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort)
                 
                 gridOptions_mr = gb_mr.build()
                 gridOptions_mr['pinnedTopRowData'] = [pinned_total_mr] 
@@ -2421,7 +2422,6 @@ try:
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
-                df_csv_mr = df_csv_mr.replace(0, "") # Keep CSV exports clean with blanks
                 csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
@@ -2569,8 +2569,10 @@ try:
                 tally_grid_va['Total'] = tally_grid_va[days_cols].sum(axis=1)
                 total_series_va = tally_grid_va.sum(numeric_only=True)
                 tally_grid_va = tally_grid_va[['Total'] + days_cols]
-                # Force pure integers
+                
+                # Force to string BEFORE replacing to avoid PyArrow crashes
                 tally_grid_va = tally_grid_va.reindex(abra_munis).fillna(0).astype(int) 
+                tally_grid_va = tally_grid_va.astype(str).replace("0", "")
                 
                 tally_grid_va = tally_grid_va.reset_index()
                 tally_grid_va.columns = tally_grid_va.columns.astype(str)
@@ -2578,15 +2580,14 @@ try:
                 pinned_total_va = {"Municipality": "TOTAL"}
                 for col in ['Total'] + days_cols:
                     val = total_series_va.get(col, 0)
-                    pinned_total_va[str(col)] = int(val) 
+                    pinned_total_va[str(col)] = "" if val == 0 else str(int(val))
                     
                 gb_va = GridOptionsBuilder.from_dataframe(tally_grid_va)
+                numeric_sort_va = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
                 
-                hide_zero_va = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
-                
-                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_va)
+                gb_va.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                 gb_va.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                gb_va.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"})
+                gb_va.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': "#000000"}, comparator=numeric_sort_va)
                 
                 gridOptions_va = gb_va.build()
                 gridOptions_va['pinnedTopRowData'] = [pinned_total_va] 
@@ -2601,7 +2602,6 @@ try:
                 st.markdown("<br>", unsafe_allow_html=True)
                 
                 df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
-                df_csv_va = df_csv_va.replace(0, "") # Keep CSV exports clean with blanks
                 csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
@@ -3072,8 +3072,10 @@ try:
                     tally_grid['Total'] = tally_grid[days_cols].sum(axis=1)
                     total_series = tally_grid.sum(numeric_only=True)
                     tally_grid = tally_grid[['Total'] + days_cols]
-                    # Force pure integers
+                    
+                    # Force to string BEFORE replacing to avoid PyArrow crashes
                     tally_grid = tally_grid.reindex(abra_munis).fillna(0).astype(int) 
+                    tally_grid = tally_grid.astype(str).replace("0", "")
                     
                     tally_grid = tally_grid.reset_index()
                     tally_grid.columns = tally_grid.columns.astype(str)
@@ -3081,15 +3083,14 @@ try:
                     pinned_total = {"Municipality": "TOTAL"}
                     for col in ['Total'] + days_cols:
                         val = total_series.get(col, 0)
-                        pinned_total[str(col)] = int(val) 
+                        pinned_total[str(col)] = "" if val == 0 else str(int(val))
                         
                     gb_vt = GridOptionsBuilder.from_dataframe(tally_grid)
+                    numeric_sort = JsCode("""function(a, b) { var numA = (a === "" || a === null) ? 0 : Number(a); var numB = (b === "" || b === null) ? 0 : Number(b); return numA - numB; }""")
                     
-                    hide_zero_vt = JsCode("""function(params) { return (params.value === 0 || params.value === '0') ? '' : params.value; }""")
-                    
-                    gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True, valueFormatter=hide_zero_vt)
+                    gb_vt.configure_default_column(sortable=False, filter=False, resizable=True, width=40, minWidth=40, suppressMenu=True)
                     gb_vt.configure_column("Municipality", pinned='left', width=150, minWidth=150, sortable=True, filter=True, suppressMenu=False)
-                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex})
+                    gb_vt.configure_column("Total", pinned='left', width=65, minWidth=65, sortable=True, filter=False, suppressMenu=True, cellStyle={'font-weight': 'bold', 'font-size': '14px', 'background-color': '#eef2f6', 'color': color_hex}, comparator=numeric_sort)
                     
                     gridOptions_vt = gb_vt.build()
                     gridOptions_vt['pinnedTopRowData'] = [pinned_total]
@@ -3102,7 +3103,6 @@ try:
                     st.markdown("<br>", unsafe_allow_html=True)
                     
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
-                    df_csv_vt = df_csv_vt.replace(0, "") # Keep CSV exports clean with blanks
                     csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
                     
                     # --- UPDATED: Dynamic CSV Filename ---
