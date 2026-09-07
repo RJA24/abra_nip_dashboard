@@ -3628,31 +3628,36 @@ try:
             st.markdown("#### Live Regional Infographics")
             st.write("VaccTrack Data")
             
-            poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True)
+            # --- DUAL SELECTORS: CAMPAIGN & TARGET BASELINE ---
+            c_post1, c_post2 = st.columns(2)
+            with c_post1:
+                poster_type = st.radio("Select Campaign Poster:", ["Measles-Rubella (MR)", "Vitamin A (Vit A)"], horizontal=True, key="reg_poster_type")
+            with c_post2:
+                reg_target_mode = st.radio("Select Target Baseline:", ["Projected Target", "Actual Target"], horizontal=True, key="reg_poster_target_mode")
             
             if not df_targets.empty and not df_vt_reg.empty:
-                # Prep target data (Re-using the securely filtered df_prov_targets from above)
-                
-                # Create the CAR Total row
+                # 1. Determine Target Column based on user selections
+                if poster_type == "Measles-Rubella (MR)":
+                    target_col = 'MR_6-59m_Total' if reg_target_mode == "Projected Target" else 'Act_MR_6-59m_Total'
+                    vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Measles-Rubella']
+                    vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
+                else:
+                    target_col = 'VitA_Total' if reg_target_mode == "Projected Target" else 'Act_VitA_Total'
+                    vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Vitamin A']
+                    vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
+
+                # 2. Prep Targets (Re-using filtered df_prov_targets)
                 car_target_row = df_targets[df_targets['Level'] == 'Region'].copy()
                 car_target_row['Location'] = 'CAR (TOTAL)'
                 df_poster_targets = pd.concat([car_target_row, df_prov_targets])
                 
-                # Prep Accomplishment data
-                if poster_type == "Measles-Rubella (MR)":
-                    vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Measles-Rubella']
-                    vt_cols = ['Grand total doses administered', 'MR 6-12mos', 'MR 13-23mos', 'MR 24-59mos']
-                else:
-                    vt_data = df_vt_reg[df_vt_reg['Response Type'] == 'Vitamin A']
-                    vt_cols = ['Grand total doses administered', 'Vit A 6-11mos', 'Vit A 12-59mos']
-                    
-                # Group by Province and add CAR Total
+                # 3. Group VaccTrack Accomplishments by Province and add CAR Total
                 df_vt_grouped = vt_data.groupby('Province')[vt_cols].sum().reset_index().rename(columns={'Province': 'Location'})
                 car_vt_row = vt_data[vt_cols].sum().to_frame().T
                 car_vt_row['Location'] = 'CAR (TOTAL)'
                 df_vt_grouped = pd.concat([car_vt_row, df_vt_grouped])
                 
-                # Merge Targets and Accomplishments
+                # 4. Merge Targets and Accomplishments
                 df_poster = pd.merge(df_poster_targets, df_vt_grouped, on='Location', how='left').fillna(0)
                 
                 # Custom CSS for the Poster Cards
@@ -3675,26 +3680,30 @@ try:
                 </style>
                 """, unsafe_allow_html=True)
                 
+                # 5. Separate Provincial and Regional Data
+                prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location').to_dict('records')
+                
                 # Display the CAR Total First (Centered)
                 car_data = df_poster[df_poster['Location'] == 'CAR (TOTAL)'].iloc[0]
-                target_col = 'MR_6-59m_Total' if poster_type == "Measles-Rubella (MR)" else 'VitA_Total'
-                
                 car_target = car_data[target_col]
+                # Fallback: if Regional target row is 0, sum the province targets
+                if car_target == 0:
+                    car_target = sum(r.get(target_col, 0) for r in prov_data)
+                    
                 car_vax = car_data['Grand total doses administered']
                 car_cov = (car_vax / car_target * 100) if car_target > 0 else 0
                 car_unvax = max(0, car_target - car_vax)
                 
+                tgt_badge = "PROJECTED" if reg_target_mode == "Projected Target" else "ACTUAL RHU"
+                
                 st.markdown(f"""
                 <div style="background-color: #f8f9fa; padding: 25px; border-radius: 15px; text-align: center; margin-bottom: 30px; border: 2px solid #e2e8f0;">
                     <h2 style="margin:0; font-weight: 900; font-size: 36px;">CAR: {car_vax:,.0f} ({car_cov:.1f}%)</h2>
-                    <p style="color: #666; font-size: 18px; margin-bottom: 10px;"><b>TARGET:</b> {car_target:,.0f} | <b style="color: #D32F2F;">UNVACCINATED: {car_unvax:,.0f}</b></p>
+                    <p style="color: #666; font-size: 18px; margin-bottom: 10px;"><b>{tgt_badge} TARGET:</b> {car_target:,.0f} | <b style="color: #D32F2F;">UNVACCINATED: {car_unvax:,.0f}</b></p>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                #  FIX: Custom Row Centering Logic
-                prov_data = df_poster[df_poster['Location'] != 'CAR (TOTAL)'].sort_values('Location').to_dict('records')
-                
-                # ROW 1: First 4 cards
+                # 6. Render Provincial Cards (Row 1: 4 cards, Row 2: 3 centered cards)
                 cols_r1 = st.columns(4)
                 for i in range(min(4, len(prov_data))):
                     row = prov_data[i]
@@ -3736,7 +3745,6 @@ try:
                     with cols_r1[i]:
                         st.markdown(html_card, unsafe_allow_html=True)
                         
-                # ROW 2: Remaining cards (up to 3), centered using spacers [0.5, 1, 1, 1, 0.5]
                 if len(prov_data) > 4:
                     row2_items = prov_data[4:]
                     cols_r2 = st.columns([0.5, 1, 1, 1, 0.5]) 
@@ -3777,7 +3785,6 @@ try:
                             "</div>"
                         )
                         
-                        # Start at index 1 to skip the 0.5 spacer!
                         with cols_r2[i + 1]: 
                             st.markdown(html_card, unsafe_allow_html=True)
 
@@ -3786,17 +3793,15 @@ try:
             # ==========================================
             st.divider()
             st.markdown("#### Regional Coverage Map")
-            st.caption(f"Visualizing {poster_type} coverage across CAR")
+            st.caption(f"Visualizing {poster_type} coverage across CAR vs. {reg_target_mode}")
             
             car_geo = fetch_car_geojson()
             
             if car_geo and prov_data:
-                import plotly.graph_objects as go #  FIX: Guarantee 'go' is imported for this tab
+                import plotly.graph_objects as go
                 
-                # Convert the poster dictionary back into a DataFrame for Plotly
                 df_map = pd.DataFrame(prov_data)
                 
-                # Calculate Coverage and Unvaccinated metrics for the map hover
                 df_map['Coverage %'] = df_map.apply(
                     lambda row: (row['Grand total doses administered'] / row[target_col] * 100) if row[target_col] > 0 else 0, axis=1
                 )
@@ -3804,7 +3809,6 @@ try:
                     lambda row: max(0, row[target_col] - row['Grand total doses administered']), axis=1
                 )
                 
-                # Approximate center coordinates for CAR regions
                 car_centroids = {
                     'Abra': {'lat': 17.58, 'lon': 120.80},
                     'Apayao': {'lat': 18.05, 'lon': 121.25},
@@ -3819,7 +3823,7 @@ try:
                 df_map['lon'] = df_map['Location'].map(lambda x: car_centroids.get(x, {}).get('lon', 121.1))
                 df_map['LabelText'] = df_map['Coverage %'].apply(lambda x: f"{x:.1f}%")
                 
-                fig_map_car = px.choropleth_map(
+                fig_map_car = px.choropleth_mapbox(
                     df_map,
                     geojson=car_geo,
                     locations='Location',
@@ -3827,7 +3831,7 @@ try:
                     color='Coverage %',
                     color_continuous_scale="RdYlGn", 
                     range_color=[0, 100],
-                    map_style="white-bg",
+                    mapbox_style="carto-positron",
                     zoom=6.8,
                     center={"lat": 17.35, "lon": 121.1}, 
                     opacity=0.75,
@@ -3841,15 +3845,15 @@ try:
                                     "Target: %{customdata[0]:,.0f}<br>" +
                                     "Vaccinated: %{customdata[1]:,.0f}<br>" +
                                     "Unvaccinated: %{customdata[2]:,.0f}<extra></extra>",
-                    selector=dict(type='choroplethmap')
+                    selector=dict(type='choroplethmapbox')
                 )
                 
-                fig_map_car.add_trace(go.Scattermap(
+                fig_map_car.add_trace(go.Scattermapbox(
                     lat=df_map['lat'].tolist(),
                     lon=df_map['lon'].tolist(),
                     mode='text',
                     text=df_map['LabelText'].tolist(),
-                    textfont=dict(size=12, color='black'), 
+                    textfont=dict(size=16, color='black'), 
                     textposition='middle center',
                     showlegend=False, 
                     hoverinfo='skip'  
@@ -3858,11 +3862,10 @@ try:
                 fig_map_car.update_layout(
                     margin={"r":0,"t":0,"l":0,"b":0}, 
                     coloraxis_colorbar=dict(title="Coverage %"),
-                    height=550,
-                    map=dict(layers=[dict(sourcetype="raster", source=["https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"], below="traces")])
+                    height=550
                 )
                 
-                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car", config={'displayModeBar': True, 'toImageButtonOptions': {'format': 'png', 'filename': 'CAR_Regional_Map', 'scale': 4}})
+                st.plotly_chart(fig_map_car, use_container_width=True, key="map_car")
             else:
                 st.warning("Regional map boundary data could not be loaded or processed.")
 
