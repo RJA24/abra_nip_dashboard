@@ -3127,14 +3127,22 @@ try:
                     
                     chart_height = max(400, len(df_cov) * 45)
                     
-                    # MOBILE FIX: VaccTrack Coverage by Municipality
+                    # MOBILE FIX & EMBEDDED TITLE: VaccTrack Coverage by Municipality
                     fig_cov.update_layout(
+                        title=dict(
+                            text=f"VaccTrack Geographic Coverage vs {vt_target_mode}",
+                            font=dict(size=20, color="#1f2937"),
+                            y=0.98,
+                            x=0.01,
+                            xanchor='left',
+                            yanchor='top'
+                        ),
                         dragmode=False,
                         plot_bgcolor='rgba(0,0,0,0)', 
                         xaxis_title="Coverage (%)", 
                         yaxis_title="", 
                         height=chart_height, 
-                        margin=dict(l=10, r=50, t=50, b=50), 
+                        margin=dict(l=10, r=50, t=85, b=50), # Increased top margin to fit the title
                         legend_title_text="",
                         legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
                     )
@@ -3148,7 +3156,7 @@ try:
                             'displayModeBar': True, 
                             'toImageButtonOptions': {
                                 'format': 'png', 
-                                'filename': 'VaccTrack_Coverage_Map', 
+                                'filename': f'VaccTrack_Coverage_Map_vs_{vt_target_mode.replace(" ", "_")}', 
                                 'scale': 2
                             }
                         }
