@@ -3061,54 +3061,100 @@ try:
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                st.markdown("#### Doses Administered by Municipality")
-                if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns:
-                    df_muni = df_vt.groupby(['Municipality', 'Response Type'])['Grand total doses administered'].sum().reset_index()
-                    # Calculate total for sorting
-                    df_muni_total = df_muni.groupby('Municipality')['Grand total doses administered'].sum().reset_index()
-                    df_muni_total = df_muni_total.sort_values('Grand total doses administered', ascending=True)
+                # --- NEW: VACCTRACK GEOGRAPHIC COVERAGE CHART ---
+                st.markdown("#### VaccTrack Geographic Coverage")
+                vt_target_mode = st.radio("Select Target Baseline:", ["Projected Target", "Actual Target"], horizontal=True, key="vt_prov_target_mode")
+                
+                df_targets = fetch_targets_from_supabase()
+                
+                if 'Municipality' in df_vt.columns and 'Response Type' in df_vt.columns and not df_targets.empty:
+                    # 1. Aggregate VaccTrack Doses
+                    df_vt_muni = df_vt.groupby(['Municipality', 'Response Type'])['Grand total doses administered'].sum().reset_index()
                     
-                    #  Added text_auto='.0f' here:
-                    fig_muni = px.bar(df_muni, x='Grand total doses administered', y='Municipality', color='Response Type', orientation='h', barmode='group', text_auto='.0f', color_discrete_sequence=['#1E88E5', '#F4511E'])
+                    # Separate MR and VitA doses
+                    vt_mr = df_vt_muni[df_vt_muni['Response Type'] == 'Measles-Rubella'].rename(columns={'Grand total doses administered': 'MR Doses'})[['Municipality', 'MR Doses']]
+                    vt_va = df_vt_muni[df_vt_muni['Response Type'] == 'Vitamin A'].rename(columns={'Grand total doses administered': 'Vit A Doses'})[['Municipality', 'Vit A Doses']]
                     
-                    #  Added this block to push the numbers outside the bars:
-                    fig_muni.update_traces(
-                        textfont=dict(size=12),
-                        textposition="outside", 
-                        cliponaxis=False 
+                    # 2. Extract Targets
+                    df_t_prov = df_targets[(df_targets['Level'] == 'Municipality') & (df_targets['Parent_Province'].str.upper() == 'ABRA')].copy()
+                    
+                    if vt_target_mode == "Projected Target":
+                        t_col_mr, t_col_va = 'MR_6-59m_Total', 'VitA_Total'
+                    else:
+                        t_col_mr, t_col_va = 'Act_MR_6-59m_Total', 'Act_VitA_Total'
+                        
+                    df_t_clean = df_t_prov[['Location', t_col_mr, t_col_va]].rename(columns={'Location': 'Municipality', t_col_mr: 'MR Target', t_col_va: 'Vit A Target'})
+                    df_t_clean['Municipality'] = df_t_clean['Municipality'].str.title().str.strip()
+                    
+                    # 3. Merge Data (Respecting the Specific Municipality filter if active)
+                    base_munis = [selected_muni] if view_mode == "Specific Municipality" else abra_munis
+                    df_cov = pd.DataFrame({'Municipality': base_munis})
+                    
+                    df_cov = pd.merge(df_cov, df_t_clean, on='Municipality', how='left').fillna(0)
+                    df_cov = pd.merge(df_cov, vt_mr, on='Municipality', how='left').fillna(0)
+                    df_cov = pd.merge(df_cov, vt_va, on='Municipality', how='left').fillna(0)
+                    
+                    # 4. Calculate Coverage
+                    df_cov['MR Coverage %'] = df_cov.apply(lambda row: (row['MR Doses'] / row['MR Target'] * 100) if row['MR Target'] > 0 else 0, axis=1)
+                    df_cov['Vit A Coverage %'] = df_cov.apply(lambda row: (row['Vit A Doses'] / row['Vit A Target'] * 100) if row['Vit A Target'] > 0 else 0, axis=1)
+                    
+                    # Sort ascending so highest coverage sits at the top of the portrait chart
+                    df_cov = df_cov.sort_values('MR Coverage %', ascending=True)
+                    
+                    # 5. Melt for Plotly Grouped Bar Chart
+                    df_melt = df_cov.melt(id_vars=['Municipality'], value_vars=['MR Coverage %', 'Vit A Coverage %'], var_name='Program', value_name='Coverage %')
+                    df_melt['Program'] = df_melt['Program'].replace({'MR Coverage %': 'Measles-Rubella', 'Vit A Coverage %': 'Vitamin A'})
+                    
+                    # 6. Build the Chart
+                    fig_cov = px.bar(
+                        df_melt, 
+                        x='Coverage %', 
+                        y='Municipality', 
+                        color='Program', 
+                        orientation='h', 
+                        barmode='group', 
+                        text_auto='.1f', 
+                        color_discrete_sequence=['#1E88E5', '#F4511E']
                     )
                     
-                    # Dynamic height to accommodate all municipalities comfortably
-                    chart_height = max(400, len(df_muni_total) * 40)
-                    #  Also increased the right margin (r=40) so labels don't get cut off
-                    # MOBILE FIX: VaccTrack Doses by Municipality
-                    fig_muni.update_layout(
+                    fig_cov.update_traces(
+                        textfont=dict(size=12), 
+                        textposition="outside", 
+                        cliponaxis=False
+                    )
+                    
+                    fig_cov.add_vline(x=95, line_dash="dash", line_color="red", annotation_text="95% Target")
+                    
+                    chart_height = max(400, len(df_cov) * 45)
+                    
+                    # MOBILE FIX: VaccTrack Coverage by Municipality
+                    fig_cov.update_layout(
                         dragmode=False,
                         plot_bgcolor='rgba(0,0,0,0)', 
-                        xaxis_title="Total Doses", 
+                        xaxis_title="Coverage (%)", 
                         yaxis_title="", 
                         height=chart_height, 
-                        margin=dict(l=10, r=40, t=50, b=50), 
-                        yaxis={'categoryarray': df_muni_total['Municipality']},
+                        margin=dict(l=10, r=50, t=50, b=50), 
                         legend_title_text="",
                         legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
                     )
+                    
                     st.plotly_chart(
-                        fig_muni, 
+                        fig_cov, 
                         use_container_width=True, 
-                        key="exec_muni_unique", 
+                        key="vt_prov_cov_chart", 
                         config={
                             'scrollZoom': False, 
                             'displayModeBar': True, 
                             'toImageButtonOptions': {
                                 'format': 'png', 
-                                'filename': 'VaccTrack_By_Municipality', 
-                                'scale': 4
+                                'filename': 'VaccTrack_Coverage_Map', 
+                                'scale': 2
                             }
                         }
                     )
                 else:
-                    st.info("Insufficient municipality data for bar chart.")
+                    st.info("Insufficient data or missing targets to generate coverage chart.")
                     
                 # 6. AgGrid Daily Tally Sheets (Separated MR and Vit A)
                 st.divider()
