@@ -581,6 +581,65 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 # ==========================================
 # 5. SCHOOL-BASED IMMUNIZATION (SBI) DASHBOARD
 # ==========================================
+# --- SBI DATA FETCHERS ---
+sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
+
+@st.cache_data(ttl="1h")
+def fetch_sbi_vacctrack():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
+        df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
+        df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
+        
+        if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
+            df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
+            
+        for df in [df_g1, df_g4, df_g7]:
+            if not df.empty:
+                df.columns = [str(c).strip() for c in df.columns]
+                
+        return df_g1, df_g4, df_g7
+    except Exception:
+        st.cache_data.clear()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl="1h")
+def fetch_sbi_targets():
+    for attempt in range(3):
+        try:
+            all_data = []
+            offset = 0
+            limit = 1000
+            while True:
+                res = supabase.table('sbi_targets').select('*').range(offset, offset + limit - 1).execute()
+                if res.data:
+                    all_data.extend(res.data)
+                    if len(res.data) < limit: break
+                    offset += limit
+                else:
+                    break
+                    
+            if all_data: 
+                df = pd.DataFrame(all_data)
+                col_mapping = {
+                    'municipality': 'Municipality', 'barangay': 'Barangay', 'school_id': 'School ID',
+                    'school_name': 'School Name', 'g1_male': 'G1 Male', 'g1_female': 'G1 Female',
+                    'g4_female': 'G4 Female', 'g7_male': 'G7 Male', 'g7_female': 'G7 Female',
+                    'g1_total': 'G1 Total', 'g7_total': 'G7 Total'
+                }
+                df = df.rename(columns=col_mapping)
+                if 'Municipality' in df.columns: 
+                    df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
+                if 'Barangay' in df.columns: 
+                    df['Barangay'] = df['Barangay'].astype(str).str.title().str.strip()
+                return df
+        except Exception:
+            import time
+            time.sleep(1) 
+    st.cache_data.clear()
+    return pd.DataFrame()
+
 if st.session_state.get('active_program') == 'SBI':
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -1072,90 +1131,6 @@ def fetch_opt_data():
         st.cache_data.clear()
         return pd.DataFrame()
 
-# --- SBI DATA URL ---
-sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
-
-@st.cache_data(ttl="1h")
-def fetch_sbi_vacctrack():
-    """Fetches and cleans data from the 3 SBI VaccTrack sheets."""
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # Load the three separate grade sheets using the NEW SBI URL
-        df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
-        df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
-        df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
-        
-        # AUTO-HEAL: Fix the extraction error in G7 where 'Updated date' became 'Facility Name.1'
-        if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
-            df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
-            
-        # Clean column names (strip whitespace)
-        for df in [df_g1, df_g4, df_g7]:
-            if not df.empty:
-                df.columns = [str(c).strip() for c in df.columns]
-                
-        return df_g1, df_g4, df_g7
-        
-    except Exception as e:
-        st.cache_data.clear()
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-@st.cache_data(ttl="1h")
-def fetch_sbi_targets():
-    """Fetches the clean SBI targets directly from Supabase."""
-    # 🛑 Added a 3-attempt retry loop to wake up a sleeping Supabase server
-    for attempt in range(3):
-        try:
-            # Bypass the Supabase 1,000 row limit using a pagination loop
-            all_data = []
-            offset = 0
-            limit = 1000
-            
-            while True:
-                res = supabase.table('sbi_targets').select('*').range(offset, offset + limit - 1).execute()
-                
-                if res.data:
-                    all_data.extend(res.data)
-                    if len(res.data) < limit:
-                        break
-                    offset += limit
-                else:
-                    break
-                    
-            if all_data: 
-                df = pd.DataFrame(all_data)
-                
-                # Standardize column names to match the dashboard logic exactly
-                col_mapping = {
-                    'municipality': 'Municipality',
-                    'barangay': 'Barangay',
-                    'school_id': 'School ID',
-                    'school_name': 'School Name',
-                    'g1_male': 'G1 Male',
-                    'g1_female': 'G1 Female',
-                    'g4_female': 'G4 Female',
-                    'g7_male': 'G7 Male',
-                    'g7_female': 'G7 Female',
-                    'g1_total': 'G1 Total',
-                    'g7_total': 'G7 Total'
-                }
-                df = df.rename(columns=col_mapping)
-                
-                # Apply the master cleaner to ensure perfect matching
-                if 'Municipality' in df.columns:
-                    df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
-                if 'Barangay' in df.columns:
-                    df['Barangay'] = standardize_geo_names(df['Barangay'])
-                    
-                return df
-                
-        except Exception as e:
-            time.sleep(1) 
-
-    # If it fails, clear cache and return empty dataframe
-    st.cache_data.clear()
-    return pd.DataFrame()
 
 def standardize_geo_names(series):
     """
