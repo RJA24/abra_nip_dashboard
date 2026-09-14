@@ -477,7 +477,7 @@ if not st.session_state.get('logged_in', False):
 
         with account_tab:
             with st.form("account_login_form", border=True):
-                st.markdown("### 🔐 Registered Account")
+                st.markdown("###  Registered Account")
                 username_input = st.text_input("Username", key="login_username").strip()
                 password_input = st.text_input("Password", type="password", key="login_password")
                 submit_account = st.form_submit_button("Sign In", type="primary", use_container_width=True)
@@ -4624,7 +4624,7 @@ try:
                                                                 
             st.divider()
             
-            st.markdown("### 🔐 User Account Management")
+            st.markdown("###  User Account Management")
             
             # --- NEW: SECURE ACCOUNT CREATION FORM ---
             with st.expander("➕ Create New Account"):
