@@ -18,7 +18,8 @@ from st_aggrid.shared import JsCode
 from auth_utils import authenticate_user, hash_password, verify_password
 from db_utils import update_session_log_throttled, consolidate_sbi_targets, validate_sbi_targets, replace_table_with_rollback
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("abra_nip_dashboard")
+logger.setLevel(logging.INFO)
 
 abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
@@ -63,6 +64,7 @@ def fetch_abra_geojson():
                 if abra_features:
                     return {"type": "FeatureCollection", "features": abra_features}
         except Exception:
+            logger.exception("Abra municipality GeoJSON source failed: %s", url)
             continue 
             
     return None
@@ -164,6 +166,7 @@ def fetch_barangay_geojson(target_muni):
                 return {"type": "FeatureCollection", "features": features}
             return None
     except Exception:
+        logger.exception("Failed to read local barangay GeoJSON")
         return None
 
 @st.cache_data(ttl="24h")
@@ -220,8 +223,8 @@ def fetch_car_geojson():
         if car_features:
             return {"type": "FeatureCollection", "features": car_features}
             
-    except Exception as e:
-        pass
+    except Exception:
+        logger.exception("Failed to fetch CAR GeoJSON")
         
     return None
 
@@ -600,27 +603,33 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
 
 @st.cache_data(ttl="1h")
+def _fetch_sbi_vacctrack_cached():
+    """Fetch SBI VaccTrack sheets. Exceptions escape so Streamlit never caches a failed read."""
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
+    df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
+    df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
+
+    if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
+        df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
+
+    for df in [df_g1, df_g4, df_g7]:
+        if not df.empty:
+            df.columns = [str(c).strip() for c in df.columns]
+
+    return df_g1, df_g4, df_g7
+
 def fetch_sbi_vacctrack():
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
-        df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
-        df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
-        
-        if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
-            df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
-            
-        for df in [df_g1, df_g4, df_g7]:
-            if not df.empty:
-                df.columns = [str(c).strip() for c in df.columns]
-                
-        return df_g1, df_g4, df_g7
+        return _fetch_sbi_vacctrack_cached()
     except Exception:
-        logger.exception("Failed to fetch SBI VaccTrack data")
+        logger.exception("Failed to fetch SBI VaccTrack data; failure was not cached")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl="1h")
-def fetch_sbi_targets():
+def _fetch_sbi_targets_cached():
+    """Fetch all SBI targets. Only successful results are cached."""
+    last_error = None
     for attempt in range(3):
         try:
             all_data = []
@@ -630,30 +639,41 @@ def fetch_sbi_targets():
                 res = supabase.table('sbi_targets').select('*').range(offset, offset + limit - 1).execute()
                 if res.data:
                     all_data.extend(res.data)
-                    if len(res.data) < limit: break
+                    if len(res.data) < limit:
+                        break
                     offset += limit
                 else:
                     break
-                    
-            if all_data: 
-                df = pd.DataFrame(all_data)
-                col_mapping = {
-                    'municipality': 'Municipality', 'barangay': 'Barangay', 'school_id': 'School ID',
-                    'school_name': 'School Name', 'g1_male': 'G1 Male', 'g1_female': 'G1 Female',
-                    'g4_female': 'G4 Female', 'g7_male': 'G7 Male', 'g7_female': 'G7 Female',
-                    'g1_total': 'G1 Total', 'g7_total': 'G7 Total'
-                }
-                df = df.rename(columns=col_mapping)
-                if 'Municipality' in df.columns: 
-                    df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
-                if 'Barangay' in df.columns: 
-                    df['Barangay'] = df['Barangay'].astype(str).str.title().str.strip()
-                return df
-        except Exception:
-            import time
-            time.sleep(1) 
-    logger.error("Failed to fetch SBI targets after 3 attempts")
-    return pd.DataFrame()
+
+            if not all_data:
+                return pd.DataFrame()
+
+            df = pd.DataFrame(all_data)
+            col_mapping = {
+                'municipality': 'Municipality', 'barangay': 'Barangay', 'school_id': 'School ID',
+                'school_name': 'School Name', 'g1_male': 'G1 Male', 'g1_female': 'G1 Female',
+                'g4_female': 'G4 Female', 'g7_male': 'G7 Male', 'g7_female': 'G7 Female',
+                'g1_total': 'G1 Total', 'g7_total': 'G7 Total'
+            }
+            df = df.rename(columns=col_mapping)
+            if 'Municipality' in df.columns:
+                df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
+            if 'Barangay' in df.columns:
+                df['Barangay'] = df['Barangay'].astype(str).str.title().str.strip()
+            return df
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(1)
+
+    raise RuntimeError("Failed to fetch SBI targets after 3 attempts") from last_error
+
+def fetch_sbi_targets():
+    try:
+        return _fetch_sbi_targets_cached()
+    except Exception:
+        logger.exception("Failed to fetch SBI targets; failure was not cached")
+        return pd.DataFrame()
 
 if st.session_state.get('active_program') == 'SBI':
     st.title("Abra School-Based Immunization (SBI) 2026")
@@ -1071,7 +1091,7 @@ def get_polygon_centroid(geometry):
         return None, None
 
 @st.cache_data(ttl="1h")
-def fetch_targets_from_supabase():
+def _fetch_targets_from_supabase_cached():
     # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
     for attempt in range(3):
         try:
@@ -1159,12 +1179,18 @@ def fetch_targets_from_supabase():
             # Sleep for 1 second to give Supabase time to wake up, then try again
             time.sleep(1) 
 
-    # If it fails 3 times completely, return empty without flushing unrelated caches.
-    logger.error("Failed to fetch target database after 3 attempts")
-    return pd.DataFrame()
+    # A failed cached call must raise; otherwise Streamlit may cache an empty DataFrame for an hour.
+    raise RuntimeError("Failed to fetch target database after 3 attempts")
+
+def fetch_targets_from_supabase():
+    try:
+        return _fetch_targets_from_supabase_cached()
+    except Exception:
+        logger.exception("Failed to fetch target database; failure was not cached")
+        return pd.DataFrame()
 
 @st.cache_data(ttl="1h")
-def fetch_live_accomplishments():
+def _fetch_live_accomplishments_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
@@ -1215,11 +1241,18 @@ def fetch_live_accomplishments():
 
         return df_mr, df_vita
     except Exception:
-        logger.exception("Failed to fetch live accomplishment data")
+        logger.exception("Live accomplishment read failed inside cached fetch")
+        raise
+
+def fetch_live_accomplishments():
+    try:
+        return _fetch_live_accomplishments_cached()
+    except Exception:
+        logger.exception("Failed to fetch live accomplishment data; failure was not cached")
         return pd.DataFrame(), pd.DataFrame()
 
 @st.cache_data(ttl="1h")
-def fetch_vacctrack_data():
+def _fetch_vacctrack_data_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         df_vt = conn.read(spreadsheet=sheet_url, worksheet="VaccTrack", ttl="1h")
@@ -1230,11 +1263,18 @@ def fetch_vacctrack_data():
             
         return df_vt
     except Exception:
-        logger.exception("Cached data fetch failed")
+        logger.exception("VaccTrack read failed inside cached fetch")
+        raise
+
+def fetch_vacctrack_data():
+    try:
+        return _fetch_vacctrack_data_cached()
+    except Exception:
+        logger.exception("Failed to fetch VaccTrack data; failure was not cached")
         return pd.DataFrame()
 
 @st.cache_data(ttl="1h")
-def fetch_opt_data():
+def _fetch_opt_data_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
         # Pulls exactly from the new 2026 OPT sheet you created
@@ -1246,7 +1286,14 @@ def fetch_opt_data():
             
         return df_opt
     except Exception:
-        logger.exception("Cached data fetch failed")
+        logger.exception("OPT read failed inside cached fetch")
+        raise
+
+def fetch_opt_data():
+    try:
+        return _fetch_opt_data_cached()
+    except Exception:
+        logger.exception("Failed to fetch OPT data; failure was not cached")
         return pd.DataFrame()
 
 
