@@ -231,6 +231,11 @@ def render_footer():
         unsafe_allow_html=True
     )
 
+@st.cache_data(ttl="15s")
+def get_last_updated_time():
+    tz = pytz.timezone('Asia/Manila')
+    return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
+
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
@@ -754,11 +759,6 @@ if st.session_state.get('active_program') == 'SBI':
 # MAIN DASHBOARD CODE (Only runs if logged in)
 # ==========================================
 st.title("Abra Supplemental Immunization Activity (SIA) 2026")
-
-@st.cache_data(ttl="15s")
-def get_last_updated_time():
-    tz = pytz.timezone('Asia/Manila')
-    return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
 
 last_updated = get_last_updated_time()
 is_admin = st.session_state['user_role'] == "System Admin"
