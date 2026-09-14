@@ -694,8 +694,8 @@ if st.session_state.get('active_program') == 'SBI':
         st.caption(f"🕒 Last Sync: {last_updated}")
 
     # --- DASHBOARD TABS ---
-    sbi_tabs = st.tabs(["Executive Summary", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
-    tab_sbi_exec, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def, tab_sbi_admin = sbi_tabs
+    sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
+    tab_sbi_exec, tab_sbi_target, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def, tab_sbi_admin = sbi_tabs
 
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
@@ -776,22 +776,87 @@ if st.session_state.get('active_program') == 'SBI':
                 fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                 st.plotly_chart(fig_gauge_hpv, use_container_width=True, key="sbi_exec_gauge_hpv")
 
-    # 2. MR & TD (GRADES 1 & 7)
+    # 2. TARGETS OVERVIEW
+    with tab_sbi_target:
+        st.markdown(f"### Target Baseline Overview: {location_label}")
+        if df_sbi_targets.empty:
+            st.warning("⚠️ Target database is empty. Please go to the Admin Panel tab to sync the database.")
+        else:
+            df_tgt_view = df_sbi_targets.copy()
+            if view_mode == "Specific Municipality":
+                df_tgt_view = df_tgt_view[df_tgt_view['Municipality'].str.upper() == selected_muni.upper()]
+                
+            st.markdown("#### 🎯 Eligible Student Population by Grade Level")
+            t1, t2, t3 = st.columns(3)
+            t1.metric("Grade 1 (MR & Td)", f"{df_tgt_view['G1 Total'].sum():,.0f}", "Male & Female")
+            t2.metric("Grade 4 (HPV)", f"{df_tgt_view['G4 Female'].sum():,.0f}", "Female Only")
+            t3.metric("Grade 7 (MR & Td)", f"{df_tgt_view['G7 Total'].sum():,.0f}", "Male & Female")
+            
+            st.divider()
+            
+            st.markdown(f"#### Geographic Distribution of Eligible Students")
+            geo_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+            
+            df_geo_tgt = df_tgt_view.groupby(geo_col)[['G1 Total', 'G4 Female', 'G7 Total']].sum().reset_index()
+            df_geo_tgt['Total Eligible'] = df_geo_tgt['G1 Total'] + df_geo_tgt['G4 Female'] + df_geo_tgt['G7 Total']
+            df_geo_tgt = df_geo_tgt.sort_values('Total Eligible', ascending=True)
+            
+            df_melt_tgt = df_geo_tgt.melt(id_vars=[geo_col], value_vars=['G1 Total', 'G4 Female', 'G7 Total'], var_name='Grade Level', value_name='Students')
+            
+            import plotly.express as px
+            fig_tgt_geo = px.bar(
+                df_melt_tgt, 
+                x='Students', 
+                y=geo_col, 
+                color='Grade Level', 
+                orientation='h', 
+                text_auto='.0f',
+                color_discrete_sequence=['#1E88E5', '#D81B60', '#43A047']
+            )
+            fig_tgt_geo.update_layout(
+                dragmode=False, 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                xaxis_title="Number of Eligible Students", 
+                yaxis_title="", 
+                height=max(400, len(df_geo_tgt) * 45), 
+                margin=dict(l=10, r=10, t=30, b=50),
+                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                legend_title_text=""
+            )
+            st.plotly_chart(fig_tgt_geo, use_container_width=True, key="sbi_tgt_geo_bar")
+            
+            st.divider()
+            
+            st.markdown("#### 🏫 School-Level Target Baseline")
+            with st.expander("View & Download Detailed School Targets", expanded=False):
+                df_school_view = df_tgt_view[['Municipality', 'Barangay', 'School ID', 'School Name', 'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']]
+                st.dataframe(df_school_view, use_container_width=True, hide_index=True)
+                
+                csv_sbi_tgt = df_school_view.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download School Targets (CSV)",
+                    data=csv_sbi_tgt,
+                    file_name=f"SBI_Targets_{location_label.replace(', ', '_')}.csv",
+                    mime="text/csv",
+                    key="dl_sbi_targets"
+                )
+
+    # 3. MR & TD (GRADES 1 & 7)
     with tab_sbi_mr:
         st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
         st.info("Chart module under construction.")
         
-    # 3. HPV (GRADE 4)
+    # 4. HPV (GRADE 4)
     with tab_sbi_hpv:
         st.markdown(f"### Human Papillomavirus (HPV) - Female Students: {location_label}")
         st.info("Chart module under construction.")
 
-    # 4. DEFERRALS & REFUSALS
+    # 5. DEFERRALS & REFUSALS
     with tab_sbi_def:
         st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
         st.info("Chart module under construction.")
 
-    # 5. ADMIN PANEL (SBI SYNC)
+    # 6. ADMIN PANEL (SBI SYNC)
     with tab_sbi_admin:
         st.markdown("### ⚙️ System Administration")
         admin_password_sbi = st.text_input("Enter Admin Password to unlock controls:", type="password", key="sbi_admin_pass")
@@ -809,7 +874,9 @@ if st.session_state.get('active_program') == 'SBI':
                         import numpy as np
                         conn = st.connection("gsheets", type=GSheetsConnection)
                         sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
-                        df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=4, ttl=0)
+                        
+                        # THE FIX: Changed skiprows from 4 to 5 to accurately grab the header row!
+                        df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=5, ttl=0)
                         
                         if df_raw.empty:
                             st.error("Failed to read the DepEd Target sheet.")
