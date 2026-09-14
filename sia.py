@@ -4562,73 +4562,7 @@ try:
                         except Exception as e:
                             st.error(f"Target Sync Failed: {e}")
 
-                # --- NEW: SBI TARGET SYNC ---
-                st.markdown("### 🏫 Phase 2: SBI Target Database Sync")
-                st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
-                
-                if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets"):
-                    with st.spinner("Downloading and processing DepEd master sheet..."):
-                        try:
-                            conn = st.connection("gsheets", type=GSheetsConnection)
-                            sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
-                            
-                            # Read raw data (headers are on row 5)
-                            df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=4, ttl=0)
-                            
-                            if df_raw.empty:
-                                st.error("Failed to read the DepEd Target sheet.")
-                            else:
-                                df_raw.columns = [str(c).strip() for c in df_raw.columns]
-                                
-                                # Filter to Abra only
-                                if 'Province' in df_raw.columns:
-                                    df_raw = df_raw[df_raw['Province'].astype(str).str.upper() == 'ABRA'].copy()
-                                    
-                                # Clean fields
-                                df_raw['Municipality'] = df_raw['Municipality'].astype(str).str.strip().str.title()
-                                df_raw['School_name'] = df_raw['School_name'].astype(str).str.strip()
-                                df_raw['beis_school_id'] = df_raw['beis_school_id'].astype(str).str.replace(r'\.0$', '', regex=True)
-                                
-                                # Extract specific columns
-                                target_cols = {
-                                    'Municipality': 'municipality',
-                                    'Barangay': 'barangay',
-                                    'beis_school_id': 'school_id',
-                                    'School_name': 'school_name',
-                                    'g1male': 'g1_male',
-                                    'g1female': 'g1_female',
-                                    'g4female': 'g4_female',
-                                    'g7male': 'g7_male',
-                                    'g7female': 'g7_female'
-                                }
-                                
-                                df_push = df_raw[[c for c in target_cols.keys() if c in df_raw.columns]].rename(columns=target_cols)
-                                
-                                # Convert text numbers to real integers
-                                num_cols = ['g1_male', 'g1_female', 'g4_female', 'g7_male', 'g7_female']
-                                for c in num_cols:
-                                    if c in df_push.columns:
-                                        df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
-                                        
-                                # Calculate totals
-                                df_push['g1_total'] = df_push.get('g1_male', 0) + df_push.get('g1_female', 0)
-                                df_push['g7_total'] = df_push.get('g7_male', 0) + df_push.get('g7_female', 0)
-                                
-                                # Push to Supabase!
-                                df_push = df_push.replace({np.nan: None})
-                                
-                                # First, wipe the old data to prevent duplicates on resync
-                                supabase.table('sbi_targets').delete().neq('id', 0).execute()
-                                
-                                # Insert the fresh data
-                                supabase.table('sbi_targets').insert(df_push.to_dict(orient='records')).execute()
-                                
-                                st.success("✅ SBI Targets successfully synced to Supabase!")
-                                st.cache_data.clear()
-                                
-                        except Exception as e:
-                            st.error(f"SBI Target Sync Failed: {e}")
-                                                    
+                                                                    
                 st.divider()
                 
                 st.markdown("### 🔐 User Account Management")
