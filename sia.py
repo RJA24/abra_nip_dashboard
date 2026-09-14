@@ -4547,7 +4547,10 @@ try:
                             supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
                             
                             st.success("✅ Mega-Sync Complete: Actual Genders Fully Integrated!")
-                    st.cache_data.clear()
+                            st.cache_data.clear()
+                            
+                        except Exception as e:
+                            st.error(f"Target Sync Failed: {e}")
 
                 # --- NEW: SBI TARGET SYNC ---
                 st.markdown("### 🏫 Phase 2: SBI Target Database Sync")
@@ -4615,9 +4618,7 @@ try:
                                 
                         except Exception as e:
                             st.error(f"SBI Target Sync Failed: {e}")
-                        except Exception as e:
-                            st.error(f"Target Sync Failed: {e}")
-                            
+                                                    
                 st.divider()
                 
                 st.markdown("### 🔐 User Account Management")
