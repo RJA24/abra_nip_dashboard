@@ -786,7 +786,7 @@ if st.session_state.get('active_program') == 'SBI':
             if view_mode == "Specific Municipality":
                 df_tgt_view = df_tgt_view[df_tgt_view['Municipality'].str.upper() == selected_muni.upper()]
                 
-            st.markdown("#### 🎯 Eligible Student Population by Grade Level")
+            st.markdown("#### Eligible Student Population by Grade Level")
             t1, t2, t3 = st.columns(3)
             t1.metric("Grade 1 (MR & Td)", f"{df_tgt_view['G1 Total'].sum():,.0f}", "Male & Female")
             t2.metric("Grade 4 (HPV)", f"{df_tgt_view['G4 Female'].sum():,.0f}", "Female Only")
@@ -827,7 +827,7 @@ if st.session_state.get('active_program') == 'SBI':
             
             st.divider()
             
-            st.markdown("#### 🏫 School-Level Target Baseline")
+            st.markdown("#### School-Level Target Baseline")
             with st.expander("View & Download Detailed School Targets", expanded=False):
                 df_school_view = df_tgt_view[['Municipality', 'Barangay', 'School ID', 'School Name', 'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']]
                 st.dataframe(df_school_view, use_container_width=True, hide_index=True)
@@ -865,7 +865,7 @@ if st.session_state.get('active_program') == 'SBI':
             st.success("✅ Admin controls unlocked.")
             st.divider()
             
-            st.markdown("### 🏫 Phase 1: SBI Target Database Sync")
+            st.markdown("### Phase 1: SBI Target Database Sync")
             st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
             
             if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets_btn"):
