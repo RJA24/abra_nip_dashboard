@@ -574,17 +574,181 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 
 
 # ==========================================
-# 4.6. THE SBI PLACEHOLDER (UNDER CONSTRUCTION)
+# 5. SCHOOL-BASED IMMUNIZATION (SBI) DASHBOARD
 # ==========================================
 if st.session_state.get('active_program') == 'SBI':
-    st.title("School-Based Immunization (SBI)")
-    st.info("Wala ka pang makikita dito Chesster haha. This section is still under construction. Please check back later for updates.")
+    st.title("Abra School-Based Immunization (SBI) 2026")
     
-    if st.button("⬅️ Return to Main Menu"):
-        st.session_state['active_program'] = None
-        st.rerun()
+    last_updated = get_last_updated_time()
+    st_autorefresh(interval=3600000, limit=None, key="sbi_hourly_data_refresh")
+
+    # --- SESSION TRACKING ---
+    if 'login_time' in st.session_state and 'log_id' in st.session_state:
+        try:
+            session_duration_seconds = time.time() - st.session_state['login_time']
+            minutes, seconds = divmod(int(session_duration_seconds), 60)
+            hours, minutes = divmod(minutes, 60)
+            formatted_duration = f"{hours}h {minutes}m {seconds}s"
+            supabase.table('access_logs').update({'action': f'SBI Session Duration: {formatted_duration}'}).eq('id', st.session_state['log_id']).execute()
+        except Exception:
+            pass 
+
+    # --- FETCH DATA ---
+    df_g1, df_g4, df_g7 = fetch_sbi_vacctrack()
+    df_sbi_targets = fetch_sbi_targets()
+
+    # --- SIDEBAR & FILTERS ---
+    with st.sidebar:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 10px 0px 15px 0px;">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" width="90" style="margin-bottom: 15px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.1));">
+            <h3 style="margin: 0; padding: 0; font-size: 1.15rem; font-weight: 700;">{st.session_state['user_name']}</h3>
+            <p style="margin: 2px 0 12px 0; font-size: 0.85rem; opacity: 0.8; font-style: italic;">{st.session_state['user_role']}</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-    st.stop() # Stops execution so the SIA code below doesn't run
+        st.divider()
+        
+        if st.button("⬅️ Main Menu", use_container_width=True):
+            st.session_state['active_program'] = None
+            st.rerun()
+            
+        with st.expander("🎛️ DASHBOARD FILTERS", expanded=True):
+            view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"], key="sbi_geo_mode")
+            if view_mode == "Specific Municipality":
+                selected_muni = st.selectbox("Select Municipality:", abra_munis, key="sbi_muni_sel")
+            else:
+                selected_muni = "None"
+                
+        with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
+            if st.button("🔄 Refresh Data", use_container_width=True, key="sbi_refresh"):
+                st.cache_data.clear()
+                st.toast("SBI Database Refreshed!", icon="🔄")
+                time.sleep(0.5)
+                st.rerun()
+                
+        st.caption(f"🕒 Last Sync: {last_updated}")
+
+    # --- DASHBOARD TABS ---
+    sbi_tabs = st.tabs(["Executive Summary", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
+    tab_sbi_exec, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def, tab_sbi_admin = sbi_tabs
+
+    # 1. EXECUTIVE SUMMARY
+    with tab_sbi_exec:
+        location_label = "Abra Province" if view_mode == "All Municipalities (Abra)" else f"{selected_muni}, Abra"
+        st.markdown(f"### SBI Campaign Overview: {location_label}")
+        
+        if df_sbi_targets.empty:
+            st.warning("⚠️ Target database is empty. Waiting for sync.")
+            st.stop()
+            
+        # Apply Geographic Filter
+        df_view = df_sbi_targets.copy()
+        if view_mode == "Specific Municipality":
+            df_view = df_view[df_view['Municipality'].str.upper() == selected_muni.upper()]
+            
+        # Target Math
+        tgt_g1 = df_view['G1 Total'].sum()
+        tgt_g7 = df_view['G7 Total'].sum()
+        tgt_mr_td = tgt_g1 + tgt_g7
+        tgt_hpv = df_view['G4 Female'].sum()
+        
+        # Accomplishment Math (VaccTrack)
+        # G1 MR & Td
+        g1_mr_doses, g1_td_doses = 0, 0
+        if not df_g1.empty:
+            df_g1_view = df_g1 if view_mode == "All Municipalities (Abra)" else df_g1[df_g1['City/Municipality Name'].str.upper() == selected_muni.upper()]
+            # Safely grab the exact VaccTrack columns
+            mr_m = [c for c in df_g1.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
+            mr_f = [c for c in df_g1.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
+            td_m = [c for c in df_g1.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
+            td_f = [c for c in df_g1.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
+            
+            if mr_m and mr_f: g1_mr_doses = pd.to_numeric(df_g1_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[mr_f[0]], errors='coerce').fillna(0).sum()
+            if td_m and td_f: g1_td_doses = pd.to_numeric(df_g1_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[td_f[0]], errors='coerce').fillna(0).sum()
+
+        # G7 MR & Td
+        g7_mr_doses, g7_td_doses = 0, 0
+        if not df_g7.empty:
+            df_g7_view = df_g7 if view_mode == "All Municipalities (Abra)" else df_g7[df_g7['City/Municipality Name'].str.upper() == selected_muni.upper()]
+            mr_m = [c for c in df_g7.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
+            mr_f = [c for c in df_g7.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
+            td_m = [c for c in df_g7.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
+            td_f = [c for c in df_g7.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
+            
+            if mr_m and mr_f: g7_mr_doses = pd.to_numeric(df_g7_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[mr_f[0]], errors='coerce').fillna(0).sum()
+            if td_m and td_f: g7_td_doses = pd.to_numeric(df_g7_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[td_f[0]], errors='coerce').fillna(0).sum()
+            
+        # G4 HPV
+        hpv_1st, hpv_2nd = 0, 0
+        if not df_g4.empty:
+            df_g4_view = df_g4 if view_mode == "All Municipalities (Abra)" else df_g4[df_g4['City/Municipality Name'].str.upper() == selected_muni.upper()]
+            dose1 = [c for c in df_g4.columns if 'First Dose' in c and 'HPV' in c]
+            dose2 = [c for c in df_g4.columns if 'Second Dose' in c and 'HPV' in c]
+            
+            if dose1: hpv_1st = pd.to_numeric(df_g4_view[dose1[0]], errors='coerce').fillna(0).sum()
+            if dose2: hpv_2nd = pd.to_numeric(df_g4_view[dose2[0]], errors='coerce').fillna(0).sum()
+            
+        # Overall Math
+        total_mr = g1_mr_doses + g7_mr_doses
+        total_td = g1_td_doses + g7_td_doses
+        mr_cov = (total_mr / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
+        td_cov = (total_td / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
+        hpv_cov = (hpv_1st / tgt_hpv * 100) if tgt_hpv > 0 else 0
+        
+        # 1. Top KPI Cards
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Measles-Rubella (MR) Coverge", f"{mr_cov:.1f}%", f"{total_mr:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
+        k2.metric("Tetanus-diphtheria (Td) Coverage", f"{td_cov:.1f}%", f"{total_td:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
+        k3.metric("HPV Coverage (1st Dose)", f"{hpv_cov:.1f}%", f"{hpv_1st:,.0f} / {tgt_hpv:,.0f} Target", delta_color="off")
+        
+        st.divider()
+        
+        # 2. Master Progress Gauges
+        import plotly.graph_objects as go
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            fig_gauge_mr = go.Figure(go.Indicator(
+                mode = "gauge+number", value = mr_cov, title = {'text': "MR (Grades 1 & 7)"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+            ))
+            fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig_gauge_mr, use_container_width=True, key="sbi_exec_gauge_mr")
+            
+        with c2:
+            fig_gauge_td = go.Figure(go.Indicator(
+                mode = "gauge+number", value = td_cov, title = {'text': "Td (Grades 1 & 7)"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+            ))
+            fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig_gauge_td, use_container_width=True, key="sbi_exec_gauge_td")
+            
+        with c3:
+            fig_gauge_hpv = go.Figure(go.Indicator(
+                mode = "gauge+number", value = hpv_cov, title = {'text': "HPV 1st Dose (Grade 4 Female)"},
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#D81B60"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 90}}
+            ))
+            fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig_gauge_hpv, use_container_width=True, key="sbi_exec_gauge_hpv")
+
+    # 2. MR & TD (GRADES 1 & 7)
+    with tab_sbi_mr:
+        st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
+        
+    # 3. HPV (GRADE 4)
+    with tab_sbi_hpv:
+        st.markdown(f"### Human Papillomavirus (HPV) - Female Students: {location_label}")
+
+    # 4. DEFERRALS & REFUSALS
+    with tab_sbi_def:
+        st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
+
+    # 5. ADMIN PANEL
+    with tab_sbi_admin:
+        st.markdown("### ⚙️ System Administration")
+        st.info("Target Database configuration will be added here once the layout is finalized.")
+
+    st.stop() # Prevents the MR SIA code below from executing when in SBI mode
 
 # ==========================================
 # MAIN DASHBOARD CODE (Only runs if logged in)
@@ -907,6 +1071,91 @@ def fetch_opt_data():
     except Exception as e:
         st.cache_data.clear()
         return pd.DataFrame()
+
+# --- SBI DATA URL ---
+sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
+
+@st.cache_data(ttl="1h")
+def fetch_sbi_vacctrack():
+    """Fetches and cleans data from the 3 SBI VaccTrack sheets."""
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        
+        # Load the three separate grade sheets using the NEW SBI URL
+        df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
+        df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
+        df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
+        
+        # AUTO-HEAL: Fix the extraction error in G7 where 'Updated date' became 'Facility Name.1'
+        if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
+            df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
+            
+        # Clean column names (strip whitespace)
+        for df in [df_g1, df_g4, df_g7]:
+            if not df.empty:
+                df.columns = [str(c).strip() for c in df.columns]
+                
+        return df_g1, df_g4, df_g7
+        
+    except Exception as e:
+        st.cache_data.clear()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl="1h")
+def fetch_sbi_targets():
+    """Fetches the clean SBI targets directly from Supabase."""
+    # 🛑 Added a 3-attempt retry loop to wake up a sleeping Supabase server
+    for attempt in range(3):
+        try:
+            # Bypass the Supabase 1,000 row limit using a pagination loop
+            all_data = []
+            offset = 0
+            limit = 1000
+            
+            while True:
+                res = supabase.table('sbi_targets').select('*').range(offset, offset + limit - 1).execute()
+                
+                if res.data:
+                    all_data.extend(res.data)
+                    if len(res.data) < limit:
+                        break
+                    offset += limit
+                else:
+                    break
+                    
+            if all_data: 
+                df = pd.DataFrame(all_data)
+                
+                # Standardize column names to match the dashboard logic exactly
+                col_mapping = {
+                    'municipality': 'Municipality',
+                    'barangay': 'Barangay',
+                    'school_id': 'School ID',
+                    'school_name': 'School Name',
+                    'g1_male': 'G1 Male',
+                    'g1_female': 'G1 Female',
+                    'g4_female': 'G4 Female',
+                    'g7_male': 'G7 Male',
+                    'g7_female': 'G7 Female',
+                    'g1_total': 'G1 Total',
+                    'g7_total': 'G7 Total'
+                }
+                df = df.rename(columns=col_mapping)
+                
+                # Apply the master cleaner to ensure perfect matching
+                if 'Municipality' in df.columns:
+                    df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
+                if 'Barangay' in df.columns:
+                    df['Barangay'] = standardize_geo_names(df['Barangay'])
+                    
+                return df
+                
+        except Exception as e:
+            time.sleep(1) 
+
+    # If it fails, clear cache and return empty dataframe
+    st.cache_data.clear()
+    return pd.DataFrame()
 
 def standardize_geo_names(series):
     """
@@ -4298,7 +4547,74 @@ try:
                             supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
                             
                             st.success("✅ Mega-Sync Complete: Actual Genders Fully Integrated!")
-                            st.cache_data.clear()
+                    st.cache_data.clear()
+
+                # --- NEW: SBI TARGET SYNC ---
+                st.markdown("### 🏫 Phase 2: SBI Target Database Sync")
+                st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
+                
+                if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets"):
+                    with st.spinner("Downloading and processing DepEd master sheet..."):
+                        try:
+                            conn = st.connection("gsheets", type=GSheetsConnection)
+                            sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
+                            
+                            # Read raw data (headers are on row 5)
+                            df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=4, ttl=0)
+                            
+                            if df_raw.empty:
+                                st.error("Failed to read the DepEd Target sheet.")
+                            else:
+                                df_raw.columns = [str(c).strip() for c in df_raw.columns]
+                                
+                                # Filter to Abra only
+                                if 'Province' in df_raw.columns:
+                                    df_raw = df_raw[df_raw['Province'].astype(str).str.upper() == 'ABRA'].copy()
+                                    
+                                # Clean fields
+                                df_raw['Municipality'] = df_raw['Municipality'].astype(str).str.strip().str.title()
+                                df_raw['School_name'] = df_raw['School_name'].astype(str).str.strip()
+                                df_raw['beis_school_id'] = df_raw['beis_school_id'].astype(str).str.replace(r'\.0$', '', regex=True)
+                                
+                                # Extract specific columns
+                                target_cols = {
+                                    'Municipality': 'municipality',
+                                    'Barangay': 'barangay',
+                                    'beis_school_id': 'school_id',
+                                    'School_name': 'school_name',
+                                    'g1male': 'g1_male',
+                                    'g1female': 'g1_female',
+                                    'g4female': 'g4_female',
+                                    'g7male': 'g7_male',
+                                    'g7female': 'g7_female'
+                                }
+                                
+                                df_push = df_raw[[c for c in target_cols.keys() if c in df_raw.columns]].rename(columns=target_cols)
+                                
+                                # Convert text numbers to real integers
+                                num_cols = ['g1_male', 'g1_female', 'g4_female', 'g7_male', 'g7_female']
+                                for c in num_cols:
+                                    if c in df_push.columns:
+                                        df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
+                                        
+                                # Calculate totals
+                                df_push['g1_total'] = df_push.get('g1_male', 0) + df_push.get('g1_female', 0)
+                                df_push['g7_total'] = df_push.get('g7_male', 0) + df_push.get('g7_female', 0)
+                                
+                                # Push to Supabase!
+                                df_push = df_push.replace({np.nan: None})
+                                
+                                # First, wipe the old data to prevent duplicates on resync
+                                supabase.table('sbi_targets').delete().neq('id', 0).execute()
+                                
+                                # Insert the fresh data
+                                supabase.table('sbi_targets').insert(df_push.to_dict(orient='records')).execute()
+                                
+                                st.success("✅ SBI Targets successfully synced to Supabase!")
+                                st.cache_data.clear()
+                                
+                        except Exception as e:
+                            st.error(f"SBI Target Sync Failed: {e}")
                         except Exception as e:
                             st.error(f"Target Sync Failed: {e}")
                             
