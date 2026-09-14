@@ -16,7 +16,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 
 from auth_utils import authenticate_user, hash_password, verify_password
-from db_utils import update_session_log_throttled, validate_sbi_targets, replace_table_with_rollback
+from db_utils import update_session_log_throttled, consolidate_sbi_targets, validate_sbi_targets, replace_table_with_rollback
 
 logger = logging.getLogger(__name__)
 
@@ -477,7 +477,7 @@ if not st.session_state.get('logged_in', False):
 
         with account_tab:
             with st.form("account_login_form", border=True):
-                st.markdown("###  Registered Account")
+                st.markdown("### 🔐 Registered Account")
                 username_input = st.text_input("Username", key="login_username").strip()
                 password_input = st.text_input("Password", type="password", key="login_password")
                 submit_account = st.form_submit_button("Sign In", type="primary", use_container_width=True)
@@ -910,12 +910,32 @@ if st.session_state.get('active_program') == 'SBI':
                                     
                             df_push['g1_total'] = df_push.get('g1_male', 0) + df_push.get('g1_female', 0)
                             df_push['g7_total'] = df_push.get('g7_male', 0) + df_push.get('g7_female', 0)
-                            
-                            df_push = df_push.replace({np.nan: None})
+
+                            # DepEd exports can legitimately repeat a BEIS School ID.
+                            # Consolidate repeated rows before validating uniqueness so
+                            # duplicate exports do not inflate school-level targets.
+                            df_push, dedupe_report = consolidate_sbi_targets(df_push)
 
                             valid, validation_message = validate_sbi_targets(df_push)
                             if not valid:
                                 raise ValueError(f"SBI target validation failed: {validation_message}")
+
+                            df_push = df_push.replace({np.nan: None})
+
+                            if dedupe_report['duplicate_ids_consolidated'] or dedupe_report['exact_duplicates_removed']:
+                                st.info(
+                                    "🧹 DepEd duplicate cleanup: "
+                                    f"{dedupe_report['input_rows']:,} source rows → "
+                                    f"{dedupe_report['output_rows']:,} unique schools; "
+                                    f"{dedupe_report['exact_duplicates_removed']:,} exact duplicate row(s) removed; "
+                                    f"{dedupe_report['duplicate_ids_consolidated']:,} repeated School ID(s) consolidated."
+                                )
+                                if dedupe_report['name_variant_ids'] or dedupe_report['barangay_variant_ids']:
+                                    st.caption(
+                                        f"Name variants: {dedupe_report['name_variant_ids']:,} School ID(s); "
+                                        f"barangay variants: {dedupe_report['barangay_variant_ids']:,} School ID(s). "
+                                        "The most common text value was retained."
+                                    )
 
                             records = df_push.to_dict(orient='records')
                             inserted = replace_table_with_rollback(supabase, 'sbi_targets', records)
@@ -4624,7 +4644,7 @@ try:
                                                                 
             st.divider()
             
-            st.markdown("###  User Account Management")
+            st.markdown("### 🔐 User Account Management")
             
             # --- NEW: SECURE ACCOUNT CREATION FORM ---
             with st.expander("➕ Create New Account"):
