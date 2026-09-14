@@ -786,7 +786,7 @@ if st.session_state.get('active_program') == 'SBI':
             if view_mode == "Specific Municipality":
                 df_tgt_view = df_tgt_view[df_tgt_view['Municipality'].str.upper() == selected_muni.upper()]
                 
-            st.markdown("#### Eligible Student Population by Grade Level")
+            st.markdown("#### 🎯 Eligible Student Population by Grade Level")
             t1, t2, t3 = st.columns(3)
             t1.metric("Grade 1 (MR & Td)", f"{df_tgt_view['G1 Total'].sum():,.0f}", "Male & Female")
             t2.metric("Grade 4 (HPV)", f"{df_tgt_view['G4 Female'].sum():,.0f}", "Female Only")
@@ -827,7 +827,7 @@ if st.session_state.get('active_program') == 'SBI':
             
             st.divider()
             
-            st.markdown("#### School-Level Target Baseline")
+            st.markdown("#### 🏫 School-Level Target Baseline")
             with st.expander("View & Download Detailed School Targets", expanded=False):
                 df_school_view = df_tgt_view[['Municipality', 'Barangay', 'School ID', 'School Name', 'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']]
                 st.dataframe(df_school_view, use_container_width=True, hide_index=True)
@@ -865,7 +865,7 @@ if st.session_state.get('active_program') == 'SBI':
             st.success("✅ Admin controls unlocked.")
             st.divider()
             
-            st.markdown("### Phase 1: SBI Target Database Sync")
+            st.markdown("### 🏫 Phase 1: SBI Target Database Sync")
             st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
             
             if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets_btn"):
@@ -875,7 +875,6 @@ if st.session_state.get('active_program') == 'SBI':
                         conn = st.connection("gsheets", type=GSheetsConnection)
                         sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
                         
-                        # THE FIX: Changed skiprows from 4 to 5 to accurately grab the header row!
                         df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=5, ttl=0)
                         
                         if df_raw.empty:
@@ -906,11 +905,15 @@ if st.session_state.get('active_program') == 'SBI':
                             
                             df_push = df_push.replace({np.nan: None})
                             
-                            supabase.table('sbi_targets').delete().neq('id', 0).execute()
-                            supabase.table('sbi_targets').insert(df_push.to_dict(orient='records')).execute()
-                            
-                            st.success("✅ SBI Targets successfully synced to Supabase!")
-                            st.cache_data.clear()
+                            # --- CHATGPT FIX: Validated Safety Net ---
+                            if not df_push.empty and len(df_push) > 100: # Ensure we actually have the Abra dataset before deleting!
+                                supabase.table('sbi_targets').delete().neq('id', 0).execute()
+                                supabase.table('sbi_targets').insert(df_push.to_dict(orient='records')).execute()
+                                st.success("✅ SBI Targets successfully synced to Supabase!")
+                                st.cache_data.clear()
+                            else:
+                                st.error("Validation Failed: Downloaded data is empty or incomplete. Sync aborted.")
+                                
                     except Exception as e:
                         st.error(f"SBI Target Sync Failed: {e}")
 
@@ -4542,197 +4545,197 @@ try:
             else:
                 st.info("Barangay data column not found in the VaccTrack sheet.")
 
-    # ==========================================
-    # ADMIN PANEL
-    # ==========================================
-        with tab_admin:
-            st.markdown("### ⚙️ System Administration")
+# ==========================================
+# ADMIN PANEL
+# ==========================================
+    with tab_admin:
+        st.markdown("### ⚙️ System Administration")
+        
+        # 1. The Vault Door
+        admin_password = st.text_input("Enter Admin Password to unlock controls:", type="password")
+        
+        # Change "my_secure_password" to your actual master password!
+        if admin_password != "rjca1204":
+            st.info("🔒 This section is restricted to the System Administrator.")
+        else:
+            st.success("✅ Admin controls unlocked.")
+            st.divider()
             
-            # 1. The Vault Door
-            admin_password = st.text_input("Enter Admin Password to unlock controls:", type="password")
+            # --- EVERYTHING BELOW IS SECURELY LOCKED INSIDE THIS ELSE BLOCK ---
+            st.markdown("### 🔄 Phase 1: Target Database Sync")
+            st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
             
-            # Change "my_secure_password" to your actual master password!
-            if admin_password != "rjca1204":
-                st.info("🔒 This section is restricted to the System Administrator.")
-            else:
-                st.success("✅ Admin controls unlocked.")
-                st.divider()
-                
-                # --- EVERYTHING BELOW IS SECURELY LOCKED INSIDE THIS ELSE BLOCK ---
-                st.markdown("### 🔄 Phase 1: Target Database Sync")
-                st.write("Pull the latest baseline targets from the `Target(CAR)` Google Sheet.")
-                
-                if st.button("Sync Target Database", type="secondary", use_container_width=True):
-                    with st.spinner("Downloading Projected & Actual Targets from 4 Sheets..."):
-                        try:
-                            conn = st.connection("gsheets", type=GSheetsConnection)
-                            
-                            mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
-                            df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)".strip(), usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
-                            
-                            mr_act_cols = ["Code", "Location", "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-59m_Total", "Act_MR_6-12m_M", "Act_MR_6-12m_F", "Act_MR_6-12m_Total", "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_13-23m_Total", "Act_MR_24-59m_M", "Act_MR_24-59m_F", "Act_MR_24-59m_Total"]
-                            df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual Target(UPDATE THIS)".strip(), usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
-                            
-                            vita_cols = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
-                            df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
-                            
-                            vita_act_cols = ["Code", "Location", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_6-11m_Total", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F", "Act_VitA_12-59m_Total", "Act_VitA_Total"]
-                            df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Actual Target(UPDATE THIS)".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
-                            
-                            for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
-                                df_vita_nat[c] = pd.to_numeric(df_vita_nat[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                            df_vita_nat['VitA_Total_M'] = df_vita_nat['VitA_6-11m_M'] + df_vita_nat['VitA_12-59m_M']
-                            df_vita_nat['VitA_Total_F'] = df_vita_nat['VitA_6-11m_F'] + df_vita_nat['VitA_12-59m_F']
-                            
-                            for c in ["Act_VitA_6-11m_M", "Act_VitA_12-59m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_F"]:
-                                df_vita_act[c] = pd.to_numeric(df_vita_act[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-                            df_vita_act['Act_VitA_Total_M'] = df_vita_act['Act_VitA_6-11m_M'] + df_vita_act['Act_VitA_12-59m_M']
-                            df_vita_act['Act_VitA_Total_F'] = df_vita_act['Act_VitA_6-11m_F'] + df_vita_act['Act_VitA_12-59m_F']
-                            
-                            df_merged = df_mr_nat.copy()
-                            df_merged = pd.merge(df_merged, df_mr_act[['Code', 'Act_MR_6-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_Total', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_Total', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_Total', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']], on='Code', how='left')
-                            df_merged = pd.merge(df_merged, df_vita_nat[['Code', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']], on='Code', how='left')
-                            df_merged = pd.merge(df_merged, df_vita_act[['Code', 'Act_VitA_6-11m_Total', 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_Total', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F', 'Act_VitA_Total', 'Act_VitA_Total_M', 'Act_VitA_Total_F']], on='Code', how='left')
-                            
-                            df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
-                                                 '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
-                                                 '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
-                                                 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total',
-                                                 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F',
-                                                 'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total',
-                                                 'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total',
-                                                 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F',
-                                                 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F', 'Act_VitA_Total_M', 'Act_VitA_Total_F']].copy()
-                            
-                            df_push.columns = [
-                                'code', 'location', 'level', 'parent_province', 'parent_municipality', 
-                                'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
-                                'mr_6_59m_m', 'mr_6_59m_f', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f',
-                                'vita_6_11m', 'vita_12_59m', 'vita_total',
-                                'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f',
-                                'actual_mr_6_59m_total', 'actual_mr_6_12m_total', 'actual_mr_13_23m_total', 'actual_mr_24_59m_total',
-                                'actual_vita_6_11m_total', 'actual_vita_12_59m_total', 'actual_vita_total',
-                                'actual_mr_6_59m_m', 'actual_mr_6_59m_f', 'actual_mr_6_12m_m', 'actual_mr_6_12m_f', 'actual_mr_13_23m_m', 'actual_mr_13_23m_f', 'actual_mr_24_59m_m', 'actual_mr_24_59m_f',
-                                'actual_vita_6_11m_m', 'actual_vita_6_11m_f', 'actual_vita_12_59m_m', 'actual_vita_12_59m_f', 'actual_vita_total_m', 'actual_vita_total_f'
-                            ]
-                            
-                            num_cols = df_push.columns[5:]
-                            for c in num_cols:
-                                df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
-                            
-                            df_push = df_push.replace({np.nan: None})
-                            supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
-                            
-                            st.success("✅ Mega-Sync Complete: Actual Genders Fully Integrated!")
-                            st.cache_data.clear()
-                            
-                        except Exception as e:
-                            st.error(f"Target Sync Failed: {e}")
+            if st.button("Sync Target Database", type="secondary", use_container_width=True):
+                with st.spinner("Downloading Projected & Actual Targets from 4 Sheets..."):
+                    try:
+                        conn = st.connection("gsheets", type=GSheetsConnection)
+                        
+                        mr_cols = ["Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total", "6-12m_M", "6-12m_F", "6-12m_Total", "13-23m_M", "13-23m_F", "13-23m_Total", "24-59m_M", "24-59m_F", "24-59m_Total"]
+                        df_mr_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Target(CAR)".strip(), usecols=list(range(14)), skiprows=2, names=mr_cols, ttl=0), mr_cols)
+                        
+                        mr_act_cols = ["Code", "Location", "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-59m_Total", "Act_MR_6-12m_M", "Act_MR_6-12m_F", "Act_MR_6-12m_Total", "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_13-23m_Total", "Act_MR_24-59m_M", "Act_MR_24-59m_F", "Act_MR_24-59m_Total"]
+                        df_mr_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="MR Actual Target(UPDATE THIS)".strip(), usecols=list(range(14)), skiprows=2, names=mr_act_cols, ttl=0), mr_act_cols)
+                        
+                        vita_cols = ["Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total"]
+                        df_vita_nat = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Target".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_cols, ttl=0), vita_cols)
+                        
+                        vita_act_cols = ["Code", "Location", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_6-11m_Total", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F", "Act_VitA_12-59m_Total", "Act_VitA_Total"]
+                        df_vita_act = clean_and_process_car_data(conn.read(spreadsheet=sheet_url, worksheet="Vitamin A Actual Target(UPDATE THIS)".strip(), usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9], skiprows=2, names=vita_act_cols, ttl=0), vita_act_cols)
+                        
+                        for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
+                            df_vita_nat[c] = pd.to_numeric(df_vita_nat[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        df_vita_nat['VitA_Total_M'] = df_vita_nat['VitA_6-11m_M'] + df_vita_nat['VitA_12-59m_M']
+                        df_vita_nat['VitA_Total_F'] = df_vita_nat['VitA_6-11m_F'] + df_vita_nat['VitA_12-59m_F']
+                        
+                        for c in ["Act_VitA_6-11m_M", "Act_VitA_12-59m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_F"]:
+                            df_vita_act[c] = pd.to_numeric(df_vita_act[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
+                        df_vita_act['Act_VitA_Total_M'] = df_vita_act['Act_VitA_6-11m_M'] + df_vita_act['Act_VitA_12-59m_M']
+                        df_vita_act['Act_VitA_Total_F'] = df_vita_act['Act_VitA_6-11m_F'] + df_vita_act['Act_VitA_12-59m_F']
+                        
+                        df_merged = df_mr_nat.copy()
+                        df_merged = pd.merge(df_merged, df_mr_act[['Code', 'Act_MR_6-59m_Total', 'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_Total', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_Total', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_Total', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F']], on='Code', how='left')
+                        df_merged = pd.merge(df_merged, df_vita_nat[['Code', 'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total', 'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F']], on='Code', how='left')
+                        df_merged = pd.merge(df_merged, df_vita_act[['Code', 'Act_VitA_6-11m_Total', 'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_Total', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F', 'Act_VitA_Total', 'Act_VitA_Total_M', 'Act_VitA_Total_F']], on='Code', how='left')
+                        
+                        df_push = df_merged[['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality', 
+                                                '6-59m_Total', '6-12m_Total', '13-23m_Total', '24-59m_Total',
+                                                '6-59m_M', '6-59m_F', '6-12m_M', '6-12m_F', '13-23m_M', '13-23m_F', '24-59m_M', '24-59m_F',
+                                                'VitA_6-11m_Total', 'VitA_12-59m_Total', 'VitA_Total',
+                                                'VitA_6-11m_M', 'VitA_6-11m_F', 'VitA_12-59m_M', 'VitA_12-59m_F', 'VitA_Total_M', 'VitA_Total_F',
+                                                'Act_MR_6-59m_Total', 'Act_MR_6-12m_Total', 'Act_MR_13-23m_Total', 'Act_MR_24-59m_Total',
+                                                'Act_VitA_6-11m_Total', 'Act_VitA_12-59m_Total', 'Act_VitA_Total',
+                                                'Act_MR_6-59m_M', 'Act_MR_6-59m_F', 'Act_MR_6-12m_M', 'Act_MR_6-12m_F', 'Act_MR_13-23m_M', 'Act_MR_13-23m_F', 'Act_MR_24-59m_M', 'Act_MR_24-59m_F',
+                                                'Act_VitA_6-11m_M', 'Act_VitA_6-11m_F', 'Act_VitA_12-59m_M', 'Act_VitA_12-59m_F', 'Act_VitA_Total_M', 'Act_VitA_Total_F']].copy()
+                        
+                        df_push.columns = [
+                            'code', 'location', 'level', 'parent_province', 'parent_municipality', 
+                            'grand_total_6_59m', 'grand_total_6_12m', 'grand_total_13_23m', 'grand_total_24_59m',
+                            'mr_6_59m_m', 'mr_6_59m_f', 'mr_6_12m_m', 'mr_6_12m_f', 'mr_13_23m_m', 'mr_13_23m_f', 'mr_24_59m_m', 'mr_24_59m_f',
+                            'vita_6_11m', 'vita_12_59m', 'vita_total',
+                            'vita_6_11m_m', 'vita_6_11m_f', 'vita_12_59m_m', 'vita_12_59m_f', 'vita_total_m', 'vita_total_f',
+                            'actual_mr_6_59m_total', 'actual_mr_6_12m_total', 'actual_mr_13_23m_total', 'actual_mr_24_59m_total',
+                            'actual_vita_6_11m_total', 'actual_vita_12_59m_total', 'actual_vita_total',
+                            'actual_mr_6_59m_m', 'actual_mr_6_59m_f', 'actual_mr_6_12m_m', 'actual_mr_6_12m_f', 'actual_mr_13_23m_m', 'actual_mr_13_23m_f', 'actual_mr_24_59m_m', 'actual_mr_24_59m_f',
+                            'actual_vita_6_11m_m', 'actual_vita_6_11m_f', 'actual_vita_12_59m_m', 'actual_vita_12_59m_f', 'actual_vita_total_m', 'actual_vita_total_f'
+                        ]
+                        
+                        num_cols = df_push.columns[5:]
+                        for c in num_cols:
+                            df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
+                        
+                        df_push = df_push.replace({np.nan: None})
+                        supabase.table('targets').upsert(df_push.to_dict(orient='records')).execute()
+                        
+                        st.success("✅ Mega-Sync Complete: Actual Genders Fully Integrated!")
+                        st.cache_data.clear()
+                        
+                    except Exception as e:
+                        st.error(f"Target Sync Failed: {e}")
 
-                                                                    
-                st.divider()
-                
-                st.markdown("### 🔐 User Account Management")
-                
-                # --- NEW: SECURE ACCOUNT CREATION FORM ---
-                with st.expander("➕ Create New Account"):
-                    with st.form("create_account_form"):
-                        new_user = st.text_input("Username")
-                        new_pass = st.text_input("Password", type="password")
-                        new_role = st.selectbox("Role", ["Guest / Viewer", "System Admin"])
-                        
-                        submit_new_account = st.form_submit_button("Create Account", type="primary")
-                        
-                        if submit_new_account:
-                            if not new_user or not new_pass:
-                                st.warning("Please enter both username and password.")
-                            else:
-                                try:
-                                    supabase.table('user_accounts').insert({
-                                        "username": new_user.strip(),
-                                        "password_hash": make_hashes(new_pass),
-                                        "name": "RHU Visitor" if new_role == "Guest / Viewer" else "System Admin",
-                                        "role": new_role,
-                                        "account_status": "Approved",
-                                        "failed_attempts": 0
-                                    }).execute()
-                                    st.success(f"✅ Account '{new_user}' successfully created!")
-                                    time.sleep(1)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error creating account. Username may already exist. Details: {e}")
+                                                                
+            st.divider()
+            
+            st.markdown("### 🔐 User Account Management")
+            
+            # --- NEW: SECURE ACCOUNT CREATION FORM ---
+            with st.expander("➕ Create New Account"):
+                with st.form("create_account_form"):
+                    new_user = st.text_input("Username")
+                    new_pass = st.text_input("Password", type="password")
+                    new_role = st.selectbox("Role", ["Guest / Viewer", "System Admin"])
+                    
+                    submit_new_account = st.form_submit_button("Create Account", type="primary")
+                    
+                    if submit_new_account:
+                        if not new_user or not new_pass:
+                            st.warning("Please enter both username and password.")
+                        else:
+                            try:
+                                supabase.table('user_accounts').insert({
+                                    "username": new_user.strip(),
+                                    "password_hash": make_hashes(new_pass),
+                                    "name": "RHU Visitor" if new_role == "Guest / Viewer" else "System Admin",
+                                    "role": new_role,
+                                    "account_status": "Approved",
+                                    "failed_attempts": 0
+                                }).execute()
+                                st.success(f"✅ Account '{new_user}' successfully created!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error creating account. Username may already exist. Details: {e}")
 
-                # --- UPDATED: ACCOUNT EDITOR WITH DELETION LOGIC ---
-                res_users = supabase.table('user_accounts').select('*').execute()
-                if res_users.data:
-                    users_admin_df = pd.DataFrame(res_users.data)
-                    
-                    cols = ['username', 'role', 'password_hash']
-                    users_admin_df = users_admin_df[[c for c in cols if c in users_admin_df.columns]]
-                    
-                    # Keep track of original usernames to detect if you delete a row
-                    original_usernames = set(users_admin_df['username'].dropna().tolist())
-                    
-                    st.caption("Select a row on the left side and press 'Delete' on your keyboard to remove an account.")
-                    edited_users = st.data_editor(
-                        users_admin_df,
-                        column_config={
-                            "password_hash": None, 
-                            "username": st.column_config.TextColumn("Username", disabled=True),
-                            "role": st.column_config.SelectboxColumn("Role", options=["Guest / Viewer", "System Admin"])
-                        },
-                        use_container_width=True,
-                        num_rows="dynamic",
-                        key="user_editor"
-                    )
-                    
-                    if st.button("💾 Save User Changes", type="secondary"):
-                        try:
-                            # 1. Detect and execute Deletions in Supabase
-                            current_usernames = set(edited_users['username'].dropna().tolist())
-                            deleted_users = list(original_usernames - current_usernames)
-                            
-                            if deleted_users:
-                                supabase.table('user_accounts').delete().in_('username', deleted_users).execute()
-                            
-                            # 2. Fix the NaN JSON error by cleaning empty data
-                            edited_users = edited_users.dropna(subset=['username']) # Ignore accidental blank rows
-                            edited_users = edited_users.replace({np.nan: None})     # Replace Pandas NaN with clean nulls
-                            
-                            updated_records = edited_users.to_dict(orient='records')
-                            if updated_records:
-                                supabase.table('user_accounts').upsert(updated_records).execute()
-                                
-                            st.toast("User accounts updated successfully!", icon="✅")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Failed to update users: {e}")
+            # --- UPDATED: ACCOUNT EDITOR WITH DELETION LOGIC ---
+            res_users = supabase.table('user_accounts').select('*').execute()
+            if res_users.data:
+                users_admin_df = pd.DataFrame(res_users.data)
                 
-                st.divider()
-
-                st.markdown("### 📋 System Access Logs & Session Tracking")
-                try:
-                    # Pull the latest 100 logs from Supabase
-                    res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
-                    
-                    if res_logs.data:
-                        # Convert to dataframe
-                        logs_df = pd.DataFrame(res_logs.data)
+                cols = ['username', 'role', 'password_hash']
+                users_admin_df = users_admin_df[[c for c in cols if c in users_admin_df.columns]]
+                
+                # Keep track of original usernames to detect if you delete a row
+                original_usernames = set(users_admin_df['username'].dropna().tolist())
+                
+                st.caption("Select a row on the left side and press 'Delete' on your keyboard to remove an account.")
+                edited_users = st.data_editor(
+                    users_admin_df,
+                    column_config={
+                        "password_hash": None, 
+                        "username": st.column_config.TextColumn("Username", disabled=True),
+                        "role": st.column_config.SelectboxColumn("Role", options=["Guest / Viewer", "System Admin"])
+                    },
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    key="user_editor"
+                )
+                
+                if st.button("💾 Save User Changes", type="secondary"):
+                    try:
+                        # 1. Detect and execute Deletions in Supabase
+                        current_usernames = set(edited_users['username'].dropna().tolist())
+                        deleted_users = list(original_usernames - current_usernames)
                         
-                        # Make sure the 'action' column exists in case older logs don't have it
-                        if 'action' not in logs_df.columns:
-                            logs_df['action'] = "Legacy Login"
+                        if deleted_users:
+                            supabase.table('user_accounts').delete().in_('username', deleted_users).execute()
+                        
+                        # 2. Fix the NaN JSON error by cleaning empty data
+                        edited_users = edited_users.dropna(subset=['username']) # Ignore accidental blank rows
+                        edited_users = edited_users.replace({np.nan: None})     # Replace Pandas NaN with clean nulls
+                        
+                        updated_records = edited_users.to_dict(orient='records')
+                        if updated_records:
+                            supabase.table('user_accounts').upsert(updated_records).execute()
                             
-                        # Filter to show the columns we care about, INCLUDING the new action column
-                        display_cols = ['timestamp', 'name', 'role', 'action']
-                        logs_df = logs_df[[c for c in display_cols if c in logs_df.columns]]
+                        st.toast("User accounts updated successfully!", icon="✅")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to update users: {e}")
+            
+            st.divider()
+
+            st.markdown("### 📋 System Access Logs & Session Tracking")
+            try:
+                # Pull the latest 100 logs from Supabase
+                res_logs = supabase.table('access_logs').select('*').order('id', desc=True).limit(100).execute()
+                
+                if res_logs.data:
+                    # Convert to dataframe
+                    logs_df = pd.DataFrame(res_logs.data)
+                    
+                    # Make sure the 'action' column exists in case older logs don't have it
+                    if 'action' not in logs_df.columns:
+                        logs_df['action'] = "Legacy Login"
                         
-                        st.dataframe(logs_df, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("No access logs found yet.")
-                except Exception as e:
-                    st.warning(f"Could not load Access Logs: {e}")
+                    # Filter to show the columns we care about, INCLUDING the new action column
+                    display_cols = ['timestamp', 'name', 'role', 'action']
+                    logs_df = logs_df[[c for c in display_cols if c in logs_df.columns]]
+                    
+                    st.dataframe(logs_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No access logs found yet.")
+            except Exception as e:
+                st.warning(f"Could not load Access Logs: {e}")
 
 except Exception as e:
     st.error(f"Dashboard Error: {e}")
