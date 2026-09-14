@@ -7,226 +7,41 @@ import plotly.express as px
 from datetime import datetime
 import pytz
 import time
-import hashlib
 import logging
-from supabase import create_client, Client
-import requests
-import json
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 
-from auth_utils import authenticate_user, hash_password, verify_password
+from auth_utils import authenticate_user, hash_password
 from db_utils import update_session_log_throttled, consolidate_sbi_targets, validate_sbi_targets, replace_table_with_rollback
+from core.config import ABRA_MUNIS, SIA_SHEET_URL, SBI_SHEET_URL
+from core.data import (
+    init_supabase,
+    fetch_sbi_vacctrack,
+    fetch_sbi_targets,
+    fetch_targets_from_supabase,
+    fetch_live_accomplishments,
+    fetch_vacctrack_data,
+    fetch_opt_data,
+)
+from core.geo import (
+    fetch_abra_geojson,
+    fetch_barangay_geojson,
+    fetch_car_geojson,
+    clean_and_process_car_data,
+    get_polygon_centroid,
+    standardize_geo_names,
+)
+
+# Backward-compatible aliases used throughout the existing dashboard UI.
+abra_munis = ABRA_MUNIS
+sheet_url = SIA_SHEET_URL
+sbi_sheet_url = SBI_SHEET_URL
 
 logger = logging.getLogger("abra_nip_dashboard")
 logger.setLevel(logging.INFO)
 
-abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
 
-@st.cache_data(ttl="24h")
-def fetch_abra_geojson():
-    urls = [
-        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json",
-        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json"
-    ]
-    
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'} 
-    
-    for url in urls:
-        try:
-            response = requests.get(url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                abra_features = []
-                
-                for feature in data.get('features', []):
-                    props = feature.get('properties', {})
-                    # Convert all property values to uppercase to easily search them
-                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
-                    
-                    # If ANY of the properties say "ABRA", this shape belongs to us
-                    if 'ABRA' in props_upper.values():
-                        # Standard keys where municipality names are usually hidden
-                        muni_keys = ['ADM3_EN', 'NAME_3', 'MUN_NAME', 'NAME_2', 'MUNICIPALITY']
-                        muni_name = ""
-                        
-                        for k in muni_keys:
-                            if k in props_upper and props_upper[k] not in ['ABRA', 'PHILIPPINES']:
-                                muni_name = props_upper[k]
-                                break
-                                
-                        clean_name = str(muni_name).strip().upper()
-                        
-                        # Inject the clean name explicitly into properties so Plotly can guarantee a match
-                        feature['properties']['Standard_Name'] = clean_name
-                        abra_features.append(feature)
-                
-                if abra_features:
-                    return {"type": "FeatureCollection", "features": abra_features}
-        except Exception:
-            logger.exception("Abra municipality GeoJSON source failed: %s", url)
-            continue 
-            
-    return None
 
-@st.cache_data(ttl="24h")
-def fetch_barangay_geojson(target_muni):
-    """
-    Fetches and prepares local barangay boundaries using the EXACT 
-    robust matching engine from the Dengue Surveillance App.
-    """
-    import os
-    import json
-    import re
-    import unicodedata
-    
-    ALL_ABRA_MUNICIPALITIES = [
-        "BANGUED", "BOLINEY", "BUCAY", "BUCLOC", "DAGUIOMAN", "DANGLAS", "DOLORES",
-        "LA PAZ", "LACUB", "LAGANGILANG", "LAGAYAN", "LANGIDEN", "LICUAN-BAAY",
-        "LUBA", "MALIBCONG", "MANABO", "PEÑARRUBIA", "PIDIGAN", "PILAR",
-        "SALLAPADAN", "SAN ISIDRO", "SAN JUAN", "SAN QUINTIN", "TAYUM", "TINEG",
-        "TUBO", "VILLAVICIOSA"
-    ]
-
-    def clean_muni_name(raw_name):
-        if not isinstance(raw_name, str): return ""
-        raw = str(raw_name).upper()
-        raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
-        raw_alpha = re.sub(r'[^A-Z]', '', raw)
-        
-        # --- THE SAFETY NET ---
-        # If it has a direction, it's definitely a barangay, so protect it!
-        is_brgy_leak = any(x in raw_alpha for x in ["NORTE", "SUR", "EAST", "WEST", "PROPER", "POBLACION"])
-        
-        if "LICUAN" in raw_alpha or "BAAY" in raw_alpha: return "LICUAN-BAAY"
-        if "PENAR" in raw_alpha or "RUBIA" in raw_alpha: return "PEÑARRUBIA"
-        if "PAZ" in raw_alpha: return "LA PAZ"
-        
-        # --- YOUR RESTORED PREVIOUS CODE (Protected!) ---
-        # Only apply these strict rules if it's NOT a barangay
-        if not is_brgy_leak:
-            if "JUAN" in raw_alpha: return "SAN JUAN"
-            if "ISIDRO" in raw_alpha: return "SAN ISIDRO"
-            if "QUINTIN" in raw_alpha: return "SAN QUINTIN"
-            
-        for muni in ALL_ABRA_MUNICIPALITIES:
-            if re.sub(r'[^A-Z]', '', muni.replace("Ñ", "N")) in raw_alpha:
-                if is_brgy_leak: 
-                    continue # Skip it if it's a hijacked barangay
-                return muni
-                
-        return raw_name
-
-    def clean_brgy_name(raw_name):
-        if not isinstance(raw_name, str): return ""
-        raw = str(raw_name).upper()
-        raw = unicodedata.normalize('NFKD', raw).encode('ASCII', 'ignore').decode('utf-8')
-        raw = re.sub(r'\(.*?\)', '', raw) 
-        raw = raw.replace("BARANGAY", "").replace("BRGY", "").replace("POBLACION", "POB").replace("POB.", "POB")
-        return re.sub(r'[^A-Z0-9]', '', raw)
-
-    def get_muni_name_from_props(props):
-        keys = ['ADM3_EN', 'MUN_NAME', 'NAME_3', 'MUNICIPALITY']
-        upper_props = {str(k).upper(): str(v) for k, v in props.items()}
-        for k in keys:
-            if k in upper_props:
-                std = clean_muni_name(upper_props[k])
-                if std in ALL_ABRA_MUNICIPALITIES: return std
-        for val in props.values():
-            std = clean_muni_name(str(val))
-            if std in ALL_ABRA_MUNICIPALITIES: return std
-        return None
-
-    def extract_brgy_name(props):
-        keys = ['ADM4_EN', 'BGY_NAME', 'BRGY_NAME', 'BARANGAY', 'NAME_4', 'NAME_3']
-        upper_props = {str(k).upper(): v for k, v in props.items()}
-        for k in keys:
-            if k in upper_props: return str(upper_props[k])
-        for val in props.values():
-            v_str = str(val).upper().strip()
-            if v_str not in ["ABRA", "PHILIPPINES"] and clean_muni_name(v_str) not in ALL_ABRA_MUNICIPALITIES:
-                if len(v_str) > 2: return v_str
-        return "UNKNOWN"
-
-    if not os.path.exists("abra_barangays.geojson"):
-        return None
-        
-    try:
-        with open("abra_barangays.geojson", "r", encoding="utf-8") as f:
-            data = json.load(f)
-            features = []
-            target = clean_muni_name(target_muni)
-            for feat in data.get('features', []):
-                if get_muni_name_from_props(feat.get('properties', {})) == target:
-                    raw_brgy = extract_brgy_name(feat.get('properties', {}))
-                    feat['properties']['Original_Name'] = str(raw_brgy).title()
-                    feat['properties']['Standard_Name'] = clean_brgy_name(raw_brgy)
-                    features.append(feat)
-            if features: 
-                return {"type": "FeatureCollection", "features": features}
-            return None
-    except Exception:
-        logger.exception("Failed to read local barangay GeoJSON")
-        return None
-
-@st.cache_data(ttl="24h")
-def fetch_car_geojson():
-    # Use multiple fallback URLs to guarantee we get the data
-    prov_urls = [
-        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/provinces-lowres.json",
-        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/Province/Provinces.json"
-    ]
-    muni_urls = [
-        "https://raw.githubusercontent.com/faeldon/philippines-json-maps/master/2023/geojson/municities-lowres.json",
-        "https://raw.githubusercontent.com/macoymejia/geojsonph/master/MuniCities/MuniCities.json"
-    ]
-    
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    car_features = []
-    car_provinces = ['ABRA', 'APAYAO', 'BENGUET', 'IFUGAO', 'KALINGA', 'MOUNTAIN PROVINCE', 'MT. PROVINCE']
-    
-    try:
-        # 1. Fetch Provinces (Scanning all property keys safely)
-        for url in prov_urls:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                for f in r.json().get('features', []):
-                    props = f.get('properties', {})
-                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
-                    
-                    for p_name in car_provinces:
-                        if p_name in props_upper.values():
-                            # Standardize Mountain Province
-                            clean_name = "Mountain Province" if "MT" in p_name else p_name.title()
-                            f['properties']['Standard_Name'] = clean_name
-                            car_features.append(f)
-                            break
-                if car_features:
-                    break # Stop looking if we found the provinces
-                    
-        # 2. Fetch Baguio City (HUC)
-        for url in muni_urls:
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                for f in r.json().get('features', []):
-                    props = f.get('properties', {})
-                    props_upper = {str(k).upper(): str(v).upper() for k, v in props.items()}
-                    
-                    if 'BAGUIO CITY' in props_upper.values() or 'CITY OF BAGUIO' in props_upper.values():
-                        f['properties']['Standard_Name'] = 'Baguio City'
-                        car_features.append(f)
-                        break
-                # Check if Baguio was successfully added
-                if any(f.get('properties', {}).get('Standard_Name') == 'Baguio City' for f in car_features):
-                    break
-                    
-        if car_features:
-            return {"type": "FeatureCollection", "features": car_features}
-            
-    except Exception:
-        logger.exception("Failed to fetch CAR GeoJSON")
-        
-    return None
 
 def render_footer():
     st.markdown("---")
@@ -367,11 +182,6 @@ st.markdown("""
 # ==========================================
 # 2. SUPABASE INITIALIZATION
 # ==========================================
-@st.cache_resource
-def init_supabase():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
 
 try:
     supabase = init_supabase()
@@ -379,16 +189,7 @@ except Exception as e:
     st.error("⚠️ Supabase Connection Error: Please ensure SUPABASE_URL and SUPABASE_KEY are set in Streamlit Secrets.")
     st.stop()
 
-sheet_url = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
 
-def make_hashes(password):
-    # Kept as a compatibility wrapper for the existing account-management UI.
-    # New passwords are stored using Argon2.
-    return hash_password(password)
-
-def check_hashes(password, hashed_text):
-    valid, _ = verify_password(password, hashed_text)
-    return valid
 
 # ==========================================
 # 3. SECURITY, SESSION STATE & TIMEOUT
@@ -600,80 +401,9 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 # 5. SCHOOL-BASED IMMUNIZATION (SBI) DASHBOARD
 # ==========================================
 # --- SBI DATA FETCHERS ---
-sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
 
-@st.cache_data(ttl="1h")
-def _fetch_sbi_vacctrack_cached():
-    """Fetch SBI VaccTrack sheets. Exceptions escape so Streamlit never caches a failed read."""
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_g1 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG1", ttl="1h")
-    df_g4 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG4", ttl="1h")
-    df_g7 = conn.read(spreadsheet=sbi_sheet_url, worksheet="VaccTrackG7", ttl="1h")
 
-    if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
-        df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
 
-    for df in [df_g1, df_g4, df_g7]:
-        if not df.empty:
-            df.columns = [str(c).strip() for c in df.columns]
-
-    return df_g1, df_g4, df_g7
-
-def fetch_sbi_vacctrack():
-    try:
-        return _fetch_sbi_vacctrack_cached()
-    except Exception:
-        logger.exception("Failed to fetch SBI VaccTrack data; failure was not cached")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-@st.cache_data(ttl="1h")
-def _fetch_sbi_targets_cached():
-    """Fetch all SBI targets. Only successful results are cached."""
-    last_error = None
-    for attempt in range(3):
-        try:
-            all_data = []
-            offset = 0
-            limit = 1000
-            while True:
-                res = supabase.table('sbi_targets').select('*').range(offset, offset + limit - 1).execute()
-                if res.data:
-                    all_data.extend(res.data)
-                    if len(res.data) < limit:
-                        break
-                    offset += limit
-                else:
-                    break
-
-            if not all_data:
-                return pd.DataFrame()
-
-            df = pd.DataFrame(all_data)
-            col_mapping = {
-                'municipality': 'Municipality', 'barangay': 'Barangay', 'school_id': 'School ID',
-                'school_name': 'School Name', 'g1_male': 'G1 Male', 'g1_female': 'G1 Female',
-                'g4_female': 'G4 Female', 'g7_male': 'G7 Male', 'g7_female': 'G7 Female',
-                'g1_total': 'G1 Total', 'g7_total': 'G7 Total'
-            }
-            df = df.rename(columns=col_mapping)
-            if 'Municipality' in df.columns:
-                df['Municipality'] = df['Municipality'].astype(str).str.title().str.strip()
-            if 'Barangay' in df.columns:
-                df['Barangay'] = df['Barangay'].astype(str).str.title().str.strip()
-            return df
-        except Exception as exc:
-            last_error = exc
-            if attempt < 2:
-                time.sleep(1)
-
-    raise RuntimeError("Failed to fetch SBI targets after 3 attempts") from last_error
-
-def fetch_sbi_targets():
-    try:
-        return _fetch_sbi_targets_cached()
-    except Exception:
-        logger.exception("Failed to fetch SBI targets; failure was not cached")
-        return pd.DataFrame()
 
 if st.session_state.get('active_program') == 'SBI':
     st.title("Abra School-Based Immunization (SBI) 2026")
@@ -1049,296 +779,17 @@ with st.sidebar:
     st.caption(f"🕒 Last Sync: {last_updated}")
 
 # --- DATA HELPER FUNCTIONS ---
-def clean_and_process_car_data(df, col_names):
-    df['Code'] = df['Code'].astype(str).str.split('.').str[0]
-    df = df[df['Code'] != 'nan']
-    df = df[df['Code'] != 'None']
-    df = df[df['Code'] != '']
-    numeric_cols = col_names[2:] 
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
-    df['Level'] = 'Barangay'
-    df.loc[df['Code'].str.endswith('00000000'), 'Level'] = 'Region'
-    df.loc[(df['Code'].str.endswith('00000')) & (~df['Code'].str.endswith('00000000')), 'Level'] = 'Province'
-    df.loc[(df['Code'].str.endswith('000')) & (~df['Code'].str.endswith('00000')), 'Level'] = 'Municipality'
-    
-    df['Parent_Province'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Province' else np.nan, axis=1).ffill()
-    df['Parent_Municipality'] = df.apply(lambda row: row['Location'] if row['Level'] == 'Municipality' else np.nan, axis=1).ffill()
-    df.loc[df['Level'] == 'Region', 'Parent_Province'] = None
-    df.loc[df['Level'].isin(['Region', 'Province']), 'Parent_Municipality'] = None
-    return df
-
-def get_polygon_centroid(geometry):
-    """
-    Calculates the central coordinate of a geographic polygon.
-    This allows us to accurately place dynamic text labels on the map.
-    """
-    try:
-        coords = []
-        if geometry['type'] == 'Polygon':
-            for ring in geometry['coordinates']:
-                coords.extend(ring)
-        elif geometry['type'] == 'MultiPolygon':
-            for poly in geometry['coordinates']:
-                for ring in poly:
-                    coords.extend(ring)
-        if not coords:
-            return None, None
-        
-        coords = np.array(coords)
-        return float(np.mean(coords[:, 0])), float(np.mean(coords[:, 1]))
-    except Exception:
-        return None, None
-
-@st.cache_data(ttl="1h")
-def _fetch_targets_from_supabase_cached():
-    # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
-    for attempt in range(3):
-        try:
-            # 🛑 FIX: Bypass the Supabase 1,000 row limit using a pagination loop!
-            all_data = []
-            offset = 0
-            limit = 1000
-            
-            while True:
-                # Fetch chunks of 1000 rows until we secure the entire database
-                res = supabase.table('targets').select('*').range(offset, offset + limit - 1).execute()
-                
-                if res.data:
-                    all_data.extend(res.data)
-                    # If we receive fewer than 1000 rows, we've hit the end of the database
-                    if len(res.data) < limit:
-                        break
-                    offset += limit
-                else:
-                    break
-                    
-            # SAFETY NET: If data is successfully retrieved, process it!
-            if all_data and len(all_data) >= 27: 
-                df = pd.DataFrame(all_data)
-                
-                col_mapping = {
-                    'code': 'Code', 'location': 'Location', 'level': 'Level',
-                    'parent_province': 'Parent_Province', 'parent_municipality': 'Parent_Municipality',
-                    'grand_total_6_59m': 'MR_6-59m_Total', 'mr_6_59m_m': 'MR_6-59m_M', 'mr_6_59m_f': 'MR_6-59m_F',
-                    'grand_total_6_12m': 'MR_6-12m_Total', 'mr_6_12m_m': 'MR_6-12m_M', 'mr_6_12m_f': 'MR_6-12m_F',
-                    'grand_total_13_23m': 'MR_13-23m_Total', 'mr_13_23m_m': 'MR_13-23m_M', 'mr_13_23m_f': 'MR_13-23m_F',
-                    'grand_total_24_59m': 'MR_24-59m_Total', 'mr_24_59m_m': 'MR_24-59m_M', 'mr_24_59m_f': 'MR_24-59m_F',
-                    'vita_total': 'VitA_Total', 'vita_total_m': 'VitA_Total_M', 'vita_total_f': 'VitA_Total_F',
-                    'vita_6_11m': 'VitA_6-11m_Total', 'vita_6_11m_m': 'VitA_6-11m_M', 'vita_6_11m_f': 'VitA_6-11m_F',
-                    'vita_12_59m': 'VitA_12-59m_Total', 'vita_12_59m_m': 'VitA_12-59m_M', 'vita_12_59m_f': 'VitA_12-59m_F',
-                    # ACTUALS TARGETS
-                    'actual_mr_6_59m_total': 'Act_MR_6-59m_Total', 'actual_mr_6_59m_m': 'Act_MR_6-59m_M', 'actual_mr_6_59m_f': 'Act_MR_6-59m_F',
-                    'actual_mr_6_12m_total': 'Act_MR_6-12m_Total', 'actual_mr_6_12m_m': 'Act_MR_6-12m_M', 'actual_mr_6_12m_f': 'Act_MR_6-12m_F',
-                    'actual_mr_13_23m_total': 'Act_MR_13-23m_Total', 'actual_mr_13_23m_m': 'Act_MR_13-23m_M', 'actual_mr_13_23m_f': 'Act_MR_13-23m_F',
-                    'actual_mr_24_59m_total': 'Act_MR_24-59m_Total', 'actual_mr_24_59m_m': 'Act_MR_24-59m_M', 'actual_mr_24_59m_f': 'Act_MR_24-59m_F',
-                    'actual_vita_6_11m_total': 'Act_VitA_6-11m_Total', 'actual_vita_6_11m_m': 'Act_VitA_6-11m_M', 'actual_vita_6_11m_f': 'Act_VitA_6-11m_F',
-                    'actual_vita_12_59m_total': 'Act_VitA_12-59m_Total', 'actual_vita_12_59m_m': 'Act_VitA_12-59m_M', 'actual_vita_12_59m_f': 'Act_VitA_12-59m_F',
-                    'actual_vita_total': 'Act_VitA_Total', 'actual_vita_total_m': 'Act_VitA_Total_M', 'actual_vita_total_f': 'Act_VitA_Total_F'
-                }
-                
-                for db_col in col_mapping.keys():
-                    if db_col not in df.columns:
-                        df[db_col] = 0
-                        
-                df = df.rename(columns=col_mapping)
-                
-                # ==========================================
-                # FIX: CLEAN TARGET LOCATIONS
-                # ==========================================
-                if 'Location' in df.columns:
-                    # Pass the raw target locations through the master cleaner
-                    df['Location'] = standardize_geo_names(df['Location'])
-                    
-                    # Keep explicit overrides for completely different spellings
-                    df['Location'] = df['Location'].replace({
-                        'Salapadan': 'Sallapadan',
-                        'Licuan-Baay (Licuan)': 'Licuan-Baay'
-                    })
-                # ==========================================
-                
-                num_cols = [c for c in df.columns if c not in ['Code', 'Location', 'Level', 'Parent_Province', 'Parent_Municipality']]
-                for c in num_cols:
-                    df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-
-                df['Act_VitA_6-11m_Total'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_6-11m_F']
-                df['Act_VitA_12-59m_Total'] = df['Act_VitA_12-59m_M'] + df['Act_VitA_12-59m_F']
-                df['Act_VitA_Total_M'] = df['Act_VitA_6-11m_M'] + df['Act_VitA_12-59m_M']
-                df['Act_VitA_Total_F'] = df['Act_VitA_6-11m_F'] + df['Act_VitA_12-59m_F']
-                df['Act_VitA_Total'] = df['Act_VitA_6-11m_Total'] + df['Act_VitA_12-59m_Total']
-
-                df['VitA_6-11m_Total'] = df['VitA_6-11m_M'] + df['VitA_6-11m_F']
-                df['VitA_12-59m_Total'] = df['VitA_12-59m_M'] + df['VitA_12-59m_F']
-                df['VitA_Total_M'] = df['VitA_6-11m_M'] + df['VitA_12-59m_M']
-                df['VitA_Total_F'] = df['VitA_6-11m_F'] + df['VitA_12-59m_F']
-                df['VitA_Total'] = df['VitA_6-11m_Total'] + df['VitA_12-59m_Total']
-
-                return df
-                
-        except Exception as e:
-            # Sleep for 1 second to give Supabase time to wake up, then try again
-            time.sleep(1) 
-
-    # A failed cached call must raise; otherwise Streamlit may cache an empty DataFrame for an hour.
-    raise RuntimeError("Failed to fetch target database after 3 attempts")
-
-def fetch_targets_from_supabase():
-    try:
-        return _fetch_targets_from_supabase_cached()
-    except Exception:
-        logger.exception("Failed to fetch target database; failure was not cached")
-        return pd.DataFrame()
-
-@st.cache_data(ttl="1h")
-def _fetch_live_accomplishments_cached():
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_mr = conn.read(spreadsheet=sheet_url, worksheet="MR", skiprows=1)
-        df_vita = conn.read(spreadsheet=sheet_url, worksheet="VitA", skiprows=1)
-        
-        if df_mr.empty or df_vita.empty:
-            logger.warning("MR or Vitamin A worksheet returned no data")
-            return pd.DataFrame(), pd.DataFrame()
-            
-        # ==========================================
-        # CLUTTER FIX: DROP BLANK DROPDOWNS & DATES
-        # ==========================================
-        if 'Barangay' in df_mr.columns:
-            df_mr = df_mr.dropna(subset=['Barangay'])
-            df_mr['Barangay'] = standardize_geo_names(df_mr['Barangay'])
-            
-        if 'Vaccination Date' in df_mr.columns:
-            df_mr = df_mr.dropna(subset=['Vaccination Date'])
-            
-        if 'Barangay' in df_vita.columns:
-            df_vita = df_vita.dropna(subset=['Barangay'])
-            df_vita['Barangay'] = standardize_geo_names(df_vita['Barangay'])
-            
-        if 'Vaccination Date' in df_vita.columns:
-            df_vita = df_vita.dropna(subset=['Vaccination Date'])
-            
-        # ==========================================
-        #  UNIVERSAL MATH CALCULATION
-        # ==========================================
-        
-        # MR Math: Sum all 6 demographic columns
-        if not df_mr.empty:
-            mr_cols = ['MR 6-12 Male', 'MR 6-12 Female', 'MR 13-23 Male', 'MR 13-23 Female', 'MR 24-59 Male', 'MR 24-59 Female']
-            for c in mr_cols:
-                if c in df_mr.columns:
-                    df_mr[c] = pd.to_numeric(df_mr[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
-            # Inject the calculated Total Doses column
-            df_mr['Total Doses'] = df_mr[[c for c in mr_cols if c in df_mr.columns]].sum(axis=1)
-
-        # Vit A Math: Sum all 4 demographic columns
-        if not df_vita.empty:
-            va_cols = ['VitA 6-11 Male', 'VitA 6-11 Female', 'VitA 12-59 Male', 'VitA 12-59 Female']
-            for c in va_cols:
-                if c in df_vita.columns:
-                    df_vita[c] = pd.to_numeric(df_vita[c].astype(str).str.replace(',', ''), errors='coerce').fillna(0).astype(int)
-            # Inject the calculated Total Doses column
-            df_vita['Total Doses'] = df_vita[[c for c in va_cols if c in df_vita.columns]].sum(axis=1)
-
-        return df_mr, df_vita
-    except Exception:
-        logger.exception("Live accomplishment read failed inside cached fetch")
-        raise
-
-def fetch_live_accomplishments():
-    try:
-        return _fetch_live_accomplishments_cached()
-    except Exception:
-        logger.exception("Failed to fetch live accomplishment data; failure was not cached")
-        return pd.DataFrame(), pd.DataFrame()
-
-@st.cache_data(ttl="1h")
-def _fetch_vacctrack_data_cached():
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_vt = conn.read(spreadsheet=sheet_url, worksheet="VaccTrack", ttl="1h")
-        
-        if df_vt.empty:
-            logger.warning("VaccTrack worksheet returned no data")
-            return pd.DataFrame()
-            
-        return df_vt
-    except Exception:
-        logger.exception("VaccTrack read failed inside cached fetch")
-        raise
-
-def fetch_vacctrack_data():
-    try:
-        return _fetch_vacctrack_data_cached()
-    except Exception:
-        logger.exception("Failed to fetch VaccTrack data; failure was not cached")
-        return pd.DataFrame()
-
-@st.cache_data(ttl="1h")
-def _fetch_opt_data_cached():
-    try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        # Pulls exactly from the new 2026 OPT sheet you created
-        df_opt = conn.read(spreadsheet=sheet_url, worksheet="2026 OPT", ttl="1h")
-        
-        if df_opt.empty:
-            logger.warning("2026 OPT worksheet returned no data")
-            return pd.DataFrame()
-            
-        return df_opt
-    except Exception:
-        logger.exception("OPT read failed inside cached fetch")
-        raise
-
-def fetch_opt_data():
-    try:
-        return _fetch_opt_data_cached()
-    except Exception:
-        logger.exception("Failed to fetch OPT data; failure was not cached")
-        return pd.DataFrame()
 
 
-def standardize_geo_names(series):
-    """
-    Universally cleans and standardizes geographic names to prevent 
-    Pandas merge failures due to typos, encoding glitches, or abbreviations.
-    """
-    # 1. Convert to string, remove outer spaces, and apply Title Case
-    s = series.astype(str).str.strip().str.title()
-    
-    # 2. Fix encoding glitches (tablets often replace an enye with a question mark)
-    s = s.str.replace('?', 'ñ', regex=False)
-    
-    # 3. Fix the awkward capitalization caused by .title() after a special character
-    s = s.str.replace('ñA', 'ña', regex=False)
-    s = s.str.replace('ñE', 'ñe', regex=False)
-    s = s.str.replace('ñI', 'ñi', regex=False)
-    s = s.str.replace('ñO', 'ño', regex=False)
-    s = s.str.replace('ñU', 'ñu', regex=False)
-    
-    # 4. Handle erratic "Pob" and "Poblacion" suffixes (e.g., Caupasan (Pob.) -> Caupasan)
-    # First, remove parentheticals entirely
-    s = s.str.replace(r'\s*\([Pp]ob.*?\)', '', regex=True, case=False)
-    
-    # Create masks to protect legitimate "Zone X Pob" and exact "Poblacion" names
-    mask_zone = s.str.contains(r'^Zone\s*\d+', regex=True, case=False)
-    mask_exact_pob = s.str.lower() == 'poblacion'
-    
-    # Strip trailing " Pob", " Pob.", or " Poblacion" from all other names
-    s.loc[~mask_zone & ~mask_exact_pob] = s.loc[~mask_zone & ~mask_exact_pob].str.replace(r'\s+Pob\.?$', '', regex=True, case=False)
-    s.loc[~mask_zone & ~mask_exact_pob] = s.loc[~mask_zone & ~mask_exact_pob].str.replace(r'\s+Poblacion$', '', regex=True, case=False)
 
-    # 5. Expand common Philippine local government abbreviations to official full names
-    s = s.str.replace(r'\bPob\.\b', 'Poblacion', regex=True)
-    s = s.str.replace(r'\bPob\b', 'Poblacion', regex=True)
-    s = s.str.replace(r'\bSta\.\b', 'Santa', regex=True)
-    s = s.str.replace(r'\bSta\b', 'Santa', regex=True)
-    s = s.str.replace(r'\bSto\.\b', 'Santo', regex=True)
-    s = s.str.replace(r'\bSto\b', 'Santo', regex=True)
-    
-    # Final cleanup of any accidental double spaces created during typing
-    s = s.str.replace('  ', ' ', regex=False)
-    
-    return s.str.strip()
+
+
+
+
+
+
+
+
 
 # ==========================================
 # THE DASHBOARD (Tabs and Filters)
@@ -1623,7 +1074,6 @@ try:
                 #  THE FIX: Force Left Merge to Prevent Missing Data
                 # ==========================================
                 if view_mode == "All Municipalities (Abra)":
-                    abra_munis = ["Bangued", "Boliney", "Bucay", "Bucloc", "Daguioman", "Danglas", "Dolores", "La Paz", "Lacub", "Lagangilang", "Lagayan", "Langiden", "Licuan-Baay", "Luba", "Malibcong", "Manabo", "Peñarrubia", "Pidigan", "Pilar", "Sallapadan", "San Isidro", "San Juan", "San Quintin", "Tayum", "Tineg", "Tubo", "Villaviciosa"]
                     df_base = pd.DataFrame({geo_col: abra_munis})
                     df_geo_summary = pd.merge(df_base, df_geo_summary, on=geo_col, how="left").fillna(0)
                 # ==========================================
@@ -4709,7 +4159,7 @@ try:
                             try:
                                 supabase.table('user_accounts').insert({
                                     "username": new_user.strip(),
-                                    "password_hash": make_hashes(new_pass),
+                                    "password_hash": hash_password(new_pass),
                                     "name": "RHU Visitor" if new_role == "Guest / Viewer" else "System Admin",
                                     "role": new_role,
                                     "account_status": "Approved",
