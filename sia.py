@@ -718,7 +718,7 @@ if st.session_state.get('active_program') == 'SBI':
         with c2:
             fig_gauge_td = go.Figure(go.Indicator(
                 mode = "gauge+number", value = td_cov, title = {'text': "Td (Grades 1 & 7)"},
-                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
+                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
             ))
             fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig_gauge_td, use_container_width=True, key="sbi_exec_gauge_td")
