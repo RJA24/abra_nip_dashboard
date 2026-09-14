@@ -703,114 +703,149 @@ if st.session_state.get('active_program') == 'SBI':
         st.markdown(f"### SBI Campaign Overview: {location_label}")
         
         if df_sbi_targets.empty:
-            st.warning("⚠️ Target database is empty. Waiting for sync.")
-            st.stop()
+            st.warning("⚠️ Target database is empty. Please go to the Admin Panel tab to sync the database.")
+        else:
+            # Apply Geographic Filter
+            df_view = df_sbi_targets.copy()
+            if view_mode == "Specific Municipality":
+                df_view = df_view[df_view['Municipality'].str.upper() == selected_muni.upper()]
+                
+            # Target Math
+            tgt_g1 = df_view['G1 Total'].sum()
+            tgt_g7 = df_view['G7 Total'].sum()
+            tgt_mr_td = tgt_g1 + tgt_g7
+            tgt_hpv = df_view['G4 Female'].sum()
             
-        # Apply Geographic Filter
-        df_view = df_sbi_targets.copy()
-        if view_mode == "Specific Municipality":
-            df_view = df_view[df_view['Municipality'].str.upper() == selected_muni.upper()]
+            # Accomplishment Math (VaccTrack)
+            g1_mr_doses, g1_td_doses, g7_mr_doses, g7_td_doses, hpv_1st = 0, 0, 0, 0, 0
             
-        # Target Math
-        tgt_g1 = df_view['G1 Total'].sum()
-        tgt_g7 = df_view['G7 Total'].sum()
-        tgt_mr_td = tgt_g1 + tgt_g7
-        tgt_hpv = df_view['G4 Female'].sum()
-        
-        # Accomplishment Math (VaccTrack)
-        # G1 MR & Td
-        g1_mr_doses, g1_td_doses = 0, 0
-        if not df_g1.empty:
-            df_g1_view = df_g1 if view_mode == "All Municipalities (Abra)" else df_g1[df_g1['City/Municipality Name'].str.upper() == selected_muni.upper()]
-            # Safely grab the exact VaccTrack columns
-            mr_m = [c for c in df_g1.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
-            mr_f = [c for c in df_g1.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
-            td_m = [c for c in df_g1.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
-            td_f = [c for c in df_g1.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
-            
-            if mr_m and mr_f: g1_mr_doses = pd.to_numeric(df_g1_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[mr_f[0]], errors='coerce').fillna(0).sum()
-            if td_m and td_f: g1_td_doses = pd.to_numeric(df_g1_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[td_f[0]], errors='coerce').fillna(0).sum()
+            if not df_g1.empty:
+                df_g1_view = df_g1 if view_mode == "All Municipalities (Abra)" else df_g1[df_g1['City/Municipality Name'].str.upper() == selected_muni.upper()]
+                mr_m = [c for c in df_g1.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
+                mr_f = [c for c in df_g1.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
+                td_m = [c for c in df_g1.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
+                td_f = [c for c in df_g1.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
+                
+                if mr_m and mr_f: g1_mr_doses = pd.to_numeric(df_g1_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[mr_f[0]], errors='coerce').fillna(0).sum()
+                if td_m and td_f: g1_td_doses = pd.to_numeric(df_g1_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[td_f[0]], errors='coerce').fillna(0).sum()
 
-        # G7 MR & Td
-        g7_mr_doses, g7_td_doses = 0, 0
-        if not df_g7.empty:
-            df_g7_view = df_g7 if view_mode == "All Municipalities (Abra)" else df_g7[df_g7['City/Municipality Name'].str.upper() == selected_muni.upper()]
-            mr_m = [c for c in df_g7.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
-            mr_f = [c for c in df_g7.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
-            td_m = [c for c in df_g7.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
-            td_f = [c for c in df_g7.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
+            if not df_g7.empty:
+                df_g7_view = df_g7 if view_mode == "All Municipalities (Abra)" else df_g7[df_g7['City/Municipality Name'].str.upper() == selected_muni.upper()]
+                mr_m = [c for c in df_g7.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
+                mr_f = [c for c in df_g7.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
+                td_m = [c for c in df_g7.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
+                td_f = [c for c in df_g7.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
+                
+                if mr_m and mr_f: g7_mr_doses = pd.to_numeric(df_g7_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[mr_f[0]], errors='coerce').fillna(0).sum()
+                if td_m and td_f: g7_td_doses = pd.to_numeric(df_g7_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[td_f[0]], errors='coerce').fillna(0).sum()
+                
+            if not df_g4.empty:
+                df_g4_view = df_g4 if view_mode == "All Municipalities (Abra)" else df_g4[df_g4['City/Municipality Name'].str.upper() == selected_muni.upper()]
+                dose1 = [c for c in df_g4.columns if 'First Dose' in c and 'HPV' in c]
+                if dose1: hpv_1st = pd.to_numeric(df_g4_view[dose1[0]], errors='coerce').fillna(0).sum()
+                
+            # Overall Math
+            total_mr = g1_mr_doses + g7_mr_doses
+            total_td = g1_td_doses + g7_td_doses
+            mr_cov = (total_mr / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
+            td_cov = (total_td / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
+            hpv_cov = (hpv_1st / tgt_hpv * 100) if tgt_hpv > 0 else 0
             
-            if mr_m and mr_f: g7_mr_doses = pd.to_numeric(df_g7_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[mr_f[0]], errors='coerce').fillna(0).sum()
-            if td_m and td_f: g7_td_doses = pd.to_numeric(df_g7_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[td_f[0]], errors='coerce').fillna(0).sum()
+            # KPI Cards
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Measles-Rubella (MR) Coverage", f"{mr_cov:.1f}%", f"{total_mr:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
+            k2.metric("Tetanus-diphtheria (Td) Coverage", f"{td_cov:.1f}%", f"{total_td:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
+            k3.metric("HPV Coverage (1st Dose)", f"{hpv_cov:.1f}%", f"{hpv_1st:,.0f} / {tgt_hpv:,.0f} Target", delta_color="off")
             
-        # G4 HPV
-        hpv_1st, hpv_2nd = 0, 0
-        if not df_g4.empty:
-            df_g4_view = df_g4 if view_mode == "All Municipalities (Abra)" else df_g4[df_g4['City/Municipality Name'].str.upper() == selected_muni.upper()]
-            dose1 = [c for c in df_g4.columns if 'First Dose' in c and 'HPV' in c]
-            dose2 = [c for c in df_g4.columns if 'Second Dose' in c and 'HPV' in c]
+            st.divider()
             
-            if dose1: hpv_1st = pd.to_numeric(df_g4_view[dose1[0]], errors='coerce').fillna(0).sum()
-            if dose2: hpv_2nd = pd.to_numeric(df_g4_view[dose2[0]], errors='coerce').fillna(0).sum()
-            
-        # Overall Math
-        total_mr = g1_mr_doses + g7_mr_doses
-        total_td = g1_td_doses + g7_td_doses
-        mr_cov = (total_mr / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
-        td_cov = (total_td / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
-        hpv_cov = (hpv_1st / tgt_hpv * 100) if tgt_hpv > 0 else 0
-        
-        # 1. Top KPI Cards
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Measles-Rubella (MR) Coverge", f"{mr_cov:.1f}%", f"{total_mr:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
-        k2.metric("Tetanus-diphtheria (Td) Coverage", f"{td_cov:.1f}%", f"{total_td:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
-        k3.metric("HPV Coverage (1st Dose)", f"{hpv_cov:.1f}%", f"{hpv_1st:,.0f} / {tgt_hpv:,.0f} Target", delta_color="off")
-        
-        st.divider()
-        
-        # 2. Master Progress Gauges
-        import plotly.graph_objects as go
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            fig_gauge_mr = go.Figure(go.Indicator(
-                mode = "gauge+number", value = mr_cov, title = {'text': "MR (Grades 1 & 7)"},
-                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
-            ))
-            fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_gauge_mr, use_container_width=True, key="sbi_exec_gauge_mr")
-            
-        with c2:
-            fig_gauge_td = go.Figure(go.Indicator(
-                mode = "gauge+number", value = td_cov, title = {'text': "Td (Grades 1 & 7)"},
-                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}
-            ))
-            fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_gauge_td, use_container_width=True, key="sbi_exec_gauge_td")
-            
-        with c3:
-            fig_gauge_hpv = go.Figure(go.Indicator(
-                mode = "gauge+number", value = hpv_cov, title = {'text': "HPV 1st Dose (Grade 4 Female)"},
-                gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#D81B60"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 90}}
-            ))
-            fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_gauge_hpv, use_container_width=True, key="sbi_exec_gauge_hpv")
+            import plotly.graph_objects as go
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                fig_gauge_mr = go.Figure(go.Indicator(mode = "gauge+number", value = mr_cov, title = {'text': "MR (Grades 1 & 7)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(fig_gauge_mr, use_container_width=True, key="sbi_exec_gauge_mr")
+                
+            with c2:
+                fig_gauge_td = go.Figure(go.Indicator(mode = "gauge+number", value = td_cov, title = {'text': "Td (Grades 1 & 7)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(fig_gauge_td, use_container_width=True, key="sbi_exec_gauge_td")
+                
+            with c3:
+                fig_gauge_hpv = go.Figure(go.Indicator(mode = "gauge+number", value = hpv_cov, title = {'text': "HPV 1st Dose (Grade 4 Female)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#D81B60"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 90}}))
+                fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(fig_gauge_hpv, use_container_width=True, key="sbi_exec_gauge_hpv")
 
     # 2. MR & TD (GRADES 1 & 7)
     with tab_sbi_mr:
         st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
+        st.info("Chart module under construction.")
         
     # 3. HPV (GRADE 4)
     with tab_sbi_hpv:
         st.markdown(f"### Human Papillomavirus (HPV) - Female Students: {location_label}")
+        st.info("Chart module under construction.")
 
     # 4. DEFERRALS & REFUSALS
     with tab_sbi_def:
         st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
+        st.info("Chart module under construction.")
 
-    # 5. ADMIN PANEL
+    # 5. ADMIN PANEL (SBI SYNC)
     with tab_sbi_admin:
         st.markdown("### ⚙️ System Administration")
-        st.info("Target Database configuration will be added here once the layout is finalized.")
+        admin_password_sbi = st.text_input("Enter Admin Password to unlock controls:", type="password", key="sbi_admin_pass")
+        
+        if admin_password_sbi == "rjca1204":
+            st.success("✅ Admin controls unlocked.")
+            st.divider()
+            
+            st.markdown("### 🏫 Phase 1: SBI Target Database Sync")
+            st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
+            
+            if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets_btn"):
+                with st.spinner("Downloading and processing DepEd master sheet..."):
+                    try:
+                        import numpy as np
+                        conn = st.connection("gsheets", type=GSheetsConnection)
+                        sbi_sheet_url = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
+                        df_raw = conn.read(spreadsheet=sbi_sheet_url, worksheet="Target by School", skiprows=4, ttl=0)
+                        
+                        if df_raw.empty:
+                            st.error("Failed to read the DepEd Target sheet.")
+                        else:
+                            df_raw.columns = [str(c).strip() for c in df_raw.columns]
+                            if 'Province' in df_raw.columns:
+                                df_raw = df_raw[df_raw['Province'].astype(str).str.upper() == 'ABRA'].copy()
+                                
+                            df_raw['Municipality'] = df_raw['Municipality'].astype(str).str.strip().str.title()
+                            df_raw['School_name'] = df_raw['School_name'].astype(str).str.strip()
+                            df_raw['beis_school_id'] = df_raw['beis_school_id'].astype(str).str.replace(r'\.0$', '', regex=True)
+                            
+                            target_cols = {
+                                'Municipality': 'municipality', 'Barangay': 'barangay',
+                                'beis_school_id': 'school_id', 'School_name': 'school_name',
+                                'g1male': 'g1_male', 'g1female': 'g1_female',
+                                'g4female': 'g4_female', 'g7male': 'g7_male', 'g7female': 'g7_female'
+                            }
+                            df_push = df_raw[[c for c in target_cols.keys() if c in df_raw.columns]].rename(columns=target_cols)
+                            
+                            for c in ['g1_male', 'g1_female', 'g4_female', 'g7_male', 'g7_female']:
+                                if c in df_push.columns:
+                                    df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
+                                    
+                            df_push['g1_total'] = df_push.get('g1_male', 0) + df_push.get('g1_female', 0)
+                            df_push['g7_total'] = df_push.get('g7_male', 0) + df_push.get('g7_female', 0)
+                            
+                            df_push = df_push.replace({np.nan: None})
+                            
+                            supabase.table('sbi_targets').delete().neq('id', 0).execute()
+                            supabase.table('sbi_targets').insert(df_push.to_dict(orient='records')).execute()
+                            
+                            st.success("✅ SBI Targets successfully synced to Supabase!")
+                            st.cache_data.clear()
+                    except Exception as e:
+                        st.error(f"SBI Target Sync Failed: {e}")
 
     st.stop() # Prevents the MR SIA code below from executing when in SBI mode
 
