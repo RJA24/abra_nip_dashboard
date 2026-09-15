@@ -66,6 +66,7 @@ def get_last_updated_time():
 st.set_page_config(page_title="Abra NIP Dashboard", page_icon="https://github.com/RJA24/abra_nip_dashboard/blob/main/PHO%20logo.png?raw=true?raw=true", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
     /* 1. Pull the dashboard to the very top */
     .block-container {
@@ -537,58 +538,218 @@ if st.session_state.get('active_program') == 'SBI':
     with tab_sbi_target:
         st.markdown(f"### Target Baseline Overview: {location_label}")
         if df_sbi_targets.empty:
-            st.warning("⚠️ Target database is empty. Please go to the Admin Panel tab to sync the database.")
+            st.warning("Target database is empty. Please go to the Admin Panel tab to sync the database.")
         else:
             df_tgt_view = df_sbi_targets.copy()
             if view_mode == "Specific Municipality":
                 df_tgt_view = df_tgt_view[df_tgt_view['Municipality'].str.upper() == selected_muni.upper()]
-                
+
+            # Keep target fields numeric before building summaries/charts.
+            sbi_target_numeric_cols = ['G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']
+            for col in sbi_target_numeric_cols:
+                if col in df_tgt_view.columns:
+                    df_tgt_view[col] = pd.to_numeric(df_tgt_view[col], errors='coerce').fillna(0)
+
             st.markdown("#### Eligible Student Population by Grade Level")
             t1, t2, t3 = st.columns(3)
             t1.metric("Grade 1 (MR & Td)", f"{df_tgt_view['G1 Total'].sum():,.0f}", "Male & Female")
             t2.metric("Grade 4 (HPV)", f"{df_tgt_view['G4 Female'].sum():,.0f}", "Female Only")
             t3.metric("Grade 7 (MR & Td)", f"{df_tgt_view['G7 Total'].sum():,.0f}", "Male & Female")
-            
+
             st.divider()
-            
-            st.markdown(f"#### Geographic Distribution of Eligible Students")
+
+            # Shared geographic summary used by both the new table and the existing chart.
             geo_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
-            
-            df_geo_tgt = df_tgt_view.groupby(geo_col)[['G1 Total', 'G4 Female', 'G7 Total']].sum().reset_index()
+            df_geo_tgt = (
+                df_tgt_view
+                .groupby(geo_col, dropna=False)[['G1 Total', 'G4 Female', 'G7 Total']]
+                .sum()
+                .reset_index()
+            )
             df_geo_tgt['Total Eligible'] = df_geo_tgt['G1 Total'] + df_geo_tgt['G4 Female'] + df_geo_tgt['G7 Total']
-            df_geo_tgt = df_geo_tgt.sort_values('Total Eligible', ascending=True)
-            
-            df_melt_tgt = df_geo_tgt.melt(id_vars=[geo_col], value_vars=['G1 Total', 'G4 Female', 'G7 Total'], var_name='Grade Level', value_name='Students')
-            
-            import plotly.express as px
+
+            # Visible target summary table before the geographic chart.
+            st.markdown(
+                '''<h4 style="margin-bottom:0.5rem;">
+                <i class="fa-solid fa-table-list" style="color:#0033A0; margin-right:8px;"></i>
+                Geographic Target Summary
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            st.caption(
+                "Municipality-level target totals across Abra."
+                if view_mode == "All Municipalities (Abra)"
+                else f"Barangay-level target totals for {selected_muni}."
+            )
+
+            df_geo_table = df_geo_tgt.sort_values('Total Eligible', ascending=False).copy()
+            st.dataframe(
+                df_geo_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    geo_col: st.column_config.TextColumn(geo_col),
+                    'G1 Total': st.column_config.NumberColumn('Grade 1', format='%d'),
+                    'G4 Female': st.column_config.NumberColumn('Grade 4 Female', format='%d'),
+                    'G7 Total': st.column_config.NumberColumn('Grade 7', format='%d'),
+                    'Total Eligible': st.column_config.NumberColumn('Total Eligible', format='%d'),
+                },
+            )
+
+            st.divider()
+
+            st.markdown("#### Geographic Distribution of Eligible Students")
+            df_geo_chart = df_geo_tgt.sort_values('Total Eligible', ascending=True).copy()
+            df_melt_tgt = df_geo_chart.melt(
+                id_vars=[geo_col],
+                value_vars=['G1 Total', 'G4 Female', 'G7 Total'],
+                var_name='Grade Level',
+                value_name='Students'
+            )
+
             fig_tgt_geo = px.bar(
-                df_melt_tgt, 
-                x='Students', 
-                y=geo_col, 
-                color='Grade Level', 
-                orientation='h', 
+                df_melt_tgt,
+                x='Students',
+                y=geo_col,
+                color='Grade Level',
+                orientation='h',
                 text_auto='.0f',
                 color_discrete_sequence=['#1E88E5', '#D81B60', '#43A047']
             )
             fig_tgt_geo.update_layout(
-                dragmode=False, 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                xaxis_title="Number of Eligible Students", 
-                yaxis_title="", 
-                height=max(400, len(df_geo_tgt) * 45), 
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Number of Eligible Students",
+                yaxis_title="",
+                height=max(400, len(df_geo_chart) * 45),
                 margin=dict(l=10, r=10, t=30, b=50),
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                 legend_title_text=""
             )
             st.plotly_chart(fig_tgt_geo, use_container_width=True, key="sbi_tgt_geo_bar")
-            
+
             st.divider()
-            
-            st.markdown("#### School-Level Target Baseline")
-            with st.expander("View & Download Detailed School Targets", expanded=False):
-                df_school_view = df_tgt_view[['Municipality', 'Barangay', 'School ID', 'School Name', 'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']]
-                st.dataframe(df_school_view, use_container_width=True, hide_index=True)
-                
+
+            # School-level target chart directly below the existing geographic chart.
+            st.markdown(
+                '''<h4 style="margin-bottom:0.5rem;">
+                <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+                Targets by School
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            st.caption("Grade 1, Grade 4 female, and Grade 7 targets for individual schools.")
+
+            school_limit_label = st.selectbox(
+                "Schools shown in chart:",
+                ["Top 25", "Top 50", "All Schools"],
+                index=0,
+                key="sbi_school_target_chart_limit"
+            )
+
+            school_chart_cols = ['School ID', 'School Name', 'Municipality', 'Barangay', 'G1 Total', 'G4 Female', 'G7 Total']
+            df_school_chart = df_tgt_view[[c for c in school_chart_cols if c in df_tgt_view.columns]].copy()
+            df_school_chart['Total Eligible'] = (
+                df_school_chart.get('G1 Total', 0)
+                + df_school_chart.get('G4 Female', 0)
+                + df_school_chart.get('G7 Total', 0)
+            )
+
+            if view_mode == "All Municipalities (Abra)":
+                df_school_chart['School Label'] = (
+                    df_school_chart['School Name'].astype(str).str.strip()
+                    + ' - ' + df_school_chart['Municipality'].astype(str).str.strip()
+                    + ' [' + df_school_chart['School ID'].astype(str).str.strip() + ']'
+                )
+            else:
+                df_school_chart['School Label'] = (
+                    df_school_chart['School Name'].astype(str).str.strip()
+                    + ' [' + df_school_chart['School ID'].astype(str).str.strip() + ']'
+                )
+
+            df_school_chart = df_school_chart.sort_values('Total Eligible', ascending=False)
+            if school_limit_label == "Top 25":
+                df_school_chart_plot = df_school_chart.head(25).copy()
+            elif school_limit_label == "Top 50":
+                df_school_chart_plot = df_school_chart.head(50).copy()
+            else:
+                df_school_chart_plot = df_school_chart.copy()
+
+            # Horizontal charts read from bottom to top, so reverse the selected ranking.
+            df_school_chart_plot = df_school_chart_plot.sort_values('Total Eligible', ascending=True)
+            df_school_melt = df_school_chart_plot.melt(
+                id_vars=['School Label'],
+                value_vars=['G1 Total', 'G4 Female', 'G7 Total'],
+                var_name='Grade Level',
+                value_name='Students'
+            )
+
+            fig_tgt_school = px.bar(
+                df_school_melt,
+                x='Students',
+                y='School Label',
+                color='Grade Level',
+                orientation='h',
+                text_auto='.0f',
+                color_discrete_sequence=['#1E88E5', '#D81B60', '#43A047']
+            )
+            fig_tgt_school.update_traces(textposition='inside', insidetextanchor='middle')
+            fig_tgt_school.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Number of Eligible Students",
+                yaxis_title="",
+                height=max(550, len(df_school_chart_plot) * 38),
+                margin=dict(l=10, r=10, t=30, b=60),
+                legend=dict(orientation="h", yanchor="top", y=-0.10, xanchor="center", x=0.5),
+                legend_title_text="",
+                bargap=0.18,
+            )
+            st.plotly_chart(
+                fig_tgt_school,
+                use_container_width=True,
+                key="sbi_tgt_school_bar",
+                config={
+                    'scrollZoom': False,
+                    'displayModeBar': True,
+                    'toImageButtonOptions': {
+                        'format': 'png',
+                        'filename': f"SBI_School_Targets_{location_label.replace(', ', '_')}",
+                        'scale': 2
+                    }
+                }
+            )
+
+            st.divider()
+
+            st.markdown(
+                '''<h4 style="margin-bottom:0.5rem;">
+                <i class="fa-solid fa-list" style="color:#0033A0; margin-right:8px;"></i>
+                Detailed School Target Baseline
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            with st.expander("View and download detailed school targets", expanded=False):
+                df_school_view = df_tgt_view[['Municipality', 'Barangay', 'School ID', 'School Name', 'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']].copy()
+                df_school_view['Total Eligible'] = df_school_view['G1 Total'] + df_school_view['G4 Female'] + df_school_view['G7 Total']
+                df_school_view = df_school_view.sort_values(['Municipality', 'School Name'])
+
+                st.dataframe(
+                    df_school_view,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'G1 Male': st.column_config.NumberColumn('G1 Male', format='%d'),
+                        'G1 Female': st.column_config.NumberColumn('G1 Female', format='%d'),
+                        'G1 Total': st.column_config.NumberColumn('G1 Total', format='%d'),
+                        'G4 Female': st.column_config.NumberColumn('G4 Female', format='%d'),
+                        'G7 Male': st.column_config.NumberColumn('G7 Male', format='%d'),
+                        'G7 Female': st.column_config.NumberColumn('G7 Female', format='%d'),
+                        'G7 Total': st.column_config.NumberColumn('G7 Total', format='%d'),
+                        'Total Eligible': st.column_config.NumberColumn('Total Eligible', format='%d'),
+                    }
+                )
+
                 csv_sbi_tgt = df_school_view.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="Download School Targets (CSV)",
