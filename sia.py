@@ -750,7 +750,7 @@ if st.session_state.get('active_program') == 'SBI':
                     }
                 )
 
-                csv_sbi_tgt = df_school_view.to_csv(index=False).encode('utf-8')
+                csv_sbi_tgt = df_school_view.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label="Download School Targets (CSV)",
                     data=csv_sbi_tgt,
@@ -1776,7 +1776,7 @@ try:
             
             # 8. Render the CSV Export Button
             st.markdown("<br>", unsafe_allow_html=True)
-            csv_master = df_master_report.to_csv(index=False).encode('utf-8')
+            csv_master = df_master_report.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=" Download Master Coverage Report (CSV)",
                 data=csv_master,
@@ -1872,7 +1872,7 @@ try:
                 
                 # 7. Render the Export Button
                 st.markdown("<br>", unsafe_allow_html=True)
-                csv_muni_opt = df_muni_report.to_csv(index=False).encode('utf-8')
+                csv_muni_opt = df_muni_report.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label="📄 Download Municipal OPT Report (CSV)",
                     data=csv_muni_opt,
@@ -1979,7 +1979,7 @@ try:
                         
                         st.dataframe(df_export_mr_proj, use_container_width=True, hide_index=True)
                         
-                        csv_mr_proj = df_export_mr_proj.to_csv(index=False).encode('utf-8')
+                        csv_mr_proj = df_export_mr_proj.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download Projected MR Targets (CSV)", 
                             data=csv_mr_proj, 
@@ -2047,7 +2047,7 @@ try:
                         df_export_va_proj = df_view_va[[c for c in va_proj_cols if c in df_view_va.columns]]
                         st.dataframe(df_export_va_proj, use_container_width=True, hide_index=True)
                         
-                        csv_va_proj = df_export_va_proj.to_csv(index=False).encode('utf-8')
+                        csv_va_proj = df_export_va_proj.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download Projected Vit A Targets (CSV)", 
                             data=csv_va_proj, 
@@ -2126,7 +2126,7 @@ try:
 
                         st.dataframe(df_export_mr_act, use_container_width=True, hide_index=True)
                         
-                        csv_mr_act = df_export_mr_act.to_csv(index=False).encode('utf-8')
+                        csv_mr_act = df_export_mr_act.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download Actual MR Targets (CSV)", 
                             data=csv_mr_act, 
@@ -2194,7 +2194,7 @@ try:
                         df_export_va_act = df_view_va[[c for c in va_act_cols if c in df_view_va.columns]]
                         st.dataframe(df_export_va_act, use_container_width=True, hide_index=True)
                         
-                        csv_va_act = df_export_va_act.to_csv(index=False).encode('utf-8')
+                        csv_va_act = df_export_va_act.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download Actual Vit A Targets (CSV)", 
                             data=csv_va_act, 
@@ -2250,7 +2250,7 @@ try:
                     st.dataframe(df_table, use_container_width=True, hide_index=True)
                     
                     # --- RAW DATA EXPORT ---
-                    csv_comp = df_table.to_csv(index=False).encode('utf-8')
+                    csv_comp = df_table.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
                         label="Download Comparison Data (CSV)", 
                         data=csv_comp, 
@@ -2455,7 +2455,7 @@ try:
                 # 4. Clean the CSV Export natively in Pandas so Excel downloads look perfect
                 df_csv_mr = pd.concat([pd.DataFrame([pinned_total_mr]), tally_grid_mr], ignore_index=True)
                 df_csv_mr = df_csv_mr.replace(0, "") 
-                csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8')
+                csv_tally_mr = df_csv_mr.to_csv(index=False).encode('utf-8-sig')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
                 st.download_button(label=" Download MR Tally Sheet (CSV)", data=csv_tally_mr, file_name=f"MR_Daily_Tally_{selected_month_mr.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_mr_tally_{location_label}")
@@ -2464,7 +2464,7 @@ try:
             st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw MR Accomplishment Data"):
                 st.dataframe(df_mr_filtered, use_container_width=True)
-                csv_mr = df_mr_filtered.to_csv(index=False).encode('utf-8')
+                csv_mr = df_mr_filtered.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label=" Download MR Data (CSV)",
                     data=csv_mr,
@@ -2668,7 +2668,7 @@ try:
                 
                 df_csv_va = pd.concat([pd.DataFrame([pinned_total_va]), tally_grid_va], ignore_index=True)
                 df_csv_va = df_csv_va.replace(0, "") 
-                csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8')
+                csv_tally_va = df_csv_va.to_csv(index=False).encode('utf-8-sig')
                 
                 # --- UPDATED: Dynamic CSV Filename ---
                 st.download_button(label=" Download Vit A Tally Sheet (CSV)", data=csv_tally_va, file_name=f"VitA_Daily_Tally_{selected_month_va.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_va_tally_{location_label}")
@@ -2677,7 +2677,7 @@ try:
             st.markdown("####  Raw Data Export")
             with st.expander("View & Download Raw Vitamin A Accomplishment Data"):
                 st.dataframe(df_vita_filtered, use_container_width=True)
-                csv_va = df_vita_filtered.to_csv(index=False).encode('utf-8')
+                csv_va = df_vita_filtered.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label=" Download Vitamin A Data (CSV)",
                     data=csv_va,
@@ -2795,7 +2795,7 @@ try:
             st.dataframe(final_df, use_container_width=True, hide_index=True)
 
             # Generate the CSV download button
-            csv_data = final_df.to_csv(index=False).encode('utf-8')
+            csv_data = final_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label=f"Download {table_title} Table (CSV)",
                 data=csv_data,
@@ -2910,7 +2910,7 @@ try:
                 if not df_mr_def_only.empty:
                     with st.expander("View & Download Raw MR Deferral/Refusal Data", expanded=False):
                         st.dataframe(df_mr_def_only, use_container_width=True)
-                        csv_mr = df_mr_def_only.to_csv(index=False).encode('utf-8')
+                        csv_mr = df_mr_def_only.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download MR Data (CSV)",
                             data=csv_mr,
@@ -2950,7 +2950,7 @@ try:
                 if not df_va_def_only.empty:
                     with st.expander("View & Download Raw Vit A Deferral/Refusal Data", expanded=False):
                         st.dataframe(df_va_def_only, use_container_width=True)
-                        csv_va = df_va_def_only.to_csv(index=False).encode('utf-8')
+                        csv_va = df_va_def_only.to_csv(index=False).encode('utf-8-sig')
                         st.download_button(
                             label="Download Vit A Data (CSV)",
                             data=csv_va,
@@ -3236,7 +3236,7 @@ try:
                     
                     df_csv_vt = pd.concat([pd.DataFrame([pinned_total]), tally_grid], ignore_index=True)
                     df_csv_vt = df_csv_vt.replace(0, "") 
-                    csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8')
+                    csv_tally_vt = df_csv_vt.to_csv(index=False).encode('utf-8-sig')
                     
                     # --- UPDATED: Dynamic CSV Filename ---
                     st.download_button(label=f" Download {prog_name} Tally Sheet (CSV)", data=csv_tally_vt, file_name=f"VaccTrack_{prog_name.replace(' ', '_')}_Daily_Tally_{selected_month.replace(' ', '_')}_{location_label.replace(', ', '_').replace(' ', '_')}.csv", mime="text/csv", key=f"dl_vt_{prog_name.replace(' ', '_')}_tally_{location_label}")
@@ -3436,7 +3436,7 @@ try:
                 # Export Button for the Reconciliation Data
                 st.markdown("<br>", unsafe_allow_html=True)
                 df_csv_recon = pd.concat([pd.DataFrame([pinned_recon_total]), df_recon], ignore_index=True)
-                csv_recon = df_csv_recon.to_csv(index=False).encode('utf-8')
+                csv_recon = df_csv_recon.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label=" Download Reconciliation Report (CSV)", 
                     data=csv_recon, 
@@ -3449,7 +3449,7 @@ try:
                 st.markdown("####  Cleaned Raw Data Export")
                 with st.expander("View & Download Cleaned VaccTrack Data"):
                     st.dataframe(df_vt, use_container_width=True)
-                    csv_raw_vt = df_vt.to_csv(index=False).encode('utf-8')
+                    csv_raw_vt = df_vt.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(label=" Download Cleaned VaccTrack Data (CSV)", data=csv_raw_vt, file_name=f"VaccTrack_Cleaned_{location_label.replace(', ', '_')}.csv", mime="text/csv", key=f"dl_vt_raw_{location_label}")
 
     # ==========================================
@@ -4203,7 +4203,7 @@ try:
                     st.dataframe(df_brgy_summary.style.format(format_dict), use_container_width=True, hide_index=True)
                     
                     # Provide a download button for the specific barangay breakdown
-                    csv_brgy = df_brgy_summary.to_csv(index=False).encode('utf-8')
+                    csv_brgy = df_brgy_summary.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
                         label=f"Download {selected_car_prov} Barangay Accomplishment (CSV)",
                         data=csv_brgy,
