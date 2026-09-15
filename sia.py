@@ -66,8 +66,8 @@ def get_last_updated_time():
 st.set_page_config(page_title="Abra NIP Dashboard", page_icon="https://github.com/RJA24/abra_nip_dashboard/blob/main/PHO%20logo.png?raw=true?raw=true", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <style>
+    @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css');
     /* 1. Pull the dashboard to the very top */
     .block-container {
         padding-top: 0.5rem !important; 
