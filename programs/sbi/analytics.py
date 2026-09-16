@@ -56,14 +56,27 @@ def normalize_municipality_name(value: object) -> str:
     raw = str(value or "").strip()
     key = _ascii_key(raw.replace("(CAPITAL)", ""))
 
+    # Known Abra municipality naming variants.
     if "BANGUED" in key:
         return "Bangued"
+
     if "PENARRUBIA" in key:
         return "Peñarrubia"
+
+    # Target/GeoJSON sources may use:
+    # "Licuan-Baay (Licuan)"
+    # while VaccTrack uses "Licuan-Baay".
+    if key.startswith("LICUANBAAY"):
+        return "Licuan-Baay"
+
+    # Handle both spellings found in source datasets.
+    if key in {"SALAPADAN", "SALLAPADAN"}:
+        return "Sallapadan"
 
     for muni_key, muni_name in _ABRA_KEY_TO_NAME.items():
         if key == muni_key:
             return muni_name
+
     return raw.title()
 
 
