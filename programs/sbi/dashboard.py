@@ -169,13 +169,218 @@ def render_sbi_dashboard(supabase) -> None:
     else:
         period_label = "All available dates"
 
+    def _build_mr_td_school_summary(events, targets, target_col):
+        school = events.groupby(
+            ['Municipality', 'Barangay', 'School ID', 'School Name'],
+            dropna=False,
+        )[['MR Doses', 'Td Doses']].sum().reset_index()
+
+        school['School ID'] = school['School ID'].astype(str).str.strip()
+        if not targets.empty:
+            target_school = targets[['School ID', target_col]].copy().rename(columns={target_col: 'Target'})
+            target_school['School ID'] = target_school['School ID'].astype(str).str.strip()
+            target_school['Target'] = pd.to_numeric(target_school['Target'], errors='coerce').fillna(0)
+            target_school = target_school.groupby('School ID', as_index=False)['Target'].sum()
+            school = school.merge(target_school, on='School ID', how='left')
+        else:
+            school['Target'] = 0
+
+        school['Target'] = pd.to_numeric(school['Target'], errors='coerce').fillna(0)
+        school['MR Coverage %'] = _safe_pct(school['MR Doses'], school['Target'], default=np.nan)
+        school['Td Coverage %'] = _safe_pct(school['Td Doses'], school['Target'], default=np.nan)
+        school['MR Remaining to 95%'] = np.maximum(np.ceil(school['Target'] * 0.95 - school['MR Doses']), 0)
+        school['Td Remaining to 95%'] = np.maximum(np.ceil(school['Target'] * 0.95 - school['Td Doses']), 0)
+        school['School Label'] = np.where(
+            view_mode == "All Municipalities (Abra)",
+            school['School Name'].astype(str) + ' - ' + school['Municipality'].astype(str),
+            school['School Name'].astype(str),
+        )
+        return school
+
+    def _render_mr_td_school_coverage(school, key_prefix, heading='Coverage by School'):
+        st.markdown(
+            f'''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+            {heading}
+            </h4>''',
+            unsafe_allow_html=True,
+        )
+
+        chart_scope = st.selectbox(
+            'Schools shown in chart:',
+            ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
+            key=f'{key_prefix}_school_scope',
+        )
+        school_plot = school.sort_values('Target', ascending=False).copy()
+        if chart_scope.startswith('Top 25'):
+            school_plot = school_plot.head(25)
+        elif chart_scope.startswith('Top 50'):
+            school_plot = school_plot.head(50)
+        school_plot = school_plot.sort_values('Target', ascending=True)
+
+        school_long = school_plot.melt(
+            id_vars=['School Label'],
+            value_vars=['MR Coverage %', 'Td Coverage %'],
+            var_name='Vaccine',
+            value_name='Coverage %',
+        ).dropna(subset=['Coverage %'])
+
+        if not school_long.empty:
+            fig_school = px.bar(
+                school_long,
+                x='Coverage %',
+                y='School Label',
+                color='Vaccine',
+                orientation='h',
+                barmode='group',
+                text_auto='.1f',
+                color_discrete_sequence=['#1E88E5', '#43A047'],
+            )
+            fig_school.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
+            fig_school.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Coverage (%)',
+                yaxis_title='',
+                height=max(520, len(school_plot) * 40),
+                margin=dict(l=10, r=45, t=25, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
+                legend_title_text='',
+            )
+            st.plotly_chart(fig_school, width='stretch', key=f'{key_prefix}_school_chart')
+
+        school_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
+        st.dataframe(
+            school_export,
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'Target': st.column_config.NumberColumn('Target', format='%d'),
+                'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
+                'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
+                'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
+                'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
+                'MR Remaining to 95%': st.column_config.NumberColumn('MR to 95%', format='%d'),
+                'Td Remaining to 95%': st.column_config.NumberColumn('Td to 95%', format='%d'),
+            },
+        )
+        st.download_button(
+            label='Download School Performance (CSV)',
+            data=school_export.to_csv(index=False).encode('utf-8-sig'),
+            file_name=f'{key_prefix}_School_Performance_{location_label.replace(", ", "_")}.csv',
+            mime='text/csv',
+            key=f'{key_prefix}_school_download',
+        )
+
+    def _build_hpv_school_summary(events, targets):
+        school = events.groupby(
+            ['Municipality', 'Barangay', 'School ID', 'School Name'],
+            dropna=False,
+        )[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+        school['School ID'] = school['School ID'].astype(str).str.strip()
+
+        if not targets.empty:
+            target_school = targets[['School ID', 'G4 Target']].copy().rename(columns={'G4 Target': 'Target'})
+            target_school['School ID'] = target_school['School ID'].astype(str).str.strip()
+            target_school['Target'] = pd.to_numeric(target_school['Target'], errors='coerce').fillna(0)
+            target_school = target_school.groupby('School ID', as_index=False)['Target'].sum()
+            school = school.merge(target_school, on='School ID', how='left')
+        else:
+            school['Target'] = 0
+
+        school['Target'] = pd.to_numeric(school['Target'], errors='coerce').fillna(0)
+        school['1st Dose Coverage %'] = _safe_pct(school['HPV Dose 1'], school['Target'], default=np.nan)
+        school['2nd Dose Coverage %'] = _safe_pct(school['HPV Dose 2'], school['Target'], default=np.nan)
+        school['1st Dose Remaining to 90%'] = np.maximum(np.ceil(school['Target'] * 0.90 - school['HPV Dose 1']), 0)
+        school['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(school['Target'] * 0.90 - school['HPV Dose 2']), 0)
+        school['School Label'] = np.where(
+            view_mode == "All Municipalities (Abra)",
+            school['School Name'].astype(str) + ' - ' + school['Municipality'].astype(str),
+            school['School Name'].astype(str),
+        )
+        return school
+
+    def _render_hpv_school_coverage(school, heading='Coverage by School'):
+        st.markdown(
+            f'''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+            {heading}
+            </h4>''',
+            unsafe_allow_html=True,
+        )
+        hpv_scope = st.selectbox(
+            'Schools shown in chart:',
+            ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
+            key='sbi_hpv_school_scope',
+        )
+        hpv_school_plot = school.sort_values('Target', ascending=False).copy()
+        if hpv_scope.startswith('Top 25'):
+            hpv_school_plot = hpv_school_plot.head(25)
+        elif hpv_scope.startswith('Top 50'):
+            hpv_school_plot = hpv_school_plot.head(50)
+        hpv_school_plot = hpv_school_plot.sort_values('Target', ascending=True)
+
+        hpv_school_long = hpv_school_plot.melt(
+            id_vars=['School Label'],
+            value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
+            var_name='Dose',
+            value_name='Coverage %',
+        ).dropna(subset=['Coverage %'])
+
+        if not hpv_school_long.empty:
+            fig_hpv_school = px.bar(
+                hpv_school_long,
+                x='Coverage %',
+                y='School Label',
+                color='Dose',
+                orientation='h',
+                barmode='group',
+                text_auto='.1f',
+                color_discrete_sequence=['#D81B60', '#8E24AA'],
+            )
+            fig_hpv_school.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
+            fig_hpv_school.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Coverage (%)',
+                yaxis_title='',
+                height=max(520, len(hpv_school_plot) * 40),
+                margin=dict(l=10, r=45, t=25, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
+                legend_title_text='',
+            )
+            st.plotly_chart(fig_hpv_school, width='stretch', key='sbi_hpv_school_chart')
+
+        hpv_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
+        st.dataframe(
+            hpv_export,
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'Target': st.column_config.NumberColumn('Target', format='%d'),
+                'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
+                'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
+                '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
+                '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
+                '1st Dose Remaining to 90%': st.column_config.NumberColumn('1st Dose to 90%', format='%d'),
+                '2nd Dose Remaining to 90%': st.column_config.NumberColumn('2nd Dose to 90%', format='%d'),
+            },
+        )
+        st.download_button(
+            label='Download HPV School Performance (CSV)',
+            data=hpv_export.to_csv(index=False).encode('utf-8-sig'),
+            file_name=f'SBI_HPV_School_Performance_{location_label.replace(", ", "_")}.csv',
+            mime='text/csv',
+            key='sbi_hpv_school_download',
+        )
+
     def _render_mr_td_panel(events, targets, target_col, panel_label, key_prefix):
         st.markdown(
             f'''<h4 style="margin-bottom:0.25rem;">
             <i class="fa-solid fa-syringe" style="color:#0033A0; margin-right:8px;"></i>
             {panel_label}
             </h4>''',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         if events.empty:
@@ -195,92 +400,105 @@ def render_sbi_dashboard(supabase) -> None:
         m3.metric("Td Vaccinated", f"{td_doses:,.0f}", f"{td_cov:.1f}% coverage", delta_color="off")
         m4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(events):,} report rows", delta_color="off")
 
+        school = _build_mr_td_school_summary(events, targets, target_col)
+
         st.divider()
 
-        geo_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
-        event_geo = events.groupby(geo_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
-        if not targets.empty:
-            target_geo = targets.groupby(geo_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: 'Target'})
-            geo = target_geo.merge(event_geo, on=geo_col, how='outer').fillna(0)
-        else:
-            geo = event_geo.copy()
-            geo['Target'] = 0
-
-        geo['MR Coverage %'] = _safe_pct(geo['MR Doses'], geo['Target'])
-        geo['Td Coverage %'] = _safe_pct(geo['Td Doses'], geo['Target'])
-        geo['MR Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['MR Doses']), 0)
-        geo['Td Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['Td Doses']), 0)
-
-        st.markdown(
-            f'''<h4 style="margin-bottom:0.25rem;">
-            <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
-            Coverage by {geo_col}
-            </h4>''',
-            unsafe_allow_html=True
-        )
-        geo_chart = geo.sort_values('MR Coverage %', ascending=True).melt(
-            id_vars=[geo_col],
-            value_vars=['MR Coverage %', 'Td Coverage %'],
-            var_name='Vaccine',
-            value_name='Coverage %'
-        )
-        fig_geo = px.bar(
-            geo_chart,
-            x='Coverage %',
-            y=geo_col,
-            color='Vaccine',
-            orientation='h',
-            barmode='group',
-            text_auto='.1f',
-            color_discrete_sequence=['#1E88E5', '#43A047']
-        )
-        fig_geo.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
-        fig_geo.update_layout(
-            dragmode=False,
-            plot_bgcolor='rgba(0,0,0,0)',
-            xaxis_title='Coverage (%)',
-            yaxis_title='',
-            height=max(420, len(geo) * 46),
-            margin=dict(l=10, r=45, t=35, b=60),
-            legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
-            legend_title_text=''
-        )
-        fig_geo.update_traces(textposition='outside', cliponaxis=False)
-        st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov')
-
-        st.dataframe(
-            geo.sort_values('MR Coverage %', ascending=False),
-            width='stretch',
-            hide_index=True,
-            column_config={
-                'Target': st.column_config.NumberColumn('Target', format='%d'),
-                'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
-                'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
-                'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
-                'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
-                'MR Remaining to 95%': st.column_config.NumberColumn('MR to 95%', format='%d'),
-                'Td Remaining to 95%': st.column_config.NumberColumn('Td to 95%', format='%d'),
-            }
-        )
-
-
         if view_mode == "All Municipalities (Abra)":
+            geo_col = 'Municipality'
+            event_geo = events.groupby(geo_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+            if not targets.empty:
+                target_geo = targets.groupby(geo_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: 'Target'})
+                geo = target_geo.merge(event_geo, on=geo_col, how='outer').fillna(0)
+            else:
+                geo = event_geo.copy()
+                geo['Target'] = 0
+
+            geo['MR Coverage %'] = _safe_pct(geo['MR Doses'], geo['Target'])
+            geo['Td Coverage %'] = _safe_pct(geo['Td Doses'], geo['Target'])
+            geo['MR Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['MR Doses']), 0)
+            geo['Td Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['Td Doses']), 0)
+
+            st.markdown(
+                '''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
+                Coverage by Municipality
+                </h4>''',
+                unsafe_allow_html=True,
+            )
+            geo_chart = geo.sort_values('MR Coverage %', ascending=True).melt(
+                id_vars=[geo_col],
+                value_vars=['MR Coverage %', 'Td Coverage %'],
+                var_name='Vaccine',
+                value_name='Coverage %',
+            )
+            fig_geo = px.bar(
+                geo_chart,
+                x='Coverage %',
+                y=geo_col,
+                color='Vaccine',
+                orientation='h',
+                barmode='group',
+                text_auto='.1f',
+                color_discrete_sequence=['#1E88E5', '#43A047'],
+            )
+            fig_geo.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
+            fig_geo.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Coverage (%)',
+                yaxis_title='',
+                height=max(420, len(geo) * 46),
+                margin=dict(l=10, r=45, t=35, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                legend_title_text='',
+            )
+            fig_geo.update_traces(textposition='outside', cliponaxis=False)
+            st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov')
+
+            st.dataframe(
+                geo.sort_values('MR Coverage %', ascending=False),
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    'Target': st.column_config.NumberColumn('Target', format='%d'),
+                    'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
+                    'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
+                    'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
+                    'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
+                    'MR Remaining to 95%': st.column_config.NumberColumn('MR to 95%', format='%d'),
+                    'Td Remaining to 95%': st.column_config.NumberColumn('Td to 95%', format='%d'),
+                },
+            )
+
             map_choice = st.selectbox(
                 'Municipality coverage map:',
                 ['MR Coverage', 'Td Coverage'],
-                key=f'{key_prefix}_map_choice'
+                key=f'{key_prefix}_map_choice',
             )
             map_geo = geo.rename(columns={geo_col: 'Municipality'}).copy()
             if map_choice == 'MR Coverage':
                 render_municipality_choropleth(
-                    map_geo, 'MR Coverage %', f'{panel_label} - MR Coverage by Municipality', f'{key_prefix}_mr_map',
-                    target_col='Target', vaccinated_col='MR Doses', remaining_col='MR Remaining to 95%'
+                    map_geo,
+                    'MR Coverage %',
+                    f'{panel_label} - MR Coverage by Municipality',
+                    f'{key_prefix}_mr_map',
+                    target_col='Target',
+                    vaccinated_col='MR Doses',
+                    remaining_col='MR Remaining to 95%',
                 )
             else:
                 render_municipality_choropleth(
-                    map_geo, 'Td Coverage %', f'{panel_label} - Td Coverage by Municipality', f'{key_prefix}_td_map',
-                    target_col='Target', vaccinated_col='Td Doses', remaining_col='Td Remaining to 95%'
+                    map_geo,
+                    'Td Coverage %',
+                    f'{panel_label} - Td Coverage by Municipality',
+                    f'{key_prefix}_td_map',
+                    target_col='Target',
+                    vaccinated_col='Td Doses',
+                    remaining_col='Td Remaining to 95%',
                 )
+        else:
+            _render_mr_td_school_coverage(school, key_prefix, heading='Coverage by School')
 
         st.divider()
         render_daily_trend(
@@ -292,13 +510,12 @@ def render_sbi_dashboard(supabase) -> None:
         )
 
         st.divider()
-
         st.markdown(
             '''<h4 style="margin-bottom:0.25rem;">
             <i class="fa-solid fa-chart-line" style="color:#0033A0; margin-right:8px;"></i>
             Cumulative Vaccinations Over Time
             </h4>''',
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
         trend = events.dropna(subset=['Report Date']).groupby('Report Date')[['MR Doses', 'Td Doses']].sum().reset_index().sort_values('Report Date')
         if not trend.empty:
@@ -308,7 +525,7 @@ def render_sbi_dashboard(supabase) -> None:
                 id_vars=['Report Date'],
                 value_vars=['Cumulative MR', 'Cumulative Td'],
                 var_name='Vaccine',
-                value_name='Vaccinated'
+                value_name='Vaccinated',
             )
             fig_trend = px.line(
                 trend_long,
@@ -316,7 +533,7 @@ def render_sbi_dashboard(supabase) -> None:
                 y='Vaccinated',
                 color='Vaccine',
                 markers=True,
-                color_discrete_sequence=['#1E88E5', '#43A047']
+                color_discrete_sequence=['#1E88E5', '#43A047'],
             )
             if target_total > 0:
                 fig_trend.add_hline(
@@ -324,7 +541,7 @@ def render_sbi_dashboard(supabase) -> None:
                     line_dash='dash',
                     line_color='rgba(0,51,160,0.60)',
                     annotation_text='95% target',
-                    annotation_position='top left'
+                    annotation_position='top left',
                 )
             fig_trend.update_layout(
                 dragmode=False,
@@ -334,7 +551,7 @@ def render_sbi_dashboard(supabase) -> None:
                 height=420,
                 margin=dict(l=10, r=20, t=25, b=55),
                 legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
-                legend_title_text=''
+                legend_title_text='',
             )
             st.plotly_chart(fig_trend, width='stretch', key=f'{key_prefix}_trend')
         else:
@@ -344,100 +561,14 @@ def render_sbi_dashboard(supabase) -> None:
         render_tally_tabs(
             events,
             [('MR Doses', 'MR'), ('Td Doses', 'Td')],
-            geo_col=geo_col,
+            geo_col='Municipality' if view_mode == "All Municipalities (Abra)" else 'School Name',
             key_prefix=f'{key_prefix}_tally',
             location_label=location_label,
         )
 
-        st.divider()
-
-        st.markdown(
-            '''<h4 style="margin-bottom:0.25rem;">
-            <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
-            School-Level Performance
-            </h4>''',
-            unsafe_allow_html=True
-        )
-        school = events.groupby(['Municipality', 'Barangay', 'School ID', 'School Name'], dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
-        if not targets.empty:
-            target_school = targets[['School ID', target_col]].copy().rename(columns={target_col: 'Target'})
-            target_school['School ID'] = target_school['School ID'].astype(str).str.strip()
-            target_school = target_school.drop_duplicates('School ID')
-            school['School ID'] = school['School ID'].astype(str).str.strip()
-            school = school.merge(target_school, on='School ID', how='left')
-        else:
-            school['Target'] = 0
-        school['Target'] = pd.to_numeric(school['Target'], errors='coerce').fillna(0)
-        school['MR Coverage %'] = _safe_pct(school['MR Doses'], school['Target'], default=np.nan)
-        school['Td Coverage %'] = _safe_pct(school['Td Doses'], school['Target'], default=np.nan)
-        school['School Label'] = np.where(
-            view_mode == "All Municipalities (Abra)",
-            school['School Name'].astype(str) + ' - ' + school['Municipality'].astype(str),
-            school['School Name'].astype(str)
-        )
-
-        chart_scope = st.selectbox(
-            'Schools shown in chart:',
-            ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
-            key=f'{key_prefix}_school_scope'
-        )
-        school_plot = school.sort_values('Target', ascending=False).copy()
-        if chart_scope.startswith('Top 25'):
-            school_plot = school_plot.head(25)
-        elif chart_scope.startswith('Top 50'):
-            school_plot = school_plot.head(50)
-        school_plot = school_plot.sort_values('Target', ascending=True)
-        school_long = school_plot.melt(
-            id_vars=['School Label'],
-            value_vars=['MR Coverage %', 'Td Coverage %'],
-            var_name='Vaccine',
-            value_name='Coverage %'
-        ).dropna(subset=['Coverage %'])
-        if not school_long.empty:
-            fig_school = px.bar(
-                school_long,
-                x='Coverage %',
-                y='School Label',
-                color='Vaccine',
-                orientation='h',
-                barmode='group',
-                text_auto='.1f',
-                color_discrete_sequence=['#1E88E5', '#43A047']
-            )
-            fig_school.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
-            fig_school.update_layout(
-                dragmode=False,
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title='Coverage (%)',
-                yaxis_title='',
-                height=max(550, len(school_plot) * 40),
-                margin=dict(l=10, r=45, t=25, b=60),
-                legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
-                legend_title_text=''
-            )
-            st.plotly_chart(fig_school, width='stretch', key=f'{key_prefix}_school_chart')
-
-        with st.expander('View and download school-level performance', expanded=False):
-            school_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
-            st.dataframe(
-                school_export,
-                width='stretch',
-                hide_index=True,
-                column_config={
-                    'Target': st.column_config.NumberColumn('Target', format='%d'),
-                    'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
-                    'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
-                    'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
-                    'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
-                }
-            )
-            st.download_button(
-                label='Download School Performance (CSV)',
-                data=school_export.to_csv(index=False).encode('utf-8-sig'),
-                file_name=f'{key_prefix}_School_Performance_{location_label.replace(", ", "_")}.csv',
-                mime='text/csv',
-                key=f'{key_prefix}_school_download'
-            )
+        if view_mode == "All Municipalities (Abra)":
+            st.divider()
+            _render_mr_td_school_coverage(school, key_prefix, heading='School-Level Performance')
 
         render_raw_export(
             events,
@@ -569,84 +700,213 @@ def render_sbi_dashboard(supabase) -> None:
                     )
 
             st.divider()
-            geo_exec_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
             exec_targets = target_view.copy()
             exec_targets['MR/Td Target'] = (
                 pd.to_numeric(exec_targets.get('G1 Target', 0), errors='coerce').fillna(0)
                 + pd.to_numeric(exec_targets.get('G7 Target', 0), errors='coerce').fillna(0)
             )
             exec_targets['HPV Target'] = pd.to_numeric(exec_targets.get('G4 Target', 0), errors='coerce').fillna(0)
-            exec_target_geo = exec_targets.groupby(geo_exec_col, dropna=False)[['MR/Td Target', 'HPV Target']].sum().reset_index()
-
             mrtd_exec = pd.concat([g1_view, g7_view], ignore_index=True, sort=False)
-            mrtd_geo = (mrtd_exec.groupby(geo_exec_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
-                         if not mrtd_exec.empty else pd.DataFrame(columns=[geo_exec_col, 'MR Doses', 'Td Doses']))
-            hpv_geo_exec = (hpv_view.groupby(geo_exec_col, dropna=False)[['HPV Dose 1']].sum().reset_index()
-                            if not hpv_view.empty else pd.DataFrame(columns=[geo_exec_col, 'HPV Dose 1']))
-            exec_geo = exec_target_geo.merge(mrtd_geo, on=geo_exec_col, how='outer').merge(
-                hpv_geo_exec, on=geo_exec_col, how='outer'
-            ).fillna(0)
-            exec_geo['MR Coverage %'] = _safe_pct(exec_geo['MR Doses'], exec_geo['MR/Td Target'])
-            exec_geo['Td Coverage %'] = _safe_pct(exec_geo['Td Doses'], exec_geo['MR/Td Target'])
-            exec_geo['HPV 1st Dose Coverage %'] = _safe_pct(exec_geo['HPV Dose 1'], exec_geo['HPV Target'])
-            exec_geo['MR Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['MR Doses']), 0)
-            exec_geo['Td Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['Td Doses']), 0)
-            exec_geo['HPV Remaining to 90%'] = np.maximum(np.ceil(exec_geo['HPV Target'] * 0.90 - exec_geo['HPV Dose 1']), 0)
-
-            st.markdown(
-                f'''<h4 style="margin-bottom:0.25rem;">
-                <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
-                Coverage by {geo_exec_col}
-                </h4>''',
-                unsafe_allow_html=True
-            )
-            exec_geo_long = exec_geo.sort_values('MR Coverage %', ascending=True).melt(
-                id_vars=[geo_exec_col],
-                value_vars=['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'],
-                var_name='Program', value_name='Coverage %'
-            )
-            fig_exec_geo = px.bar(
-                exec_geo_long, x='Coverage %', y=geo_exec_col, color='Program', barmode='group',
-                orientation='h', text_auto='.1f', color_discrete_sequence=['#1E88E5', '#43A047', '#D81B60']
-            )
-            fig_exec_geo.update_traces(textposition='outside', cliponaxis=False)
-            fig_exec_geo.update_layout(
-                dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title='Coverage (%)', yaxis_title='',
-                height=max(450, len(exec_geo) * 48), margin=dict(l=10, r=55, t=25, b=65),
-                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5), legend_title_text=''
-            )
-            st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage')
-
-            with st.expander(f'View full {geo_exec_col.lower()} coverage table', expanded=False):
-                st.dataframe(exec_geo.sort_values('MR Coverage %', ascending=False), width='stretch', hide_index=True)
-                st.download_button(
-                    label='Download Geographic Coverage (CSV)',
-                    data=exec_geo.to_csv(index=False).encode('utf-8-sig'),
-                    file_name=f'SBI_Coverage_by_{geo_exec_col}_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
-                    mime='text/csv', key='sbi_exec_geo_download'
-                )
 
             if view_mode == "All Municipalities (Abra)":
+                geo_exec_col = 'Municipality'
+                exec_target_geo = exec_targets.groupby(geo_exec_col, dropna=False)[['MR/Td Target', 'HPV Target']].sum().reset_index()
+                mrtd_geo = (
+                    mrtd_exec.groupby(geo_exec_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+                    if not mrtd_exec.empty
+                    else pd.DataFrame(columns=[geo_exec_col, 'MR Doses', 'Td Doses'])
+                )
+                hpv_geo_exec = (
+                    hpv_view.groupby(geo_exec_col, dropna=False)[['HPV Dose 1']].sum().reset_index()
+                    if not hpv_view.empty
+                    else pd.DataFrame(columns=[geo_exec_col, 'HPV Dose 1'])
+                )
+                exec_geo = exec_target_geo.merge(mrtd_geo, on=geo_exec_col, how='outer').merge(
+                    hpv_geo_exec, on=geo_exec_col, how='outer'
+                ).fillna(0)
+                exec_geo['MR Coverage %'] = _safe_pct(exec_geo['MR Doses'], exec_geo['MR/Td Target'])
+                exec_geo['Td Coverage %'] = _safe_pct(exec_geo['Td Doses'], exec_geo['MR/Td Target'])
+                exec_geo['HPV 1st Dose Coverage %'] = _safe_pct(exec_geo['HPV Dose 1'], exec_geo['HPV Target'])
+                exec_geo['MR Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['MR Doses']), 0)
+                exec_geo['Td Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['Td Doses']), 0)
+                exec_geo['HPV Remaining to 90%'] = np.maximum(np.ceil(exec_geo['HPV Target'] * 0.90 - exec_geo['HPV Dose 1']), 0)
+
+                st.markdown(
+                    '''<h4 style="margin-bottom:0.25rem;">
+                    <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
+                    Coverage by Municipality
+                    </h4>''',
+                    unsafe_allow_html=True,
+                )
+                exec_geo_long = exec_geo.sort_values('MR Coverage %', ascending=True).melt(
+                    id_vars=[geo_exec_col],
+                    value_vars=['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'],
+                    var_name='Program',
+                    value_name='Coverage %',
+                )
+                fig_exec_geo = px.bar(
+                    exec_geo_long,
+                    x='Coverage %',
+                    y=geo_exec_col,
+                    color='Program',
+                    barmode='group',
+                    orientation='h',
+                    text_auto='.1f',
+                    color_discrete_sequence=['#1E88E5', '#43A047', '#D81B60'],
+                )
+                fig_exec_geo.update_traces(textposition='outside', cliponaxis=False)
+                fig_exec_geo.update_layout(
+                    dragmode=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title='Coverage (%)',
+                    yaxis_title='',
+                    height=max(450, len(exec_geo) * 48),
+                    margin=dict(l=10, r=55, t=25, b=65),
+                    legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                    legend_title_text='',
+                )
+                st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage')
+
+                with st.expander('View full municipality coverage table', expanded=False):
+                    st.dataframe(exec_geo.sort_values('MR Coverage %', ascending=False), width='stretch', hide_index=True)
+                    st.download_button(
+                        label='Download Geographic Coverage (CSV)',
+                        data=exec_geo.to_csv(index=False).encode('utf-8-sig'),
+                        file_name=f'SBI_Coverage_by_Municipality_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+                        mime='text/csv',
+                        key='sbi_exec_geo_download',
+                    )
+
                 st.divider()
                 exec_map_choice = st.selectbox(
-                    'Provincial choropleth:', ['MR Coverage', 'Td Coverage', 'HPV 1st Dose Coverage'],
-                    key='sbi_exec_map_choice'
+                    'Provincial choropleth:',
+                    ['MR Coverage', 'Td Coverage', 'HPV 1st Dose Coverage'],
+                    key='sbi_exec_map_choice',
                 )
                 exec_map_df = exec_geo.rename(columns={geo_exec_col: 'Municipality'}).copy()
                 if exec_map_choice == 'MR Coverage':
                     render_municipality_choropleth(
-                        exec_map_df, 'MR Coverage %', 'MR Coverage by Municipality', 'sbi_exec_mr_map',
-                        target_col='MR/Td Target', vaccinated_col='MR Doses', remaining_col='MR Remaining to 95%'
+                        exec_map_df,
+                        'MR Coverage %',
+                        'MR Coverage by Municipality',
+                        'sbi_exec_mr_map',
+                        target_col='MR/Td Target',
+                        vaccinated_col='MR Doses',
+                        remaining_col='MR Remaining to 95%',
                     )
                 elif exec_map_choice == 'Td Coverage':
                     render_municipality_choropleth(
-                        exec_map_df, 'Td Coverage %', 'Td Coverage by Municipality', 'sbi_exec_td_map',
-                        target_col='MR/Td Target', vaccinated_col='Td Doses', remaining_col='Td Remaining to 95%'
+                        exec_map_df,
+                        'Td Coverage %',
+                        'Td Coverage by Municipality',
+                        'sbi_exec_td_map',
+                        target_col='MR/Td Target',
+                        vaccinated_col='Td Doses',
+                        remaining_col='Td Remaining to 95%',
                     )
                 else:
                     render_municipality_choropleth(
-                        exec_map_df, 'HPV 1st Dose Coverage %', 'HPV 1st Dose Coverage by Municipality', 'sbi_exec_hpv_map',
-                        target_col='HPV Target', vaccinated_col='HPV Dose 1', remaining_col='HPV Remaining to 90%'
+                        exec_map_df,
+                        'HPV 1st Dose Coverage %',
+                        'HPV 1st Dose Coverage by Municipality',
+                        'sbi_exec_hpv_map',
+                        target_col='HPV Target',
+                        vaccinated_col='HPV Dose 1',
+                        remaining_col='HPV Remaining to 90%',
+                    )
+            else:
+                target_school = exec_targets[['School ID', 'School Name', 'MR/Td Target', 'HPV Target']].copy()
+                target_school['School ID'] = target_school['School ID'].astype(str).str.strip()
+                target_school = target_school.groupby('School ID', as_index=False).agg({
+                    'School Name': 'first',
+                    'MR/Td Target': 'sum',
+                    'HPV Target': 'sum',
+                })
+
+                mrtd_school = (
+                    mrtd_exec.groupby(['School ID', 'School Name'], dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+                    if not mrtd_exec.empty
+                    else pd.DataFrame(columns=['School ID', 'School Name', 'MR Doses', 'Td Doses'])
+                )
+                hpv_school = (
+                    hpv_view.groupby(['School ID', 'School Name'], dropna=False)[['HPV Dose 1']].sum().reset_index()
+                    if not hpv_view.empty
+                    else pd.DataFrame(columns=['School ID', 'School Name', 'HPV Dose 1'])
+                )
+                for frame in [mrtd_school, hpv_school]:
+                    frame['School ID'] = frame['School ID'].astype(str).str.strip()
+
+                exec_school = target_school.merge(
+                    mrtd_school.rename(columns={'School Name': 'MR School Name'}),
+                    on='School ID',
+                    how='outer',
+                ).merge(
+                    hpv_school.rename(columns={'School Name': 'HPV School Name'}),
+                    on='School ID',
+                    how='outer',
+                )
+                exec_school['School Name'] = (
+                    exec_school['School Name']
+                    .fillna(exec_school.get('MR School Name'))
+                    .fillna(exec_school.get('HPV School Name'))
+                    .fillna('Unknown School')
+                )
+                numeric_cols = ['MR/Td Target', 'HPV Target', 'MR Doses', 'Td Doses', 'HPV Dose 1']
+                for col in numeric_cols:
+                    exec_school[col] = pd.to_numeric(exec_school.get(col, 0), errors='coerce').fillna(0)
+                exec_school['MR Coverage %'] = _safe_pct(exec_school['MR Doses'], exec_school['MR/Td Target'], default=np.nan)
+                exec_school['Td Coverage %'] = _safe_pct(exec_school['Td Doses'], exec_school['MR/Td Target'], default=np.nan)
+                exec_school['HPV 1st Dose Coverage %'] = _safe_pct(exec_school['HPV Dose 1'], exec_school['HPV Target'], default=np.nan)
+                exec_school['MR Remaining to 95%'] = np.maximum(np.ceil(exec_school['MR/Td Target'] * 0.95 - exec_school['MR Doses']), 0)
+                exec_school['Td Remaining to 95%'] = np.maximum(np.ceil(exec_school['MR/Td Target'] * 0.95 - exec_school['Td Doses']), 0)
+                exec_school['HPV Remaining to 90%'] = np.maximum(np.ceil(exec_school['HPV Target'] * 0.90 - exec_school['HPV Dose 1']), 0)
+
+                st.markdown(
+                    '''<h4 style="margin-bottom:0.25rem;">
+                    <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+                    Coverage by School
+                    </h4>''',
+                    unsafe_allow_html=True,
+                )
+                exec_school_long = exec_school.sort_values('MR/Td Target', ascending=True).melt(
+                    id_vars=['School Name'],
+                    value_vars=['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'],
+                    var_name='Program',
+                    value_name='Coverage %',
+                ).dropna(subset=['Coverage %'])
+                if not exec_school_long.empty:
+                    fig_exec_school = px.bar(
+                        exec_school_long,
+                        x='Coverage %',
+                        y='School Name',
+                        color='Program',
+                        barmode='group',
+                        orientation='h',
+                        text_auto='.1f',
+                        color_discrete_sequence=['#1E88E5', '#43A047', '#D81B60'],
+                    )
+                    fig_exec_school.update_traces(textposition='outside', cliponaxis=False)
+                    fig_exec_school.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title='Coverage (%)',
+                        yaxis_title='',
+                        height=max(500, len(exec_school) * 42),
+                        margin=dict(l=10, r=55, t=25, b=65),
+                        legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                        legend_title_text='',
+                    )
+                    st.plotly_chart(fig_exec_school, width='stretch', key='sbi_exec_school_coverage')
+
+                school_export = exec_school.drop(columns=['MR School Name', 'HPV School Name'], errors='ignore').sort_values('School Name')
+                with st.expander('View full school coverage table', expanded=False):
+                    st.dataframe(school_export, width='stretch', hide_index=True)
+                    st.download_button(
+                        label='Download School Coverage (CSV)',
+                        data=school_export.to_csv(index=False).encode('utf-8-sig'),
+                        file_name=f'SBI_Coverage_by_School_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+                        mime='text/csv',
+                        key='sbi_exec_school_download',
                     )
 
             st.divider()
@@ -1849,85 +2109,102 @@ def render_sbi_dashboard(supabase) -> None:
 
             st.divider()
 
-            geo_col_hpv = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
-            hpv_geo = hpv_view.groupby(geo_col_hpv, dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
-            if not target_view.empty:
-                hpv_target_geo = target_view.groupby(geo_col_hpv, dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
-                hpv_geo = hpv_target_geo.merge(hpv_geo, on=geo_col_hpv, how='outer').fillna(0)
-            else:
-                hpv_geo['Target'] = 0
-
-            hpv_geo['1st Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 1'], hpv_geo['Target'])
-            hpv_geo['2nd Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 2'], hpv_geo['Target'])
-            hpv_geo['1st Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 1']), 0)
-            hpv_geo['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 2']), 0)
-
-            st.markdown(
-                f'''<h4 style="margin-bottom:0.25rem;">
-                <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
-                HPV Coverage by {geo_col_hpv}
-                </h4>''',
-                unsafe_allow_html=True
-            )
-            hpv_geo_long = hpv_geo.sort_values('1st Dose Coverage %', ascending=True).melt(
-                id_vars=[geo_col_hpv],
-                value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
-                var_name='Dose',
-                value_name='Coverage %'
-            )
-            fig_hpv_geo = px.bar(
-                hpv_geo_long,
-                x='Coverage %',
-                y=geo_col_hpv,
-                color='Dose',
-                orientation='h',
-                barmode='group',
-                text_auto='.1f',
-                color_discrete_sequence=['#D81B60', '#8E24AA']
-            )
-            fig_hpv_geo.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
-            fig_hpv_geo.update_layout(
-                dragmode=False,
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title='Coverage (%)',
-                yaxis_title='',
-                height=max(420, len(hpv_geo) * 46),
-                margin=dict(l=10, r=45, t=35, b=60),
-                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
-                legend_title_text=''
-            )
-            fig_hpv_geo.update_traces(textposition='outside', cliponaxis=False)
-            st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo')
-
-            st.dataframe(
-                hpv_geo.sort_values('1st Dose Coverage %', ascending=False),
-                width='stretch',
-                hide_index=True,
-                column_config={
-                    'Target': st.column_config.NumberColumn('Target', format='%d'),
-                    'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
-                    'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
-                    '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
-                    '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
-                    '1st Dose Remaining to 90%': st.column_config.NumberColumn('1st Dose to 90%', format='%d'),
-                    '2nd Dose Remaining to 90%': st.column_config.NumberColumn('2nd Dose to 90%', format='%d'),
-                }
-            )
-
+            hpv_school = _build_hpv_school_summary(hpv_view, target_view)
 
             if view_mode == "All Municipalities (Abra)":
-                hpv_map_choice = st.selectbox('Municipality coverage map:', ['HPV 1st Dose', 'HPV 2nd Dose'], key='sbi_hpv_map_choice')
+                geo_col_hpv = 'Municipality'
+                hpv_geo = hpv_view.groupby(geo_col_hpv, dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+                if not target_view.empty:
+                    hpv_target_geo = target_view.groupby(geo_col_hpv, dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
+                    hpv_geo = hpv_target_geo.merge(hpv_geo, on=geo_col_hpv, how='outer').fillna(0)
+                else:
+                    hpv_geo['Target'] = 0
+
+                hpv_geo['1st Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 1'], hpv_geo['Target'])
+                hpv_geo['2nd Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 2'], hpv_geo['Target'])
+                hpv_geo['1st Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 1']), 0)
+                hpv_geo['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 2']), 0)
+
+                st.markdown(
+                    '''<h4 style="margin-bottom:0.25rem;">
+                    <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
+                    HPV Coverage by Municipality
+                    </h4>''',
+                    unsafe_allow_html=True,
+                )
+                hpv_geo_long = hpv_geo.sort_values('1st Dose Coverage %', ascending=True).melt(
+                    id_vars=[geo_col_hpv],
+                    value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
+                    var_name='Dose',
+                    value_name='Coverage %',
+                )
+                fig_hpv_geo = px.bar(
+                    hpv_geo_long,
+                    x='Coverage %',
+                    y=geo_col_hpv,
+                    color='Dose',
+                    orientation='h',
+                    barmode='group',
+                    text_auto='.1f',
+                    color_discrete_sequence=['#D81B60', '#8E24AA'],
+                )
+                fig_hpv_geo.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
+                fig_hpv_geo.update_layout(
+                    dragmode=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title='Coverage (%)',
+                    yaxis_title='',
+                    height=max(420, len(hpv_geo) * 46),
+                    margin=dict(l=10, r=45, t=35, b=60),
+                    legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                    legend_title_text='',
+                )
+                fig_hpv_geo.update_traces(textposition='outside', cliponaxis=False)
+                st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo')
+
+                st.dataframe(
+                    hpv_geo.sort_values('1st Dose Coverage %', ascending=False),
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        'Target': st.column_config.NumberColumn('Target', format='%d'),
+                        'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
+                        'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
+                        '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
+                        '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
+                        '1st Dose Remaining to 90%': st.column_config.NumberColumn('1st Dose to 90%', format='%d'),
+                        '2nd Dose Remaining to 90%': st.column_config.NumberColumn('2nd Dose to 90%', format='%d'),
+                    },
+                )
+
+                hpv_map_choice = st.selectbox(
+                    'Municipality coverage map:',
+                    ['HPV 1st Dose', 'HPV 2nd Dose'],
+                    key='sbi_hpv_map_choice',
+                )
                 hpv_map_df = hpv_geo.rename(columns={geo_col_hpv: 'Municipality'}).copy()
                 if hpv_map_choice == 'HPV 1st Dose':
                     render_municipality_choropleth(
-                        hpv_map_df, '1st Dose Coverage %', 'HPV 1st Dose Coverage by Municipality', 'sbi_hpv_dose1_map',
-                        target_col='Target', vaccinated_col='HPV Dose 1', remaining_col='1st Dose Remaining to 90%'
+                        hpv_map_df,
+                        '1st Dose Coverage %',
+                        'HPV 1st Dose Coverage by Municipality',
+                        'sbi_hpv_dose1_map',
+                        target_col='Target',
+                        vaccinated_col='HPV Dose 1',
+                        remaining_col='1st Dose Remaining to 90%',
                     )
                 else:
                     render_municipality_choropleth(
-                        hpv_map_df, '2nd Dose Coverage %', 'HPV 2nd Dose Coverage by Municipality', 'sbi_hpv_dose2_map',
-                        target_col='Target', vaccinated_col='HPV Dose 2', remaining_col='2nd Dose Remaining to 90%'
+                        hpv_map_df,
+                        '2nd Dose Coverage %',
+                        'HPV 2nd Dose Coverage by Municipality',
+                        'sbi_hpv_dose2_map',
+                        target_col='Target',
+                        vaccinated_col='HPV Dose 2',
+                        remaining_col='2nd Dose Remaining to 90%',
                     )
+            else:
+                _render_hpv_school_coverage(hpv_school, heading='Coverage by School')
 
             st.divider()
             render_daily_trend(
@@ -1985,99 +2262,12 @@ def render_sbi_dashboard(supabase) -> None:
             render_tally_tabs(
                 hpv_view,
                 [('HPV Dose 1', 'HPV 1st Dose'), ('HPV Dose 2', 'HPV 2nd Dose')],
-                geo_col=geo_col_hpv, key_prefix='sbi_hpv_tally', location_label=location_label,
+                geo_col='Municipality' if view_mode == "All Municipalities (Abra)" else 'School Name', key_prefix='sbi_hpv_tally', location_label=location_label,
             )
 
-            st.divider()
-
-            st.markdown(
-                '''<h4 style="margin-bottom:0.25rem;">
-                <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
-                School-Level HPV Performance
-                </h4>''',
-                unsafe_allow_html=True
-            )
-            hpv_school = hpv_view.groupby(['Municipality', 'Barangay', 'School ID', 'School Name'], dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
-            if not target_view.empty:
-                target_school_hpv = target_view[['School ID', 'G4 Target']].copy().rename(columns={'G4 Target': 'Target'})
-                target_school_hpv['School ID'] = target_school_hpv['School ID'].astype(str).str.strip()
-                target_school_hpv = target_school_hpv.drop_duplicates('School ID')
-                hpv_school['School ID'] = hpv_school['School ID'].astype(str).str.strip()
-                hpv_school = hpv_school.merge(target_school_hpv, on='School ID', how='left')
-            else:
-                hpv_school['Target'] = 0
-            hpv_school['Target'] = pd.to_numeric(hpv_school['Target'], errors='coerce').fillna(0)
-            hpv_school['1st Dose Coverage %'] = _safe_pct(hpv_school['HPV Dose 1'], hpv_school['Target'], default=np.nan)
-            hpv_school['2nd Dose Coverage %'] = _safe_pct(hpv_school['HPV Dose 2'], hpv_school['Target'], default=np.nan)
-            hpv_school['School Label'] = np.where(
-                view_mode == "All Municipalities (Abra)",
-                hpv_school['School Name'].astype(str) + ' - ' + hpv_school['Municipality'].astype(str),
-                hpv_school['School Name'].astype(str)
-            )
-
-            hpv_scope = st.selectbox(
-                'Schools shown in chart:',
-                ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
-                key='sbi_hpv_school_scope'
-            )
-            hpv_school_plot = hpv_school.sort_values('Target', ascending=False).copy()
-            if hpv_scope.startswith('Top 25'):
-                hpv_school_plot = hpv_school_plot.head(25)
-            elif hpv_scope.startswith('Top 50'):
-                hpv_school_plot = hpv_school_plot.head(50)
-            hpv_school_plot = hpv_school_plot.sort_values('Target', ascending=True)
-            hpv_school_long = hpv_school_plot.melt(
-                id_vars=['School Label'],
-                value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
-                var_name='Dose',
-                value_name='Coverage %'
-            ).dropna(subset=['Coverage %'])
-
-            if not hpv_school_long.empty:
-                fig_hpv_school = px.bar(
-                    hpv_school_long,
-                    x='Coverage %',
-                    y='School Label',
-                    color='Dose',
-                    orientation='h',
-                    barmode='group',
-                    text_auto='.1f',
-                    color_discrete_sequence=['#D81B60', '#8E24AA']
-                )
-                fig_hpv_school.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
-                fig_hpv_school.update_layout(
-                    dragmode=False,
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis_title='Coverage (%)',
-                    yaxis_title='',
-                    height=max(550, len(hpv_school_plot) * 40),
-                    margin=dict(l=10, r=45, t=25, b=60),
-                    legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
-                    legend_title_text=''
-                )
-                st.plotly_chart(fig_hpv_school, width='stretch', key='sbi_hpv_school_chart')
-
-            with st.expander('View and download school-level HPV performance', expanded=False):
-                hpv_export = hpv_school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
-                st.dataframe(
-                    hpv_export,
-                    width='stretch',
-                    hide_index=True,
-                    column_config={
-                        'Target': st.column_config.NumberColumn('Target', format='%d'),
-                        'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
-                        'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
-                        '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
-                        '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
-                    }
-                )
-                st.download_button(
-                    label='Download HPV School Performance (CSV)',
-                    data=hpv_export.to_csv(index=False).encode('utf-8-sig'),
-                    file_name=f'SBI_HPV_School_Performance_{location_label.replace(", ", "_")}.csv',
-                    mime='text/csv',
-                    key='sbi_hpv_school_download'
-                )
+            if view_mode == "All Municipalities (Abra)":
+                st.divider()
+                _render_hpv_school_coverage(hpv_school, heading='School-Level HPV Performance')
 
             render_raw_export(
                 hpv_view,
@@ -2387,3 +2577,4 @@ def render_sbi_dashboard(supabase) -> None:
                             st.cache_data.clear()
                     except Exception as e:
                         st.error(f"SBI Target Sync Failed: {e}")
+
