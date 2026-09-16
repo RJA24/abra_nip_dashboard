@@ -2577,4 +2577,3 @@ def render_sbi_dashboard(supabase) -> None:
                             st.cache_data.clear()
                     except Exception as e:
                         st.error(f"SBI Target Sync Failed: {e}")
-
