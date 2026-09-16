@@ -48,6 +48,21 @@ def _get_last_updated_time() -> str:
     return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
 
 
+def _safe_pct(numerator, denominator, default=0.0):
+    """Return percentage values without dividing by zero.
+
+    Works with pandas Series and coerces non-numeric values to NaN before
+    calculation. Zero denominators are masked before division.
+    """
+    num = pd.to_numeric(numerator, errors="coerce")
+    den = pd.to_numeric(denominator, errors="coerce")
+    result = num.div(den.mask(den.eq(0))).mul(100)
+
+    if pd.isna(default):
+        return result
+    return result.fillna(default)
+
+
 def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -191,8 +206,8 @@ def render_sbi_dashboard(supabase) -> None:
             geo = event_geo.copy()
             geo['Target'] = 0
 
-        geo['MR Coverage %'] = np.where(geo['Target'] > 0, geo['MR Doses'] / geo['Target'] * 100, 0)
-        geo['Td Coverage %'] = np.where(geo['Target'] > 0, geo['Td Doses'] / geo['Target'] * 100, 0)
+        geo['MR Coverage %'] = _safe_pct(geo['MR Doses'], geo['Target'])
+        geo['Td Coverage %'] = _safe_pct(geo['Td Doses'], geo['Target'])
         geo['MR Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['MR Doses']), 0)
         geo['Td Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['Td Doses']), 0)
 
@@ -353,8 +368,8 @@ def render_sbi_dashboard(supabase) -> None:
         else:
             school['Target'] = 0
         school['Target'] = pd.to_numeric(school['Target'], errors='coerce').fillna(0)
-        school['MR Coverage %'] = np.where(school['Target'] > 0, school['MR Doses'] / school['Target'] * 100, np.nan)
-        school['Td Coverage %'] = np.where(school['Target'] > 0, school['Td Doses'] / school['Target'] * 100, np.nan)
+        school['MR Coverage %'] = _safe_pct(school['MR Doses'], school['Target'], default=np.nan)
+        school['Td Coverage %'] = _safe_pct(school['Td Doses'], school['Target'], default=np.nan)
         school['School Label'] = np.where(
             view_mode == "All Municipalities (Abra)",
             school['School Name'].astype(str) + ' - ' + school['Municipality'].astype(str),
@@ -571,9 +586,9 @@ def render_sbi_dashboard(supabase) -> None:
             exec_geo = exec_target_geo.merge(mrtd_geo, on=geo_exec_col, how='outer').merge(
                 hpv_geo_exec, on=geo_exec_col, how='outer'
             ).fillna(0)
-            exec_geo['MR Coverage %'] = np.where(exec_geo['MR/Td Target'] > 0, exec_geo['MR Doses'] / exec_geo['MR/Td Target'] * 100, 0)
-            exec_geo['Td Coverage %'] = np.where(exec_geo['MR/Td Target'] > 0, exec_geo['Td Doses'] / exec_geo['MR/Td Target'] * 100, 0)
-            exec_geo['HPV 1st Dose Coverage %'] = np.where(exec_geo['HPV Target'] > 0, exec_geo['HPV Dose 1'] / exec_geo['HPV Target'] * 100, 0)
+            exec_geo['MR Coverage %'] = _safe_pct(exec_geo['MR Doses'], exec_geo['MR/Td Target'])
+            exec_geo['Td Coverage %'] = _safe_pct(exec_geo['Td Doses'], exec_geo['MR/Td Target'])
+            exec_geo['HPV 1st Dose Coverage %'] = _safe_pct(exec_geo['HPV Dose 1'], exec_geo['HPV Target'])
             exec_geo['MR Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['MR Doses']), 0)
             exec_geo['Td Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['Td Doses']), 0)
             exec_geo['HPV Remaining to 90%'] = np.maximum(np.ceil(exec_geo['HPV Target'] * 0.90 - exec_geo['HPV Dose 1']), 0)
@@ -998,10 +1013,9 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     .reset_index()
                 )
-                df_actual_geo['Completion %'] = np.where(
-                    df_actual_geo['Schools'] > 0,
-                    df_actual_geo['Complete'] / df_actual_geo['Schools'] * 100,
-                    0
+                df_actual_geo['Completion %'] = _safe_pct(
+                    df_actual_geo['Complete'],
+                    df_actual_geo['Schools']
                 )
                 df_actual_geo = df_actual_geo.rename(columns={
                     'G1_Actual': 'G1 Total',
@@ -1400,10 +1414,9 @@ def render_sbi_dashboard(supabase) -> None:
                     df_target_compare['Difference'] = (
                         df_target_compare['Actual'] - df_target_compare['Baseline']
                     )
-                    df_target_compare['Change %'] = np.where(
-                        df_target_compare['Baseline'] > 0,
-                        df_target_compare['Difference'] / df_target_compare['Baseline'] * 100,
-                        0
+                    df_target_compare['Change %'] = _safe_pct(
+                        df_target_compare['Difference'],
+                        df_target_compare['Baseline']
                     )
 
                     st.dataframe(
@@ -1496,10 +1509,9 @@ def render_sbi_dashboard(supabase) -> None:
                     df_geo_compare['Difference'] = (
                         df_geo_compare['Actual_Total'] - df_geo_compare['Baseline_Total']
                     )
-                    df_geo_compare['Change %'] = np.where(
-                        df_geo_compare['Baseline_Total'] > 0,
-                        df_geo_compare['Difference'] / df_geo_compare['Baseline_Total'] * 100,
-                        0
+                    df_geo_compare['Change %'] = _safe_pct(
+                        df_geo_compare['Difference'],
+                        df_geo_compare['Baseline_Total']
                     )
 
                     st.markdown(
@@ -1625,10 +1637,9 @@ def render_sbi_dashboard(supabase) -> None:
                     df_school_compare['Total Difference'] = (
                         df_school_compare['Actual Total'] - df_school_compare['Baseline Total']
                     )
-                    df_school_compare['Change %'] = np.where(
-                        df_school_compare['Baseline Total'] > 0,
-                        df_school_compare['Total Difference'] / df_school_compare['Baseline Total'] * 100,
-                        0
+                    df_school_compare['Change %'] = _safe_pct(
+                        df_school_compare['Total Difference'],
+                        df_school_compare['Baseline Total']
                     )
 
                     if view_mode == "All Municipalities (Abra)":
@@ -1846,8 +1857,8 @@ def render_sbi_dashboard(supabase) -> None:
             else:
                 hpv_geo['Target'] = 0
 
-            hpv_geo['1st Dose Coverage %'] = np.where(hpv_geo['Target'] > 0, hpv_geo['HPV Dose 1'] / hpv_geo['Target'] * 100, 0)
-            hpv_geo['2nd Dose Coverage %'] = np.where(hpv_geo['Target'] > 0, hpv_geo['HPV Dose 2'] / hpv_geo['Target'] * 100, 0)
+            hpv_geo['1st Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 1'], hpv_geo['Target'])
+            hpv_geo['2nd Dose Coverage %'] = _safe_pct(hpv_geo['HPV Dose 2'], hpv_geo['Target'])
             hpv_geo['1st Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 1']), 0)
             hpv_geo['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 2']), 0)
 
@@ -1996,8 +2007,8 @@ def render_sbi_dashboard(supabase) -> None:
             else:
                 hpv_school['Target'] = 0
             hpv_school['Target'] = pd.to_numeric(hpv_school['Target'], errors='coerce').fillna(0)
-            hpv_school['1st Dose Coverage %'] = np.where(hpv_school['Target'] > 0, hpv_school['HPV Dose 1'] / hpv_school['Target'] * 100, np.nan)
-            hpv_school['2nd Dose Coverage %'] = np.where(hpv_school['Target'] > 0, hpv_school['HPV Dose 2'] / hpv_school['Target'] * 100, np.nan)
+            hpv_school['1st Dose Coverage %'] = _safe_pct(hpv_school['HPV Dose 1'], hpv_school['Target'], default=np.nan)
+            hpv_school['2nd Dose Coverage %'] = _safe_pct(hpv_school['HPV Dose 2'], hpv_school['Target'], default=np.nan)
             hpv_school['School Label'] = np.where(
                 view_mode == "All Municipalities (Abra)",
                 hpv_school['School Name'].astype(str) + ' - ' + hpv_school['Municipality'].astype(str),
