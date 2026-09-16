@@ -24,23 +24,12 @@ from core.geo import fetch_abra_geojson, get_polygon_centroid
 
 def _geo_key(value: object) -> str:
     text = str(value or "").upper().strip()
-
-    # Remove accents first.
-    text = (
-        unicodedata.normalize("NFKD", text)
-        .encode("ASCII", "ignore")
-        .decode("ASCII")
-    )
-
-    # Create one punctuation-free geographic key.
+    text = unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode("ASCII")
     key = re.sub(r"[^A-Z0-9]", "", text)
-
-    # Known Abra naming aliases.
     aliases = {
         "SALAPADAN": "SALLAPADAN",
         "LICUANBAAYLICUAN": "LICUANBAAY",
     }
-
     return aliases.get(key, key)
 
 
@@ -99,8 +88,6 @@ def render_daily_trend(
         </h4>''',
         unsafe_allow_html=True,
     )
-    st.caption("Daily activity is grouped by the VaccTrack Report date field.")
-
     if daily.empty:
         st.info("No valid report dates are available for the selected reporting period.")
         return daily
@@ -313,7 +300,6 @@ def render_daily_tally(
     total_row.update({col: int(tally[col].sum()) for col in numeric_cols})
     export = pd.concat([pd.DataFrame([total_row]), tally], ignore_index=True)
 
-    st.caption(f"Rows: {geo_col}. Columns: days of {month_labels[selected]} plus monthly total.")
     st.dataframe(
         export,
         width="stretch",
@@ -500,10 +486,6 @@ def render_municipality_choropleth(
         </h4>''',
         unsafe_allow_html=True,
     )
-    st.caption(
-        "Municipality labels use the same hand-tuned positions as the MR SIA map. "
-        "Color scale is fixed at 0–100%; hover values retain the actual coverage, including values above 100%."
-    )
     st.plotly_chart(
         fig,
         width="stretch",
@@ -537,22 +519,3 @@ def render_raw_export(
             mime="text/csv",
             key=key,
         )
-
-
-def render_overcoverage_warning(summary: pd.DataFrame, coverage_cols: list[str], geo_col: str = "Municipality") -> None:
-    if summary is None or summary.empty:
-        return
-    flagged = summary.copy()
-    mask = pd.Series(False, index=flagged.index)
-    for col in coverage_cols:
-        if col in flagged.columns:
-            mask |= pd.to_numeric(flagged[col], errors="coerce").fillna(0).gt(100)
-    flagged = flagged.loc[mask]
-    if flagged.empty:
-        return
-    locations = ", ".join(flagged[geo_col].astype(str).head(8).tolist())
-    extra = "" if len(flagged) <= 8 else f" and {len(flagged) - 8} more"
-    st.warning(
-        f"Coverage above 100% appears in {len(flagged)} {geo_col.lower()} row(s): {locations}{extra}. "
-        "Values are not capped so target or reporting mismatches remain visible for validation."
-    )

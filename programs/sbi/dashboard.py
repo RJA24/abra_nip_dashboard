@@ -32,7 +32,6 @@ from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
     render_municipality_choropleth,
-    render_overcoverage_warning,
     render_raw_export,
     render_tally_tabs,
 )
@@ -163,7 +162,6 @@ def render_sbi_dashboard(supabase) -> None:
             </h4>''',
             unsafe_allow_html=True
         )
-        st.caption(f"Reporting period: {period_label}")
 
         if events.empty:
             st.info("No VaccTrack records are available for this selection and reporting period.")
@@ -250,7 +248,6 @@ def render_sbi_dashboard(supabase) -> None:
             }
         )
 
-        render_overcoverage_warning(geo, ['MR Coverage %', 'Td Coverage %'], geo_col)
 
         if view_mode == "All Municipalities (Abra)":
             map_choice = st.selectbox(
@@ -441,7 +438,6 @@ def render_sbi_dashboard(supabase) -> None:
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
         st.markdown(f"### SBI Campaign Overview: {location_label}")
-        st.caption(f"Reporting period: {period_label}")
 
         if target_view.empty:
             st.warning("Target data is unavailable. Sync the target database first.")
@@ -462,14 +458,6 @@ def render_sbi_dashboard(supabase) -> None:
             mr_cov = (total_mr / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
             td_cov = (total_td / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
             hpv_cov = (hpv_1st / tgt_hpv * 100) if tgt_hpv > 0 else 0
-
-            actual_target_schools = int((target_view['Target Source'] == 'Actual').sum()) if 'Target Source' in target_view.columns else 0
-            fallback_target_schools = int((target_view['Target Source'] == 'Baseline fallback').sum()) if 'Target Source' in target_view.columns else 0
-            st.info(
-                "Coverage denominator uses validated Actual Targets for schools with complete target submissions "
-                f"and the baseline as fallback for the rest. Actual: {actual_target_schools:,} school(s); "
-                f"baseline fallback: {fallback_target_schools:,} school(s)."
-            )
 
             k1, k2, k3 = st.columns(3)
             k1.metric(
@@ -548,7 +536,6 @@ def render_sbi_dashboard(supabase) -> None:
                 </h4>''',
                 unsafe_allow_html=True
             )
-            st.caption('MR and Td use a 95% reference target; HPV first dose uses a 90% reference target.')
             exec_daily = render_campaign_burnup(
                 g1_view, g7_view, hpv_view,
                 mr_td_target=tgt_mr_td,
@@ -598,7 +585,6 @@ def render_sbi_dashboard(supabase) -> None:
                 </h4>''',
                 unsafe_allow_html=True
             )
-            render_overcoverage_warning(exec_geo, ['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'], geo_exec_col)
             exec_geo_long = exec_geo.sort_values('MR Coverage %', ascending=True).melt(
                 id_vars=[geo_exec_col],
                 value_vars=['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'],
@@ -711,12 +697,6 @@ def render_sbi_dashboard(supabase) -> None:
                     </h4>''',
                     unsafe_allow_html=True
                 )
-                st.caption(
-                    "Municipality-level target totals across Abra."
-                    if view_mode == "All Municipalities (Abra)"
-                    else f"Barangay-level target totals for {selected_muni}."
-                )
-
                 df_geo_table = df_geo_tgt.sort_values('Total Eligible', ascending=False).copy()
                 st.dataframe(
                     df_geo_table,
@@ -772,7 +752,6 @@ def render_sbi_dashboard(supabase) -> None:
                     </h4>''',
                     unsafe_allow_html=True
                 )
-                st.caption("Grade 1, Grade 4 female, and Grade 7 targets for individual schools.")
 
                 school_limit_label = st.selectbox(
                     "Schools shown in chart:",
@@ -904,10 +883,6 @@ def render_sbi_dashboard(supabase) -> None:
                 </h4>''',
                 unsafe_allow_html=True
             )
-            st.caption(
-                "School-level actual targets are read directly from the 'Actual Targets' worksheet in the SBI Google Sheet."
-            )
-
             if df_sbi_actual_targets.empty:
                 st.warning(
                     "No Actual Targets data is available. Confirm that the SBI Google Sheet contains a worksheet named 'Actual Targets'."
@@ -994,11 +969,6 @@ def render_sbi_dashboard(supabase) -> None:
                     delta_color="off"
                 )
 
-                st.caption(
-                    f"Partial entries: {partial_schools:,} | Pending schools: {pending_schools:,}. "
-                    "Actual-target KPI totals use Complete school submissions only."
-                )
-
                 st.progress(
                     min(max(completion_pct / 100, 0.0), 1.0),
                     text=f"Actual target reporting completion: {completion_pct:.1f}%"
@@ -1047,12 +1017,6 @@ def render_sbi_dashboard(supabase) -> None:
                     </h4>''',
                     unsafe_allow_html=True
                 )
-                st.caption(
-                    "Municipality-level reporting progress and entered actual targets across Abra."
-                    if view_mode == "All Municipalities (Abra)"
-                    else f"Barangay-level reporting progress and entered actual targets for {selected_muni}."
-                )
-
                 df_actual_geo_table = df_actual_geo.sort_values(
                     ['Completion %', 'Total Eligible'], ascending=[False, False]
                 ).copy()
@@ -1157,7 +1121,6 @@ def render_sbi_dashboard(supabase) -> None:
                     </h4>''',
                     unsafe_allow_html=True
                 )
-                st.caption("Schools with Pending target entries are excluded from this chart.")
 
                 actual_school_limit = st.selectbox(
                     "Schools shown in actual-target chart:",
@@ -1307,11 +1270,6 @@ def render_sbi_dashboard(supabase) -> None:
                 </h4>''',
                 unsafe_allow_html=True
             )
-            st.caption(
-                "Comparisons use only schools with Complete actual-target submissions. "
-                "Partial and pending entries are excluded to avoid understating actual targets."
-            )
-
             if df_sbi_targets.empty:
                 st.warning("Baseline target data is unavailable.")
             elif df_sbi_actual_targets.empty:
@@ -1818,11 +1776,6 @@ def render_sbi_dashboard(supabase) -> None:
     # 3. MR & TD (GRADES 1 & 7)
     with tab_sbi_mr:
         st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
-        st.caption(
-            "Vaccination counts combine the older aggregate VaccTrack fields and the newer sex-disaggregated fields. "
-            "Coverage uses validated Actual Targets when complete and baseline targets as fallback."
-        )
-
         mr_combined_tab, mr_g1_tab, mr_g7_tab = st.tabs([
             "Combined Grades 1 & 7",
             "Grade 1",
@@ -1866,7 +1819,6 @@ def render_sbi_dashboard(supabase) -> None:
     # 4. HPV (GRADE 4)
     with tab_sbi_hpv:
         st.markdown(f"### Human Papillomavirus (HPV) - Grade 4 Female Students: {location_label}")
-        st.caption(f"Reporting period: {period_label}")
 
         if hpv_view.empty:
             st.info("No Grade 4 HPV VaccTrack records are available for this selection and reporting period.")
@@ -1951,7 +1903,6 @@ def render_sbi_dashboard(supabase) -> None:
                 }
             )
 
-            render_overcoverage_warning(hpv_geo, ['1st Dose Coverage %', '2nd Dose Coverage %'], geo_col_hpv)
 
             if view_mode == "All Municipalities (Abra)":
                 hpv_map_choice = st.selectbox('Municipality coverage map:', ['HPV 1st Dose', 'HPV 2nd Dose'], key='sbi_hpv_map_choice')
@@ -2127,7 +2078,6 @@ def render_sbi_dashboard(supabase) -> None:
     # 5. DEFERRALS & REFUSALS
     with tab_sbi_def:
         st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
-        st.caption(f"Reporting period: {period_label}")
 
         total_mr_deferred = (
             (pd.to_numeric(g1_view.get('MR Deferred', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0)
@@ -2418,12 +2368,6 @@ def render_sbi_dashboard(supabase) -> None:
                                     f"{dedupe_report['exact_duplicates_removed']:,} exact duplicate row(s) removed; "
                                     f"{dedupe_report['duplicate_ids_consolidated']:,} repeated School ID(s) consolidated."
                                 )
-                                if dedupe_report['name_variant_ids'] or dedupe_report['barangay_variant_ids']:
-                                    st.caption(
-                                        f"Name variants: {dedupe_report['name_variant_ids']:,} School ID(s); "
-                                        f"barangay variants: {dedupe_report['barangay_variant_ids']:,} School ID(s). "
-                                        "The most common text value was retained."
-                                    )
 
                             records = df_push.to_dict(orient='records')
                             inserted = replace_table_with_rollback(supabase, 'sbi_targets', records)
@@ -2432,3 +2376,4 @@ def render_sbi_dashboard(supabase) -> None:
                             st.cache_data.clear()
                     except Exception as e:
                         st.error(f"SBI Target Sync Failed: {e}")
+
