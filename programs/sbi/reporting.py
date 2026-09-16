@@ -24,10 +24,24 @@ from core.geo import fetch_abra_geojson, get_polygon_centroid
 
 def _geo_key(value: object) -> str:
     text = str(value or "").upper().strip()
-    text = unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode("ASCII")
-    text = text.replace("SALAPADAN", "SALLAPADAN")
-    text = text.replace("LICUANBAAYLICUAN", "LICUANBAAY")
-    return re.sub(r"[^A-Z0-9]", "", text)
+
+    # Remove accents first.
+    text = (
+        unicodedata.normalize("NFKD", text)
+        .encode("ASCII", "ignore")
+        .decode("ASCII")
+    )
+
+    # Create one punctuation-free geographic key.
+    key = re.sub(r"[^A-Z0-9]", "", text)
+
+    # Known Abra naming aliases.
+    aliases = {
+        "SALAPADAN": "SALLAPADAN",
+        "LICUANBAAYLICUAN": "LICUANBAAY",
+    }
+
+    return aliases.get(key, key)
 
 
 def _ordered_abra_names() -> list[str]:
