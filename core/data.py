@@ -101,6 +101,96 @@ def fetch_sbi_targets():
         return pd.DataFrame()
 
 
+@st.cache_data(ttl="5m")
+def _fetch_sbi_actual_targets_cached():
+    """Fetch RHU-entered school-level actual targets from the SBI Google Sheet.
+
+    Identity fields are kept from columns A-D. Target-entry status is determined
+    before blank numeric cells are converted to zero, so a genuine zero entered
+    by an RHU still counts as a reported value.
+    """
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = conn.read(spreadsheet=SBI_SHEET_URL, worksheet="Actual Targets", ttl="5m")
+
+    if df.empty:
+        return pd.DataFrame()
+
+    df.columns = [str(c).strip() for c in df.columns]
+
+    identity_cols = [
+        'Municipality', 'Barangay', 'School ID', 'School Name'
+    ]
+    target_cols = [
+        'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female',
+        'G7 Male', 'G7 Female', 'G7 Total', 'Total Eligible'
+    ]
+
+    # Preserve a stable schema even when an entire target column is still blank.
+    for col in identity_cols + target_cols:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    # Remove unused blank rows while keeping every school copied from the baseline.
+    school_id_raw = df['School ID'].astype('string').str.strip()
+    school_name_raw = df['School Name'].astype('string').str.strip()
+    valid_school = (school_id_raw.notna() & school_id_raw.ne('')) | (school_name_raw.notna() & school_name_raw.ne(''))
+    df = df.loc[valid_school].copy()
+
+    # Clean school identity fields without turning missing cells into the string 'nan'.
+    for col in ['Municipality', 'Barangay', 'School Name']:
+        df[col] = df[col].astype('string').fillna('').str.strip()
+    df['Municipality'] = df['Municipality'].str.title()
+    df['Barangay'] = df['Barangay'].str.title()
+    df['School ID'] = (
+        df['School ID']
+        .astype('string')
+        .fillna('')
+        .str.strip()
+        .str.replace(r'\.0$', '', regex=True)
+    )
+
+    # Capture which target cells were actually entered before numeric conversion.
+    raw_targets = df[target_cols].copy()
+    raw_targets = raw_targets.replace(r'^\s*$', pd.NA, regex=True)
+    entered_mask = raw_targets.notna()
+    entered_count = entered_mask.sum(axis=1)
+
+    df['Target Fields Entered'] = entered_count.astype(int)
+    df['Target Entry Status'] = 'Pending'
+    df.loc[entered_count.between(1, len(target_cols) - 1), 'Target Entry Status'] = 'Partial'
+    df.loc[entered_count.eq(len(target_cols)), 'Target Entry Status'] = 'Complete'
+    df['Actual Target Updated'] = entered_count.gt(0)
+
+    # Convert entered targets to numbers. Pending blanks become zero only after the
+    # reporting status has been recorded.
+    for col in target_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    # Recalculate totals when detailed sex-disaggregated values were supplied.
+    g1_detail_entered = entered_mask['G1 Male'] & entered_mask['G1 Female']
+    g7_detail_entered = entered_mask['G7 Male'] & entered_mask['G7 Female']
+
+    calculated_g1 = df['G1 Male'] + df['G1 Female']
+    calculated_g7 = df['G7 Male'] + df['G7 Female']
+
+    df.loc[g1_detail_entered, 'G1 Total'] = calculated_g1.loc[g1_detail_entered]
+    df.loc[g7_detail_entered, 'G7 Total'] = calculated_g7.loc[g7_detail_entered]
+
+    # Overall total is always derived from the grade-level actual targets so the
+    # dashboard stays internally consistent even if the sheet total was omitted.
+    df['Total Eligible'] = df['G1 Total'] + df['G4 Female'] + df['G7 Total']
+
+    return df
+
+
+def fetch_sbi_actual_targets():
+    try:
+        return _fetch_sbi_actual_targets_cached()
+    except Exception:
+        logger.exception("Failed to fetch SBI Actual Targets; failure was not cached")
+        return pd.DataFrame()
+
+
 @st.cache_data(ttl="1h")
 def _fetch_targets_from_supabase_cached():
     supabase = init_supabase()
