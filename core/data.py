@@ -404,3 +404,4 @@ def fetch_opt_data():
     except Exception:
         logger.exception("Failed to fetch OPT data; failure was not cached")
         return pd.DataFrame()
+
