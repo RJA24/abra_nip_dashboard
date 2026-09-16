@@ -387,12 +387,44 @@ def render_municipality_choropleth(
         color_continuous_scale="RdYlGn",
         range_color=[0, 100],
         map_style="white-bg",
-        zoom=8.35,
+        zoom=9.2,
         center={"lat": 17.58, "lon": 120.80},
-        opacity=0.78,
+        opacity=0.70,
         hover_name="Municipality",
         hover_data=hover_data,
     )
+
+    # Exact municipality label adjustments carried over from the MR SIA map.
+    # Keys are normalized because the SBI renderer uses accent-insensitive joins.
+    label_nudges = {
+        "BANGUED": {"lat": +0.015, "lon": -0.015},
+        "BOLINEY": {"lat": -0.015, "lon": -0.015},
+        "BUCAY": {"lat": -0.025, "lon": -0.020},
+        "BUCLOC": {"lat": 0.000, "lon": 0.000},
+        "DAGUIOMAN": {"lat": -0.015, "lon": -0.015},
+        "DANGLAS": {"lat": -0.015, "lon": -0.015},
+        "DOLORES": {"lat": 0.000, "lon": 0.000},
+        "LAPAZ": {"lat": -0.015, "lon": -0.015},
+        "LACUB": {"lat": -0.015, "lon": -0.015},
+        "LAGANGILANG": {"lat": -0.015, "lon": +0.015},
+        "LAGAYAN": {"lat": 0.000, "lon": 0.000},
+        "LANGIDEN": {"lat": +0.015, "lon": -0.025},
+        "LICUANBAAY": {"lat": -0.015, "lon": -0.015},
+        "LUBA": {"lat": 0.000, "lon": 0.000},
+        "MALIBCONG": {"lat": 0.000, "lon": 0.000},
+        "MANABO": {"lat": -0.005, "lon": -0.020},
+        "PENARRUBIA": {"lat": -0.010, "lon": -0.010},
+        "PIDIGAN": {"lat": 0.000, "lon": 0.000},
+        "PILAR": {"lat": -0.015, "lon": -0.020},
+        "SALLAPADAN": {"lat": +0.020, "lon": +0.015},
+        "SANISIDRO": {"lat": +0.015, "lon": -0.015},
+        "SANJUAN": {"lat": 0.000, "lon": +0.015},
+        "SANQUINTIN": {"lat": -0.015, "lon": 0.000},
+        "TAYUM": {"lat": -0.015, "lon": 0.000},
+        "TINEG": {"lat": -0.060, "lon": -0.025},
+        "TUBO": {"lat": +0.060, "lon": +0.025},
+        "VILLAVICIOSA": {"lat": -0.020, "lon": +0.015},
+    }
 
     label_lons: list[float] = []
     label_lats: list[float] = []
@@ -409,6 +441,12 @@ def render_municipality_choropleth(
         lon, lat = get_polygon_centroid(feature.get("geometry", {}))
         if lon is None or lat is None:
             continue
+
+        nudge = label_nudges.get(key_value)
+        if nudge:
+            lat += nudge["lat"]
+            lon += nudge["lon"]
+
         label_lons.append(lon)
         label_lats.append(lat)
         label_text.append(f"{row['Municipality']}<br>{float(row[coverage_col]):.1f}%")
@@ -426,8 +464,20 @@ def render_municipality_choropleth(
 
     fig.update_layout(
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        height=620,
+        height=600,
         coloraxis_colorbar=dict(title="Coverage %"),
+        map=dict(
+            layers=[
+                dict(
+                    sourcetype="raster",
+                    source=[
+                        "https://server.arcgisonline.com/ArcGIS/rest/services/"
+                        "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+                    ],
+                    below="traces",
+                )
+            ]
+        ),
     )
     st.markdown(
         f'''<h4 style="margin-bottom:0.25rem;">
@@ -436,7 +486,10 @@ def render_municipality_choropleth(
         </h4>''',
         unsafe_allow_html=True,
     )
-    st.caption("Color scale is fixed at 0–100%; hover values retain the actual coverage, including values above 100%.")
+    st.caption(
+        "Municipality labels use the same hand-tuned positions as the MR SIA map. "
+        "Color scale is fixed at 0–100%; hover values retain the actual coverage, including values above 100%."
+    )
     st.plotly_chart(
         fig,
         width="stretch",
