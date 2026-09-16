@@ -5,7 +5,7 @@ and administrative target synchronization. The application shell and
 authentication remain in the root ``sia.py`` entry point.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 import time
 
 import numpy as np
@@ -19,6 +19,15 @@ from streamlit_gsheets import GSheetsConnection
 
 from core.config import ABRA_MUNIS, SBI_SHEET_URL
 from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
+from programs.sbi.analytics import (
+    available_date_bounds,
+    build_effective_targets,
+    filter_dates,
+    filter_location,
+    prepare_hpv_events,
+    prepare_mr_td_events,
+    reason_summary,
+)
 from db_utils import (
     consolidate_sbi_targets,
     replace_table_with_rollback,
@@ -46,6 +55,17 @@ def render_sbi_dashboard(supabase) -> None:
     df_sbi_targets = fetch_sbi_targets()
     df_sbi_actual_targets = fetch_sbi_actual_targets()
 
+    # Normalize the three VaccTrack sheet variants once, before rendering tabs.
+    # The source exports include CAR-wide rows and multiple historical form
+    # versions; analytics.py filters to Abra and combines old/new schemas.
+    g1_events = prepare_mr_td_events(df_g1, "G1")
+    g7_events = prepare_mr_td_events(df_g7, "G7")
+    hpv_events = prepare_hpv_events(df_g4)
+    effective_targets = build_effective_targets(df_sbi_targets, df_sbi_actual_targets)
+    available_min_date, available_max_date = available_date_bounds(
+        g1_events, g7_events, hpv_events
+    )
+
     # --- SIDEBAR & FILTERS ---
     with st.sidebar:
         st.markdown(f"""
@@ -58,19 +78,51 @@ def render_sbi_dashboard(supabase) -> None:
         
         st.divider()
         
-        if st.button("Main Menu", use_container_width=True):
+        if st.button("Main Menu", width="stretch"):
             st.session_state['active_program'] = None
             st.rerun()
             
         with st.expander("Dashboard Filters", expanded=True):
-            view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"], key="sbi_geo_mode")
+            view_mode = st.radio(
+                "Geographic Level:",
+                ["All Municipalities (Abra)", "Specific Municipality"],
+                key="sbi_geo_mode"
+            )
             if view_mode == "Specific Municipality":
-                selected_muni = st.selectbox("Select Municipality:", ABRA_MUNIS, key="sbi_muni_sel")
+                selected_muni = st.selectbox(
+                    "Select Municipality:", ABRA_MUNIS, key="sbi_muni_sel"
+                )
             else:
                 selected_muni = "None"
+
+            period_mode = st.selectbox(
+                "Reporting Period:",
+                ["2026 Campaign", "All Available Dates", "Custom Date Range"],
+                index=0,
+                key="sbi_reporting_period"
+            )
+
+            if period_mode == "2026 Campaign":
+                report_start = date(2026, 1, 1)
+                report_end = date(2026, 12, 31)
+            elif period_mode == "All Available Dates":
+                report_start = available_min_date
+                report_end = available_max_date
+            else:
+                default_start = available_min_date or date(2026, 1, 1)
+                default_end = available_max_date or date(2026, 12, 31)
+                custom_range = st.date_input(
+                    "Date Range:",
+                    value=(default_start, default_end),
+                    key="sbi_custom_date_range"
+                )
+                if isinstance(custom_range, (tuple, list)) and len(custom_range) == 2:
+                    report_start, report_end = custom_range
+                else:
+                    report_start, report_end = default_start, default_end
                 
         with st.expander("System Actions", expanded=False):
-            if st.button("Refresh Data", use_container_width=True, key="sbi_refresh"):
+            if st.button("Refresh Data", width="stretch", key="sbi_refresh"):
                 st.cache_data.clear()
                 st.toast("SBI Database Refreshed!")
                 time.sleep(0.5)
@@ -81,87 +133,361 @@ def render_sbi_dashboard(supabase) -> None:
             unsafe_allow_html=True
         )
 
+    # Apply the global SBI filters once so every accomplishment tab uses the
+    # same geographic scope and reporting period.
+    selected_muni_filter = None if view_mode == "All Municipalities (Abra)" else selected_muni
+    g1_view = filter_dates(filter_location(g1_events, selected_muni_filter), report_start, report_end)
+    g7_view = filter_dates(filter_location(g7_events, selected_muni_filter), report_start, report_end)
+    hpv_view = filter_dates(filter_location(hpv_events, selected_muni_filter), report_start, report_end)
+    target_view = filter_location(effective_targets, selected_muni_filter)
+
+    location_label = "Abra Province" if view_mode == "All Municipalities (Abra)" else f"{selected_muni}, Abra"
+    if report_start and report_end:
+        period_label = f"{report_start.strftime('%b %d, %Y')} to {report_end.strftime('%b %d, %Y')}"
+    else:
+        period_label = "All available dates"
+
+    def _render_mr_td_panel(events, targets, target_col, panel_label, key_prefix):
+        st.markdown(
+            f'''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-syringe" style="color:#0033A0; margin-right:8px;"></i>
+            {panel_label}
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        st.caption(f"Reporting period: {period_label}")
+
+        if events.empty:
+            st.info("No VaccTrack records are available for this selection and reporting period.")
+            return
+
+        target_total = pd.to_numeric(targets.get(target_col, 0), errors='coerce').fillna(0).sum() if not targets.empty else 0
+        mr_doses = pd.to_numeric(events['MR Doses'], errors='coerce').fillna(0).sum()
+        td_doses = pd.to_numeric(events['Td Doses'], errors='coerce').fillna(0).sum()
+        mr_cov = (mr_doses / target_total * 100) if target_total > 0 else 0
+        td_cov = (td_doses / target_total * 100) if target_total > 0 else 0
+        schools_reporting = events.loc[events['School ID'].astype(str).str.strip().ne(''), 'School ID'].nunique()
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Target", f"{target_total:,.0f}", f"{len(targets):,} target school rows" if not targets.empty else "No target data")
+        m2.metric("MR Vaccinated", f"{mr_doses:,.0f}", f"{mr_cov:.1f}% coverage", delta_color="off")
+        m3.metric("Td Vaccinated", f"{td_doses:,.0f}", f"{td_cov:.1f}% coverage", delta_color="off")
+        m4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(events):,} report rows", delta_color="off")
+
+        st.divider()
+
+        geo_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+        event_geo = events.groupby(geo_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+        if not targets.empty:
+            target_geo = targets.groupby(geo_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: 'Target'})
+            geo = target_geo.merge(event_geo, on=geo_col, how='outer').fillna(0)
+        else:
+            geo = event_geo.copy()
+            geo['Target'] = 0
+
+        geo['MR Coverage %'] = np.where(geo['Target'] > 0, geo['MR Doses'] / geo['Target'] * 100, 0)
+        geo['Td Coverage %'] = np.where(geo['Target'] > 0, geo['Td Doses'] / geo['Target'] * 100, 0)
+        geo['MR Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['MR Doses']), 0)
+        geo['Td Remaining to 95%'] = np.maximum(np.ceil(geo['Target'] * 0.95 - geo['Td Doses']), 0)
+
+        st.markdown(
+            f'''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
+            Coverage by {geo_col}
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        geo_chart = geo.sort_values('MR Coverage %', ascending=True).melt(
+            id_vars=[geo_col],
+            value_vars=['MR Coverage %', 'Td Coverage %'],
+            var_name='Vaccine',
+            value_name='Coverage %'
+        )
+        fig_geo = px.bar(
+            geo_chart,
+            x='Coverage %',
+            y=geo_col,
+            color='Vaccine',
+            orientation='h',
+            barmode='group',
+            text_auto='.1f',
+            color_discrete_sequence=['#1E88E5', '#43A047']
+        )
+        fig_geo.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
+        fig_geo.update_layout(
+            dragmode=False,
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis_title='Coverage (%)',
+            yaxis_title='',
+            height=max(420, len(geo) * 46),
+            margin=dict(l=10, r=45, t=35, b=60),
+            legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+            legend_title_text=''
+        )
+        fig_geo.update_traces(textposition='outside', cliponaxis=False)
+        st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov')
+
+        st.dataframe(
+            geo.sort_values('MR Coverage %', ascending=False),
+            width='stretch',
+            hide_index=True,
+            column_config={
+                'Target': st.column_config.NumberColumn('Target', format='%d'),
+                'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
+                'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
+                'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
+                'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
+                'MR Remaining to 95%': st.column_config.NumberColumn('MR to 95%', format='%d'),
+                'Td Remaining to 95%': st.column_config.NumberColumn('Td to 95%', format='%d'),
+            }
+        )
+
+        st.divider()
+
+        st.markdown(
+            '''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-chart-line" style="color:#0033A0; margin-right:8px;"></i>
+            Cumulative Vaccinations Over Time
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        trend = events.dropna(subset=['Report Date']).groupby('Report Date')[['MR Doses', 'Td Doses']].sum().reset_index().sort_values('Report Date')
+        if not trend.empty:
+            trend['Cumulative MR'] = trend['MR Doses'].cumsum()
+            trend['Cumulative Td'] = trend['Td Doses'].cumsum()
+            trend_long = trend.melt(
+                id_vars=['Report Date'],
+                value_vars=['Cumulative MR', 'Cumulative Td'],
+                var_name='Vaccine',
+                value_name='Vaccinated'
+            )
+            fig_trend = px.line(
+                trend_long,
+                x='Report Date',
+                y='Vaccinated',
+                color='Vaccine',
+                markers=True,
+                color_discrete_sequence=['#1E88E5', '#43A047']
+            )
+            fig_trend.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='',
+                yaxis_title='Cumulative vaccinated students',
+                height=420,
+                margin=dict(l=10, r=20, t=25, b=55),
+                legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
+                legend_title_text=''
+            )
+            st.plotly_chart(fig_trend, width='stretch', key=f'{key_prefix}_trend')
+        else:
+            st.info("No valid report dates are available for the selected period.")
+
+        st.divider()
+
+        st.markdown(
+            '''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+            School-Level Performance
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        school = events.groupby(['Municipality', 'Barangay', 'School ID', 'School Name'], dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+        if not targets.empty:
+            target_school = targets[['School ID', target_col]].copy().rename(columns={target_col: 'Target'})
+            target_school['School ID'] = target_school['School ID'].astype(str).str.strip()
+            target_school = target_school.drop_duplicates('School ID')
+            school['School ID'] = school['School ID'].astype(str).str.strip()
+            school = school.merge(target_school, on='School ID', how='left')
+        else:
+            school['Target'] = 0
+        school['Target'] = pd.to_numeric(school['Target'], errors='coerce').fillna(0)
+        school['MR Coverage %'] = np.where(school['Target'] > 0, school['MR Doses'] / school['Target'] * 100, np.nan)
+        school['Td Coverage %'] = np.where(school['Target'] > 0, school['Td Doses'] / school['Target'] * 100, np.nan)
+        school['School Label'] = np.where(
+            view_mode == "All Municipalities (Abra)",
+            school['School Name'].astype(str) + ' - ' + school['Municipality'].astype(str),
+            school['School Name'].astype(str)
+        )
+
+        chart_scope = st.selectbox(
+            'Schools shown in chart:',
+            ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
+            key=f'{key_prefix}_school_scope'
+        )
+        school_plot = school.sort_values('Target', ascending=False).copy()
+        if chart_scope.startswith('Top 25'):
+            school_plot = school_plot.head(25)
+        elif chart_scope.startswith('Top 50'):
+            school_plot = school_plot.head(50)
+        school_plot = school_plot.sort_values('Target', ascending=True)
+        school_long = school_plot.melt(
+            id_vars=['School Label'],
+            value_vars=['MR Coverage %', 'Td Coverage %'],
+            var_name='Vaccine',
+            value_name='Coverage %'
+        ).dropna(subset=['Coverage %'])
+        if not school_long.empty:
+            fig_school = px.bar(
+                school_long,
+                x='Coverage %',
+                y='School Label',
+                color='Vaccine',
+                orientation='h',
+                barmode='group',
+                text_auto='.1f',
+                color_discrete_sequence=['#1E88E5', '#43A047']
+            )
+            fig_school.add_vline(x=95, line_dash='dash', line_color='red', annotation_text='95%')
+            fig_school.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Coverage (%)',
+                yaxis_title='',
+                height=max(550, len(school_plot) * 40),
+                margin=dict(l=10, r=45, t=25, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
+                legend_title_text=''
+            )
+            st.plotly_chart(fig_school, width='stretch', key=f'{key_prefix}_school_chart')
+
+        with st.expander('View and download school-level performance', expanded=False):
+            school_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
+            st.dataframe(
+                school_export,
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    'Target': st.column_config.NumberColumn('Target', format='%d'),
+                    'MR Doses': st.column_config.NumberColumn('MR Vaccinated', format='%d'),
+                    'Td Doses': st.column_config.NumberColumn('Td Vaccinated', format='%d'),
+                    'MR Coverage %': st.column_config.NumberColumn('MR Coverage', format='%.1f%%'),
+                    'Td Coverage %': st.column_config.NumberColumn('Td Coverage', format='%.1f%%'),
+                }
+            )
+            st.download_button(
+                label='Download School Performance (CSV)',
+                data=school_export.to_csv(index=False).encode('utf-8-sig'),
+                file_name=f'{key_prefix}_School_Performance_{location_label.replace(", ", "_")}.csv',
+                mime='text/csv',
+                key=f'{key_prefix}_school_download'
+            )
+
     # --- DASHBOARD TABS ---
     sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
     tab_sbi_exec, tab_sbi_target, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def, tab_sbi_admin = sbi_tabs
 
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
-        location_label = "Abra Province" if view_mode == "All Municipalities (Abra)" else f"{selected_muni}, Abra"
         st.markdown(f"### SBI Campaign Overview: {location_label}")
-        
-        if df_sbi_targets.empty:
-            st.warning("Target database is empty. Please go to the Admin Panel tab to sync the database.")
-        else:
-            # Apply Geographic Filter
-            df_view = df_sbi_targets.copy()
-            if view_mode == "Specific Municipality":
-                df_view = df_view[df_view['Municipality'].str.upper() == selected_muni.upper()]
-                
-            # Target Math
-            tgt_g1 = df_view['G1 Total'].sum()
-            tgt_g7 = df_view['G7 Total'].sum()
-            tgt_mr_td = tgt_g1 + tgt_g7
-            tgt_hpv = df_view['G4 Female'].sum()
-            
-            # Accomplishment Math (VaccTrack)
-            g1_mr_doses, g1_td_doses, g7_mr_doses, g7_td_doses, hpv_1st = 0, 0, 0, 0, 0
-            
-            if not df_g1.empty:
-                df_g1_view = df_g1 if view_mode == "All Municipalities (Abra)" else df_g1[df_g1['City/Municipality Name'].str.upper() == selected_muni.upper()]
-                mr_m = [c for c in df_g1.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
-                mr_f = [c for c in df_g1.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
-                td_m = [c for c in df_g1.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
-                td_f = [c for c in df_g1.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
-                
-                if mr_m and mr_f: g1_mr_doses = pd.to_numeric(df_g1_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[mr_f[0]], errors='coerce').fillna(0).sum()
-                if td_m and td_f: g1_td_doses = pd.to_numeric(df_g1_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g1_view[td_f[0]], errors='coerce').fillna(0).sum()
+        st.caption(f"Reporting period: {period_label}")
 
-            if not df_g7.empty:
-                df_g7_view = df_g7 if view_mode == "All Municipalities (Abra)" else df_g7[df_g7['City/Municipality Name'].str.upper() == selected_muni.upper()]
-                mr_m = [c for c in df_g7.columns if 'MR' in c and 'Male' in c and 'vaccinated' in c]
-                mr_f = [c for c in df_g7.columns if 'MR' in c and 'Female' in c and 'vaccinated' in c]
-                td_m = [c for c in df_g7.columns if 'TD' in c.upper() and 'Male' in c and 'vaccinated' in c]
-                td_f = [c for c in df_g7.columns if 'TD' in c.upper() and 'Female' in c and 'vaccinated' in c]
-                
-                if mr_m and mr_f: g7_mr_doses = pd.to_numeric(df_g7_view[mr_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[mr_f[0]], errors='coerce').fillna(0).sum()
-                if td_m and td_f: g7_td_doses = pd.to_numeric(df_g7_view[td_m[0]], errors='coerce').fillna(0).sum() + pd.to_numeric(df_g7_view[td_f[0]], errors='coerce').fillna(0).sum()
-                
-            if not df_g4.empty:
-                df_g4_view = df_g4 if view_mode == "All Municipalities (Abra)" else df_g4[df_g4['City/Municipality Name'].str.upper() == selected_muni.upper()]
-                dose1 = [c for c in df_g4.columns if 'First Dose' in c and 'HPV' in c]
-                if dose1: hpv_1st = pd.to_numeric(df_g4_view[dose1[0]], errors='coerce').fillna(0).sum()
-                
-            # Overall Math
+        if target_view.empty:
+            st.warning("Target data is unavailable. Sync the target database first.")
+        else:
+            tgt_g1 = pd.to_numeric(target_view['G1 Target'], errors='coerce').fillna(0).sum()
+            tgt_g7 = pd.to_numeric(target_view['G7 Target'], errors='coerce').fillna(0).sum()
+            tgt_mr_td = tgt_g1 + tgt_g7
+            tgt_hpv = pd.to_numeric(target_view['G4 Target'], errors='coerce').fillna(0).sum()
+
+            g1_mr_doses = pd.to_numeric(g1_view.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0
+            g1_td_doses = pd.to_numeric(g1_view.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0
+            g7_mr_doses = pd.to_numeric(g7_view.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0
+            g7_td_doses = pd.to_numeric(g7_view.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0
+            hpv_1st = pd.to_numeric(hpv_view.get('HPV Dose 1', 0), errors='coerce').fillna(0).sum() if not hpv_view.empty else 0
+
             total_mr = g1_mr_doses + g7_mr_doses
             total_td = g1_td_doses + g7_td_doses
             mr_cov = (total_mr / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
             td_cov = (total_td / tgt_mr_td * 100) if tgt_mr_td > 0 else 0
             hpv_cov = (hpv_1st / tgt_hpv * 100) if tgt_hpv > 0 else 0
-            
-            # KPI Cards
+
+            actual_target_schools = int((target_view['Target Source'] == 'Actual').sum()) if 'Target Source' in target_view.columns else 0
+            fallback_target_schools = int((target_view['Target Source'] == 'Baseline fallback').sum()) if 'Target Source' in target_view.columns else 0
+            st.info(
+                "Coverage denominator uses validated Actual Targets for schools with complete target submissions "
+                f"and the baseline as fallback for the rest. Actual: {actual_target_schools:,} school(s); "
+                f"baseline fallback: {fallback_target_schools:,} school(s)."
+            )
+
             k1, k2, k3 = st.columns(3)
-            k1.metric("Measles-Rubella (MR) Coverage", f"{mr_cov:.1f}%", f"{total_mr:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
-            k2.metric("Tetanus-diphtheria (Td) Coverage", f"{td_cov:.1f}%", f"{total_td:,.0f} / {tgt_mr_td:,.0f} Target", delta_color="off")
-            k3.metric("HPV Coverage (1st Dose)", f"{hpv_cov:.1f}%", f"{hpv_1st:,.0f} / {tgt_hpv:,.0f} Target", delta_color="off")
-            
+            k1.metric(
+                "Measles-Rubella (MR) Coverage",
+                f"{mr_cov:.1f}%",
+                f"{total_mr:,.0f} / {tgt_mr_td:,.0f} target",
+                delta_color="off"
+            )
+            k2.metric(
+                "Tetanus-diphtheria (Td) Coverage",
+                f"{td_cov:.1f}%",
+                f"{total_td:,.0f} / {tgt_mr_td:,.0f} target",
+                delta_color="off"
+            )
+            k3.metric(
+                "HPV Coverage (1st Dose)",
+                f"{hpv_cov:.1f}%",
+                f"{hpv_1st:,.0f} / {tgt_hpv:,.0f} target",
+                delta_color="off"
+            )
+
             st.divider()
-            
+
             c1, c2, c3 = st.columns(3)
             with c1:
-                fig_gauge_mr = go.Figure(go.Indicator(mode = "gauge+number", value = mr_cov, title = {'text': "MR (Grades 1 & 7)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#1E88E5"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                fig_gauge_mr = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=mr_cov,
+                    title={'text': "MR (Grades 1 & 7)"},
+                    gauge={
+                        'axis': {'range': [None, 100]},
+                        'bar': {'color': "#1E88E5"},
+                        'bgcolor': "rgba(128,128,128,0.2)",
+                        'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}
+                    }
+                ))
                 fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_mr, use_container_width=True, key="sbi_exec_gauge_mr")
-                
+                st.plotly_chart(fig_gauge_mr, width="stretch", key="sbi_exec_gauge_mr")
+
             with c2:
-                fig_gauge_td = go.Figure(go.Indicator(mode = "gauge+number", value = td_cov, title = {'text': "Td (Grades 1 & 7)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#43A047"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}}))
+                fig_gauge_td = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=td_cov,
+                    title={'text': "Td (Grades 1 & 7)"},
+                    gauge={
+                        'axis': {'range': [None, 100]},
+                        'bar': {'color': "#43A047"},
+                        'bgcolor': "rgba(128,128,128,0.2)",
+                        'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 95}
+                    }
+                ))
                 fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_td, use_container_width=True, key="sbi_exec_gauge_td")
-                
+                st.plotly_chart(fig_gauge_td, width="stretch", key="sbi_exec_gauge_td")
+
             with c3:
-                fig_gauge_hpv = go.Figure(go.Indicator(mode = "gauge+number", value = hpv_cov, title = {'text': "HPV 1st Dose (Grade 4 Female)"}, gauge = {'axis': {'range': [None, 100]}, 'bar': {'color': "#D81B60"}, 'bgcolor': "rgba(128,128,128,0.2)", 'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 90}}))
+                fig_gauge_hpv = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=hpv_cov,
+                    title={'text': "HPV 1st Dose (Grade 4 Female)"},
+                    gauge={
+                        'axis': {'range': [None, 100]},
+                        'bar': {'color': "#D81B60"},
+                        'bgcolor': "rgba(128,128,128,0.2)",
+                        'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 90}
+                    }
+                ))
                 fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_hpv, use_container_width=True, key="sbi_exec_gauge_hpv")
+                st.plotly_chart(fig_gauge_hpv, width="stretch", key="sbi_exec_gauge_hpv")
+
+            st.divider()
+
+            report_rows = len(g1_view) + len(g7_view) + len(hpv_view)
+            reporting_schools = len(set(g1_view.get('School ID', pd.Series(dtype=str)).astype(str)) |
+                                    set(g7_view.get('School ID', pd.Series(dtype=str)).astype(str)) |
+                                    set(hpv_view.get('School ID', pd.Series(dtype=str)).astype(str)))
+            r1, r2, r3 = st.columns(3)
+            r1.metric("VaccTrack Report Rows", f"{report_rows:,}")
+            r2.metric("Schools with Reports", f"{reporting_schools:,}")
+            r3.metric("Target Schools", f"{len(target_view):,}")
 
     # 2. TARGETS OVERVIEW
     with tab_sbi_target:
@@ -224,7 +550,7 @@ def render_sbi_dashboard(supabase) -> None:
                 df_geo_table = df_geo_tgt.sort_values('Total Eligible', ascending=False).copy()
                 st.dataframe(
                     df_geo_table,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         geo_col: st.column_config.TextColumn(geo_col),
@@ -265,7 +591,7 @@ def render_sbi_dashboard(supabase) -> None:
                     legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                     legend_title_text=""
                 )
-                st.plotly_chart(fig_tgt_geo, use_container_width=True, key="sbi_tgt_geo_bar")
+                st.plotly_chart(fig_tgt_geo, width="stretch", key="sbi_tgt_geo_bar")
 
                 st.divider()
 
@@ -345,7 +671,7 @@ def render_sbi_dashboard(supabase) -> None:
                 )
                 st.plotly_chart(
                     fig_tgt_school,
-                    use_container_width=True,
+                    width="stretch",
                     key="sbi_tgt_school_bar",
                     config={
                         'scrollZoom': False,
@@ -374,7 +700,7 @@ def render_sbi_dashboard(supabase) -> None:
 
                     st.dataframe(
                         df_school_view,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             'G1 Male': st.column_config.NumberColumn('G1 Male', format='%d'),
@@ -562,7 +888,7 @@ def render_sbi_dashboard(supabase) -> None:
                 ).copy()
                 st.dataframe(
                     df_actual_geo_table,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                     column_config={
                         geo_col_actual: st.column_config.TextColumn(geo_col_actual),
@@ -609,7 +935,7 @@ def render_sbi_dashboard(supabase) -> None:
                 )
                 st.plotly_chart(
                     fig_actual_status,
-                    use_container_width=True,
+                    width="stretch",
                     key='sbi_actual_reporting_status_chart'
                 )
 
@@ -646,7 +972,7 @@ def render_sbi_dashboard(supabase) -> None:
                 )
                 st.plotly_chart(
                     fig_actual_geo,
-                    use_container_width=True,
+                    width="stretch",
                     key='sbi_actual_geo_chart'
                 )
 
@@ -728,7 +1054,7 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     st.plotly_chart(
                         fig_actual_school,
-                        use_container_width=True,
+                        width="stretch",
                         key='sbi_actual_school_chart',
                         config={
                             'scrollZoom': False,
@@ -776,7 +1102,7 @@ def render_sbi_dashboard(supabase) -> None:
 
                     st.dataframe(
                         df_actual_table,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             'Target Fields Entered': st.column_config.NumberColumn('Fields Entered', format='%d'),
@@ -954,7 +1280,7 @@ def render_sbi_dashboard(supabase) -> None:
 
                     st.dataframe(
                         df_target_compare,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             'Baseline': st.column_config.NumberColumn('Baseline', format='%d'),
@@ -996,7 +1322,7 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     st.plotly_chart(
                         fig_target_compare,
-                        use_container_width=True,
+                        width="stretch",
                         key='sbi_compare_grade_chart'
                     )
 
@@ -1061,7 +1387,7 @@ def render_sbi_dashboard(supabase) -> None:
                     ).copy()
                     st.dataframe(
                         df_geo_compare_table,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                         column_config={
                             'Schools': st.column_config.NumberColumn('Schools', format='%d'),
@@ -1117,7 +1443,7 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     st.plotly_chart(
                         fig_geo_compare,
-                        use_container_width=True,
+                        width="stretch",
                         key='sbi_compare_geo_chart'
                     )
 
@@ -1244,7 +1570,7 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     st.plotly_chart(
                         fig_school_compare,
-                        use_container_width=True,
+                        width="stretch",
                         key='sbi_compare_school_chart',
                         config={
                             'scrollZoom': False,
@@ -1289,7 +1615,7 @@ def render_sbi_dashboard(supabase) -> None:
 
                         st.dataframe(
                             df_school_compare_table,
-                            use_container_width=True,
+                            width="stretch",
                             hide_index=True,
                             column_config={
                                 'Baseline G1': st.column_config.NumberColumn('Baseline G1', format='%d'),
@@ -1322,17 +1648,466 @@ def render_sbi_dashboard(supabase) -> None:
     # 3. MR & TD (GRADES 1 & 7)
     with tab_sbi_mr:
         st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
-        st.info("Chart module under construction.")
-        
+        st.caption(
+            "Vaccination counts combine the older aggregate VaccTrack fields and the newer sex-disaggregated fields. "
+            "Coverage uses validated Actual Targets when complete and baseline targets as fallback."
+        )
+
+        mr_combined_tab, mr_g1_tab, mr_g7_tab = st.tabs([
+            "Combined Grades 1 & 7",
+            "Grade 1",
+            "Grade 7",
+        ])
+
+        with mr_combined_tab:
+            combined_events = pd.concat([g1_view, g7_view], ignore_index=True, sort=False)
+            combined_targets = target_view.copy()
+            if not combined_targets.empty:
+                combined_targets['MR/Td Target'] = (
+                    pd.to_numeric(combined_targets['G1 Target'], errors='coerce').fillna(0)
+                    + pd.to_numeric(combined_targets['G7 Target'], errors='coerce').fillna(0)
+                )
+            _render_mr_td_panel(
+                combined_events,
+                combined_targets,
+                'MR/Td Target',
+                'Combined Grades 1 & 7 Performance',
+                'sbi_mrtd_combined'
+            )
+
+        with mr_g1_tab:
+            _render_mr_td_panel(
+                g1_view,
+                target_view,
+                'G1 Target',
+                'Grade 1 MR & Td Performance',
+                'sbi_mrtd_g1'
+            )
+
+        with mr_g7_tab:
+            _render_mr_td_panel(
+                g7_view,
+                target_view,
+                'G7 Target',
+                'Grade 7 MR & Td Performance',
+                'sbi_mrtd_g7'
+            )
+
     # 4. HPV (GRADE 4)
     with tab_sbi_hpv:
-        st.markdown(f"### Human Papillomavirus (HPV) - Female Students: {location_label}")
-        st.info("Chart module under construction.")
+        st.markdown(f"### Human Papillomavirus (HPV) - Grade 4 Female Students: {location_label}")
+        st.caption(f"Reporting period: {period_label}")
+
+        if hpv_view.empty:
+            st.info("No Grade 4 HPV VaccTrack records are available for this selection and reporting period.")
+        else:
+            hpv_target = pd.to_numeric(target_view.get('G4 Target', 0), errors='coerce').fillna(0).sum() if not target_view.empty else 0
+            dose1 = pd.to_numeric(hpv_view['HPV Dose 1'], errors='coerce').fillna(0).sum()
+            dose2 = pd.to_numeric(hpv_view['HPV Dose 2'], errors='coerce').fillna(0).sum()
+            cov1 = (dose1 / hpv_target * 100) if hpv_target > 0 else 0
+            cov2 = (dose2 / hpv_target * 100) if hpv_target > 0 else 0
+            schools_reporting = hpv_view.loc[hpv_view['School ID'].astype(str).str.strip().ne(''), 'School ID'].nunique()
+
+            h1, h2, h3, h4 = st.columns(4)
+            h1.metric("Grade 4 Female Target", f"{hpv_target:,.0f}")
+            h2.metric("HPV 1st Dose", f"{dose1:,.0f}", f"{cov1:.1f}% coverage", delta_color="off")
+            h3.metric("HPV 2nd Dose", f"{dose2:,.0f}", f"{cov2:.1f}% coverage", delta_color="off")
+            h4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(hpv_view):,} report rows", delta_color="off")
+
+            st.divider()
+
+            geo_col_hpv = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+            hpv_geo = hpv_view.groupby(geo_col_hpv, dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+            if not target_view.empty:
+                hpv_target_geo = target_view.groupby(geo_col_hpv, dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
+                hpv_geo = hpv_target_geo.merge(hpv_geo, on=geo_col_hpv, how='outer').fillna(0)
+            else:
+                hpv_geo['Target'] = 0
+
+            hpv_geo['1st Dose Coverage %'] = np.where(hpv_geo['Target'] > 0, hpv_geo['HPV Dose 1'] / hpv_geo['Target'] * 100, 0)
+            hpv_geo['2nd Dose Coverage %'] = np.where(hpv_geo['Target'] > 0, hpv_geo['HPV Dose 2'] / hpv_geo['Target'] * 100, 0)
+            hpv_geo['1st Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 1']), 0)
+            hpv_geo['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_geo['Target'] * 0.90 - hpv_geo['HPV Dose 2']), 0)
+
+            st.markdown(
+                f'''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-chart-bar" style="color:#0033A0; margin-right:8px;"></i>
+                HPV Coverage by {geo_col_hpv}
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            hpv_geo_long = hpv_geo.sort_values('1st Dose Coverage %', ascending=True).melt(
+                id_vars=[geo_col_hpv],
+                value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
+                var_name='Dose',
+                value_name='Coverage %'
+            )
+            fig_hpv_geo = px.bar(
+                hpv_geo_long,
+                x='Coverage %',
+                y=geo_col_hpv,
+                color='Dose',
+                orientation='h',
+                barmode='group',
+                text_auto='.1f',
+                color_discrete_sequence=['#D81B60', '#8E24AA']
+            )
+            fig_hpv_geo.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
+            fig_hpv_geo.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Coverage (%)',
+                yaxis_title='',
+                height=max(420, len(hpv_geo) * 46),
+                margin=dict(l=10, r=45, t=35, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                legend_title_text=''
+            )
+            fig_hpv_geo.update_traces(textposition='outside', cliponaxis=False)
+            st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo')
+
+            st.dataframe(
+                hpv_geo.sort_values('1st Dose Coverage %', ascending=False),
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    'Target': st.column_config.NumberColumn('Target', format='%d'),
+                    'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
+                    'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
+                    '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
+                    '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
+                    '1st Dose Remaining to 90%': st.column_config.NumberColumn('1st Dose to 90%', format='%d'),
+                    '2nd Dose Remaining to 90%': st.column_config.NumberColumn('2nd Dose to 90%', format='%d'),
+                }
+            )
+
+            st.divider()
+
+            st.markdown(
+                '''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-chart-line" style="color:#0033A0; margin-right:8px;"></i>
+                Cumulative HPV Doses Over Time
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            hpv_trend = hpv_view.dropna(subset=['Report Date']).groupby('Report Date')[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index().sort_values('Report Date')
+            if not hpv_trend.empty:
+                hpv_trend['Cumulative 1st Dose'] = hpv_trend['HPV Dose 1'].cumsum()
+                hpv_trend['Cumulative 2nd Dose'] = hpv_trend['HPV Dose 2'].cumsum()
+                hpv_trend_long = hpv_trend.melt(
+                    id_vars=['Report Date'],
+                    value_vars=['Cumulative 1st Dose', 'Cumulative 2nd Dose'],
+                    var_name='Dose',
+                    value_name='Vaccinated'
+                )
+                fig_hpv_trend = px.line(
+                    hpv_trend_long,
+                    x='Report Date',
+                    y='Vaccinated',
+                    color='Dose',
+                    markers=True,
+                    color_discrete_sequence=['#D81B60', '#8E24AA']
+                )
+                fig_hpv_trend.update_layout(
+                    dragmode=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title='',
+                    yaxis_title='Cumulative vaccinated students',
+                    height=420,
+                    margin=dict(l=10, r=20, t=25, b=55),
+                    legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
+                    legend_title_text=''
+                )
+                st.plotly_chart(fig_hpv_trend, width='stretch', key='sbi_hpv_trend')
+
+            st.divider()
+
+            st.markdown(
+                '''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+                School-Level HPV Performance
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            hpv_school = hpv_view.groupby(['Municipality', 'Barangay', 'School ID', 'School Name'], dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+            if not target_view.empty:
+                target_school_hpv = target_view[['School ID', 'G4 Target']].copy().rename(columns={'G4 Target': 'Target'})
+                target_school_hpv['School ID'] = target_school_hpv['School ID'].astype(str).str.strip()
+                target_school_hpv = target_school_hpv.drop_duplicates('School ID')
+                hpv_school['School ID'] = hpv_school['School ID'].astype(str).str.strip()
+                hpv_school = hpv_school.merge(target_school_hpv, on='School ID', how='left')
+            else:
+                hpv_school['Target'] = 0
+            hpv_school['Target'] = pd.to_numeric(hpv_school['Target'], errors='coerce').fillna(0)
+            hpv_school['1st Dose Coverage %'] = np.where(hpv_school['Target'] > 0, hpv_school['HPV Dose 1'] / hpv_school['Target'] * 100, np.nan)
+            hpv_school['2nd Dose Coverage %'] = np.where(hpv_school['Target'] > 0, hpv_school['HPV Dose 2'] / hpv_school['Target'] * 100, np.nan)
+            hpv_school['School Label'] = np.where(
+                view_mode == "All Municipalities (Abra)",
+                hpv_school['School Name'].astype(str) + ' - ' + hpv_school['Municipality'].astype(str),
+                hpv_school['School Name'].astype(str)
+            )
+
+            hpv_scope = st.selectbox(
+                'Schools shown in chart:',
+                ['Top 25 by Target', 'Top 50 by Target', 'All Schools'],
+                key='sbi_hpv_school_scope'
+            )
+            hpv_school_plot = hpv_school.sort_values('Target', ascending=False).copy()
+            if hpv_scope.startswith('Top 25'):
+                hpv_school_plot = hpv_school_plot.head(25)
+            elif hpv_scope.startswith('Top 50'):
+                hpv_school_plot = hpv_school_plot.head(50)
+            hpv_school_plot = hpv_school_plot.sort_values('Target', ascending=True)
+            hpv_school_long = hpv_school_plot.melt(
+                id_vars=['School Label'],
+                value_vars=['1st Dose Coverage %', '2nd Dose Coverage %'],
+                var_name='Dose',
+                value_name='Coverage %'
+            ).dropna(subset=['Coverage %'])
+
+            if not hpv_school_long.empty:
+                fig_hpv_school = px.bar(
+                    hpv_school_long,
+                    x='Coverage %',
+                    y='School Label',
+                    color='Dose',
+                    orientation='h',
+                    barmode='group',
+                    text_auto='.1f',
+                    color_discrete_sequence=['#D81B60', '#8E24AA']
+                )
+                fig_hpv_school.add_vline(x=90, line_dash='dash', line_color='red', annotation_text='90%')
+                fig_hpv_school.update_layout(
+                    dragmode=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title='Coverage (%)',
+                    yaxis_title='',
+                    height=max(550, len(hpv_school_plot) * 40),
+                    margin=dict(l=10, r=45, t=25, b=60),
+                    legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
+                    legend_title_text=''
+                )
+                st.plotly_chart(fig_hpv_school, width='stretch', key='sbi_hpv_school_chart')
+
+            with st.expander('View and download school-level HPV performance', expanded=False):
+                hpv_export = hpv_school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
+                st.dataframe(
+                    hpv_export,
+                    width='stretch',
+                    hide_index=True,
+                    column_config={
+                        'Target': st.column_config.NumberColumn('Target', format='%d'),
+                        'HPV Dose 1': st.column_config.NumberColumn('1st Dose', format='%d'),
+                        'HPV Dose 2': st.column_config.NumberColumn('2nd Dose', format='%d'),
+                        '1st Dose Coverage %': st.column_config.NumberColumn('1st Dose Coverage', format='%.1f%%'),
+                        '2nd Dose Coverage %': st.column_config.NumberColumn('2nd Dose Coverage', format='%.1f%%'),
+                    }
+                )
+                st.download_button(
+                    label='Download HPV School Performance (CSV)',
+                    data=hpv_export.to_csv(index=False).encode('utf-8-sig'),
+                    file_name=f'SBI_HPV_School_Performance_{location_label.replace(", ", "_")}.csv',
+                    mime='text/csv',
+                    key='sbi_hpv_school_download'
+                )
 
     # 5. DEFERRALS & REFUSALS
     with tab_sbi_def:
         st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
-        st.info("Chart module under construction.")
+        st.caption(f"Reporting period: {period_label}")
+
+        total_mr_deferred = (
+            (pd.to_numeric(g1_view.get('MR Deferred', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0)
+            + (pd.to_numeric(g7_view.get('MR Deferred', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0)
+        )
+        total_td_deferred = (
+            (pd.to_numeric(g1_view.get('Td Deferred', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0)
+            + (pd.to_numeric(g7_view.get('Td Deferred', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0)
+        )
+        total_hpv_deferred = (
+            pd.to_numeric(hpv_view.get('HPV Deferred 1', 0), errors='coerce').fillna(0).sum()
+            + pd.to_numeric(hpv_view.get('HPV Deferred 2', 0), errors='coerce').fillna(0).sum()
+            if not hpv_view.empty else 0
+        )
+        total_mr_refused = (
+            (pd.to_numeric(g1_view.get('MR Refused', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0)
+            + (pd.to_numeric(g7_view.get('MR Refused', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0)
+        )
+        total_td_refused = (
+            (pd.to_numeric(g1_view.get('Td Refused', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0)
+            + (pd.to_numeric(g7_view.get('Td Refused', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0)
+        )
+        total_hpv_refused = (
+            pd.to_numeric(hpv_view.get('HPV Refused 1', 0), errors='coerce').fillna(0).sum()
+            + pd.to_numeric(hpv_view.get('HPV Refused 2', 0), errors='coerce').fillna(0).sum()
+            if not hpv_view.empty else 0
+        )
+        total_deferred = total_mr_deferred + total_td_deferred + total_hpv_deferred
+        total_refused = total_mr_refused + total_td_refused + total_hpv_refused
+        reasons_df = reason_summary(g1_view, g7_view, hpv_view)
+        total_reason_records = pd.to_numeric(reasons_df['Count'], errors='coerce').fillna(0).sum() if not reasons_df.empty else 0
+
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Total Deferred", f"{total_deferred:,.0f}")
+        d2.metric("Total Refused", f"{total_refused:,.0f}")
+        d3.metric("Recorded Missed-Vaccination Reasons", f"{total_reason_records:,.0f}")
+        d4.metric("VaccTrack Report Rows", f"{len(g1_view) + len(g7_view) + len(hpv_view):,}")
+
+        st.divider()
+
+        st.markdown(
+            '''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
+            Deferrals and Refusals by Vaccine / Dose
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        missed_summary = pd.DataFrame([
+            {'Vaccine / Dose': 'MR - Grades 1 & 7', 'Deferred': total_mr_deferred, 'Refused': total_mr_refused},
+            {'Vaccine / Dose': 'Td - Grades 1 & 7', 'Deferred': total_td_deferred, 'Refused': total_td_refused},
+            {'Vaccine / Dose': 'HPV - Doses 1 & 2', 'Deferred': total_hpv_deferred, 'Refused': total_hpv_refused},
+        ])
+        missed_long = missed_summary.melt(
+            id_vars=['Vaccine / Dose'],
+            value_vars=['Deferred', 'Refused'],
+            var_name='Outcome',
+            value_name='Count'
+        )
+        fig_missed = px.bar(
+            missed_long,
+            x='Vaccine / Dose',
+            y='Count',
+            color='Outcome',
+            barmode='group',
+            text_auto='.0f',
+            color_discrete_sequence=['#F9A825', '#D32F2F']
+        )
+        fig_missed.update_layout(
+            dragmode=False,
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis_title='',
+            yaxis_title='Students',
+            height=420,
+            margin=dict(l=10, r=20, t=25, b=60),
+            legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
+            legend_title_text=''
+        )
+        fig_missed.update_traces(textposition='outside', cliponaxis=False)
+        st.plotly_chart(fig_missed, width='stretch', key='sbi_def_ref_summary')
+
+        st.divider()
+
+        st.markdown(
+            '''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-list-ol" style="color:#0033A0; margin-right:8px;"></i>
+            Reasons for Missed Vaccination
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        reasons_nonzero = reasons_df[reasons_df['Count'] > 0].sort_values('Count', ascending=True).copy() if not reasons_df.empty else pd.DataFrame()
+        if reasons_nonzero.empty:
+            st.info("No reason counts were recorded for the selected period.")
+        else:
+            reasons_nonzero['Reason Label'] = reasons_nonzero['Reason Code'] + ' - ' + reasons_nonzero['Reason']
+            fig_reasons = px.bar(
+                reasons_nonzero,
+                x='Count',
+                y='Reason Label',
+                orientation='h',
+                text_auto='.0f',
+                color_discrete_sequence=['#6D4C41']
+            )
+            fig_reasons.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Recorded cases',
+                yaxis_title='',
+                height=max(450, len(reasons_nonzero) * 38),
+                margin=dict(l=10, r=35, t=25, b=40),
+                showlegend=False
+            )
+            fig_reasons.update_traces(textposition='outside', cliponaxis=False)
+            st.plotly_chart(fig_reasons, width='stretch', key='sbi_def_ref_reasons')
+
+        st.divider()
+
+        geo_col_def = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+        geo_parts = []
+        if not g1_view.empty:
+            g1_geo = g1_view.groupby(geo_col_def, dropna=False)[['MR Deferred', 'Td Deferred', 'MR Refused', 'Td Refused']].sum().reset_index()
+            g1_geo['Deferred'] = g1_geo['MR Deferred'] + g1_geo['Td Deferred']
+            g1_geo['Refused'] = g1_geo['MR Refused'] + g1_geo['Td Refused']
+            geo_parts.append(g1_geo[[geo_col_def, 'Deferred', 'Refused']])
+        if not g7_view.empty:
+            g7_geo = g7_view.groupby(geo_col_def, dropna=False)[['MR Deferred', 'Td Deferred', 'MR Refused', 'Td Refused']].sum().reset_index()
+            g7_geo['Deferred'] = g7_geo['MR Deferred'] + g7_geo['Td Deferred']
+            g7_geo['Refused'] = g7_geo['MR Refused'] + g7_geo['Td Refused']
+            geo_parts.append(g7_geo[[geo_col_def, 'Deferred', 'Refused']])
+        if not hpv_view.empty:
+            hpv_geo_def = hpv_view.groupby(geo_col_def, dropna=False)[['HPV Deferred 1', 'HPV Deferred 2', 'HPV Refused 1', 'HPV Refused 2']].sum().reset_index()
+            hpv_geo_def['Deferred'] = hpv_geo_def['HPV Deferred 1'] + hpv_geo_def['HPV Deferred 2']
+            hpv_geo_def['Refused'] = hpv_geo_def['HPV Refused 1'] + hpv_geo_def['HPV Refused 2']
+            geo_parts.append(hpv_geo_def[[geo_col_def, 'Deferred', 'Refused']])
+
+        st.markdown(
+            f'''<h4 style="margin-bottom:0.25rem;">
+            <i class="fa-solid fa-location-dot" style="color:#0033A0; margin-right:8px;"></i>
+            Missed Vaccination Outcomes by {geo_col_def}
+            </h4>''',
+            unsafe_allow_html=True
+        )
+        if geo_parts:
+            geo_missed = pd.concat(geo_parts, ignore_index=True).groupby(geo_col_def, dropna=False)[['Deferred', 'Refused']].sum().reset_index()
+            geo_missed['Total Missed'] = geo_missed['Deferred'] + geo_missed['Refused']
+            geo_missed_long = geo_missed.sort_values('Total Missed', ascending=True).melt(
+                id_vars=[geo_col_def],
+                value_vars=['Deferred', 'Refused'],
+                var_name='Outcome',
+                value_name='Count'
+            )
+            fig_geo_missed = px.bar(
+                geo_missed_long,
+                x='Count',
+                y=geo_col_def,
+                color='Outcome',
+                orientation='h',
+                barmode='group',
+                text_auto='.0f',
+                color_discrete_sequence=['#F9A825', '#D32F2F']
+            )
+            fig_geo_missed.update_layout(
+                dragmode=False,
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title='Students',
+                yaxis_title='',
+                height=max(420, len(geo_missed) * 45),
+                margin=dict(l=10, r=35, t=25, b=60),
+                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
+                legend_title_text=''
+            )
+            fig_geo_missed.update_traces(textposition='outside', cliponaxis=False)
+            st.plotly_chart(fig_geo_missed, width='stretch', key='sbi_def_ref_geo')
+
+            st.dataframe(
+                geo_missed.sort_values('Total Missed', ascending=False),
+                width='stretch',
+                hide_index=True,
+                column_config={
+                    'Deferred': st.column_config.NumberColumn('Deferred', format='%d'),
+                    'Refused': st.column_config.NumberColumn('Refused', format='%d'),
+                    'Total Missed': st.column_config.NumberColumn('Total Missed', format='%d'),
+                }
+            )
+            st.download_button(
+                label='Download Deferral and Refusal Summary (CSV)',
+                data=geo_missed.to_csv(index=False).encode('utf-8-sig'),
+                file_name=f'SBI_Deferrals_Refusals_{location_label.replace(", ", "_")}.csv',
+                mime='text/csv',
+                key='sbi_def_ref_download'
+            )
+        else:
+            st.info("No deferral or refusal records are available for this selection.")
+
 
     # 6. ADMIN PANEL (SBI SYNC)
     with tab_sbi_admin:
@@ -1346,7 +2121,7 @@ def render_sbi_dashboard(supabase) -> None:
             st.markdown("### Phase 1: SBI Target Database Sync")
             st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
             
-            if st.button("Sync SBI Target Database", type="secondary", use_container_width=True, key="sync_sbi_targets_btn"):
+            if st.button("Sync SBI Target Database", type="secondary", width="stretch", key="sync_sbi_targets_btn"):
                 with st.spinner("Downloading and processing DepEd master sheet..."):
                     try:
                         conn = st.connection("gsheets", type=GSheetsConnection)
