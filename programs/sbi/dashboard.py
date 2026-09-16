@@ -2,7 +2,7 @@
 
 This module owns SBI-specific UI, filtering, analytics, target review,
 and administrative target synchronization. The application shell and
-authentication remain in the root ``sia.py`` entry point.
+authentication remain in the root ``app.py`` entry point.
 """
 
 from datetime import date, datetime
@@ -27,6 +27,14 @@ from programs.sbi.analytics import (
     prepare_hpv_events,
     prepare_mr_td_events,
     reason_summary,
+)
+from programs.sbi.reporting import (
+    render_campaign_burnup,
+    render_daily_trend,
+    render_municipality_choropleth,
+    render_overcoverage_warning,
+    render_raw_export,
+    render_tally_tabs,
 )
 from db_utils import (
     consolidate_sbi_targets,
@@ -242,6 +250,35 @@ def render_sbi_dashboard(supabase) -> None:
             }
         )
 
+        render_overcoverage_warning(geo, ['MR Coverage %', 'Td Coverage %'], geo_col)
+
+        if view_mode == "All Municipalities (Abra)":
+            map_choice = st.selectbox(
+                'Municipality coverage map:',
+                ['MR Coverage', 'Td Coverage'],
+                key=f'{key_prefix}_map_choice'
+            )
+            map_geo = geo.rename(columns={geo_col: 'Municipality'}).copy()
+            if map_choice == 'MR Coverage':
+                render_municipality_choropleth(
+                    map_geo, 'MR Coverage %', f'{panel_label} - MR Coverage by Municipality', f'{key_prefix}_mr_map',
+                    target_col='Target', vaccinated_col='MR Doses', remaining_col='MR Remaining to 95%'
+                )
+            else:
+                render_municipality_choropleth(
+                    map_geo, 'Td Coverage %', f'{panel_label} - Td Coverage by Municipality', f'{key_prefix}_td_map',
+                    target_col='Target', vaccinated_col='Td Doses', remaining_col='Td Remaining to 95%'
+                )
+
+        st.divider()
+        render_daily_trend(
+            events,
+            [('MR Doses', 'MR'), ('Td Doses', 'Td')],
+            title='Daily Vaccination Activity by Report Date',
+            key=f'{key_prefix}_daily_trend',
+            colors=['#1E88E5', '#43A047'],
+        )
+
         st.divider()
 
         st.markdown(
@@ -269,6 +306,14 @@ def render_sbi_dashboard(supabase) -> None:
                 markers=True,
                 color_discrete_sequence=['#1E88E5', '#43A047']
             )
+            if target_total > 0:
+                fig_trend.add_hline(
+                    y=target_total * 0.95,
+                    line_dash='dash',
+                    line_color='rgba(0,51,160,0.60)',
+                    annotation_text='95% target',
+                    annotation_position='top left'
+                )
             fig_trend.update_layout(
                 dragmode=False,
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -282,6 +327,15 @@ def render_sbi_dashboard(supabase) -> None:
             st.plotly_chart(fig_trend, width='stretch', key=f'{key_prefix}_trend')
         else:
             st.info("No valid report dates are available for the selected period.")
+
+        st.divider()
+        render_tally_tabs(
+            events,
+            [('MR Doses', 'MR'), ('Td Doses', 'Td')],
+            geo_col=geo_col,
+            key_prefix=f'{key_prefix}_tally',
+            location_label=location_label,
+        )
 
         st.divider()
 
@@ -372,6 +426,13 @@ def render_sbi_dashboard(supabase) -> None:
                 mime='text/csv',
                 key=f'{key_prefix}_school_download'
             )
+
+        render_raw_export(
+            events,
+            title='View and download normalized VaccTrack rows',
+            filename=f'{key_prefix}_VaccTrack_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+            key=f'{key_prefix}_raw_download',
+        )
 
     # --- DASHBOARD TABS ---
     sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
@@ -477,6 +538,115 @@ def render_sbi_dashboard(supabase) -> None:
                 ))
                 fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
                 st.plotly_chart(fig_gauge_hpv, width="stretch", key="sbi_exec_gauge_hpv")
+
+            st.divider()
+
+            st.markdown(
+                '''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-arrow-trend-up" style="color:#0033A0; margin-right:8px;"></i>
+                Cumulative Campaign Burn-Up
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            st.caption('MR and Td use a 95% reference target; HPV first dose uses a 90% reference target.')
+            exec_daily = render_campaign_burnup(
+                g1_view, g7_view, hpv_view,
+                mr_td_target=tgt_mr_td,
+                hpv_target=tgt_hpv,
+                key='sbi_exec_campaign_burnup',
+            )
+            if not exec_daily.empty:
+                with st.expander('View and download daily campaign summary', expanded=False):
+                    st.dataframe(exec_daily, width='stretch', hide_index=True)
+                    st.download_button(
+                        label='Download Daily Campaign Summary (CSV)',
+                        data=exec_daily.to_csv(index=False).encode('utf-8-sig'),
+                        file_name=f'SBI_Daily_Campaign_Summary_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+                        mime='text/csv',
+                        key='sbi_exec_daily_summary_download'
+                    )
+
+            st.divider()
+            geo_exec_col = 'Municipality' if view_mode == "All Municipalities (Abra)" else 'Barangay'
+            exec_targets = target_view.copy()
+            exec_targets['MR/Td Target'] = (
+                pd.to_numeric(exec_targets.get('G1 Target', 0), errors='coerce').fillna(0)
+                + pd.to_numeric(exec_targets.get('G7 Target', 0), errors='coerce').fillna(0)
+            )
+            exec_targets['HPV Target'] = pd.to_numeric(exec_targets.get('G4 Target', 0), errors='coerce').fillna(0)
+            exec_target_geo = exec_targets.groupby(geo_exec_col, dropna=False)[['MR/Td Target', 'HPV Target']].sum().reset_index()
+
+            mrtd_exec = pd.concat([g1_view, g7_view], ignore_index=True, sort=False)
+            mrtd_geo = (mrtd_exec.groupby(geo_exec_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+                         if not mrtd_exec.empty else pd.DataFrame(columns=[geo_exec_col, 'MR Doses', 'Td Doses']))
+            hpv_geo_exec = (hpv_view.groupby(geo_exec_col, dropna=False)[['HPV Dose 1']].sum().reset_index()
+                            if not hpv_view.empty else pd.DataFrame(columns=[geo_exec_col, 'HPV Dose 1']))
+            exec_geo = exec_target_geo.merge(mrtd_geo, on=geo_exec_col, how='outer').merge(
+                hpv_geo_exec, on=geo_exec_col, how='outer'
+            ).fillna(0)
+            exec_geo['MR Coverage %'] = np.where(exec_geo['MR/Td Target'] > 0, exec_geo['MR Doses'] / exec_geo['MR/Td Target'] * 100, 0)
+            exec_geo['Td Coverage %'] = np.where(exec_geo['MR/Td Target'] > 0, exec_geo['Td Doses'] / exec_geo['MR/Td Target'] * 100, 0)
+            exec_geo['HPV 1st Dose Coverage %'] = np.where(exec_geo['HPV Target'] > 0, exec_geo['HPV Dose 1'] / exec_geo['HPV Target'] * 100, 0)
+            exec_geo['MR Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['MR Doses']), 0)
+            exec_geo['Td Remaining to 95%'] = np.maximum(np.ceil(exec_geo['MR/Td Target'] * 0.95 - exec_geo['Td Doses']), 0)
+            exec_geo['HPV Remaining to 90%'] = np.maximum(np.ceil(exec_geo['HPV Target'] * 0.90 - exec_geo['HPV Dose 1']), 0)
+
+            st.markdown(
+                f'''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
+                Coverage by {geo_exec_col}
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            render_overcoverage_warning(exec_geo, ['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'], geo_exec_col)
+            exec_geo_long = exec_geo.sort_values('MR Coverage %', ascending=True).melt(
+                id_vars=[geo_exec_col],
+                value_vars=['MR Coverage %', 'Td Coverage %', 'HPV 1st Dose Coverage %'],
+                var_name='Program', value_name='Coverage %'
+            )
+            fig_exec_geo = px.bar(
+                exec_geo_long, x='Coverage %', y=geo_exec_col, color='Program', barmode='group',
+                orientation='h', text_auto='.1f', color_discrete_sequence=['#1E88E5', '#43A047', '#D81B60']
+            )
+            fig_exec_geo.update_traces(textposition='outside', cliponaxis=False)
+            fig_exec_geo.update_layout(
+                dragmode=False, plot_bgcolor='rgba(0,0,0,0)', xaxis_title='Coverage (%)', yaxis_title='',
+                height=max(450, len(exec_geo) * 48), margin=dict(l=10, r=55, t=25, b=65),
+                legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5), legend_title_text=''
+            )
+            st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage')
+
+            with st.expander(f'View full {geo_exec_col.lower()} coverage table', expanded=False):
+                st.dataframe(exec_geo.sort_values('MR Coverage %', ascending=False), width='stretch', hide_index=True)
+                st.download_button(
+                    label='Download Geographic Coverage (CSV)',
+                    data=exec_geo.to_csv(index=False).encode('utf-8-sig'),
+                    file_name=f'SBI_Coverage_by_{geo_exec_col}_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+                    mime='text/csv', key='sbi_exec_geo_download'
+                )
+
+            if view_mode == "All Municipalities (Abra)":
+                st.divider()
+                exec_map_choice = st.selectbox(
+                    'Provincial choropleth:', ['MR Coverage', 'Td Coverage', 'HPV 1st Dose Coverage'],
+                    key='sbi_exec_map_choice'
+                )
+                exec_map_df = exec_geo.rename(columns={geo_exec_col: 'Municipality'}).copy()
+                if exec_map_choice == 'MR Coverage':
+                    render_municipality_choropleth(
+                        exec_map_df, 'MR Coverage %', 'MR Coverage by Municipality', 'sbi_exec_mr_map',
+                        target_col='MR/Td Target', vaccinated_col='MR Doses', remaining_col='MR Remaining to 95%'
+                    )
+                elif exec_map_choice == 'Td Coverage':
+                    render_municipality_choropleth(
+                        exec_map_df, 'Td Coverage %', 'Td Coverage by Municipality', 'sbi_exec_td_map',
+                        target_col='MR/Td Target', vaccinated_col='Td Doses', remaining_col='Td Remaining to 95%'
+                    )
+                else:
+                    render_municipality_choropleth(
+                        exec_map_df, 'HPV 1st Dose Coverage %', 'HPV 1st Dose Coverage by Municipality', 'sbi_exec_hpv_map',
+                        target_col='HPV Target', vaccinated_col='HPV Dose 1', remaining_col='HPV Remaining to 90%'
+                    )
 
             st.divider()
 
@@ -1781,6 +1951,30 @@ def render_sbi_dashboard(supabase) -> None:
                 }
             )
 
+            render_overcoverage_warning(hpv_geo, ['1st Dose Coverage %', '2nd Dose Coverage %'], geo_col_hpv)
+
+            if view_mode == "All Municipalities (Abra)":
+                hpv_map_choice = st.selectbox('Municipality coverage map:', ['HPV 1st Dose', 'HPV 2nd Dose'], key='sbi_hpv_map_choice')
+                hpv_map_df = hpv_geo.rename(columns={geo_col_hpv: 'Municipality'}).copy()
+                if hpv_map_choice == 'HPV 1st Dose':
+                    render_municipality_choropleth(
+                        hpv_map_df, '1st Dose Coverage %', 'HPV 1st Dose Coverage by Municipality', 'sbi_hpv_dose1_map',
+                        target_col='Target', vaccinated_col='HPV Dose 1', remaining_col='1st Dose Remaining to 90%'
+                    )
+                else:
+                    render_municipality_choropleth(
+                        hpv_map_df, '2nd Dose Coverage %', 'HPV 2nd Dose Coverage by Municipality', 'sbi_hpv_dose2_map',
+                        target_col='Target', vaccinated_col='HPV Dose 2', remaining_col='2nd Dose Remaining to 90%'
+                    )
+
+            st.divider()
+            render_daily_trend(
+                hpv_view,
+                [('HPV Dose 1', 'HPV 1st Dose'), ('HPV Dose 2', 'HPV 2nd Dose')],
+                title='Daily HPV Vaccination Activity by Report Date',
+                key='sbi_hpv_daily_trend', colors=['#D81B60', '#8E24AA'],
+            )
+
             st.divider()
 
             st.markdown(
@@ -1808,6 +2002,11 @@ def render_sbi_dashboard(supabase) -> None:
                     markers=True,
                     color_discrete_sequence=['#D81B60', '#8E24AA']
                 )
+                if hpv_target > 0:
+                    fig_hpv_trend.add_hline(
+                        y=hpv_target * 0.90, line_dash='dash', line_color='rgba(216,27,96,0.65)',
+                        annotation_text='90% target', annotation_position='top left'
+                    )
                 fig_hpv_trend.update_layout(
                     dragmode=False,
                     plot_bgcolor='rgba(0,0,0,0)',
@@ -1819,6 +2018,13 @@ def render_sbi_dashboard(supabase) -> None:
                     legend_title_text=''
                 )
                 st.plotly_chart(fig_hpv_trend, width='stretch', key='sbi_hpv_trend')
+
+            st.divider()
+            render_tally_tabs(
+                hpv_view,
+                [('HPV Dose 1', 'HPV 1st Dose'), ('HPV Dose 2', 'HPV 2nd Dose')],
+                geo_col=geo_col_hpv, key_prefix='sbi_hpv_tally', location_label=location_label,
+            )
 
             st.divider()
 
@@ -1911,6 +2117,13 @@ def render_sbi_dashboard(supabase) -> None:
                     key='sbi_hpv_school_download'
                 )
 
+            render_raw_export(
+                hpv_view,
+                title='View and download normalized Grade 4 VaccTrack rows',
+                filename=f'SBI_HPV_VaccTrack_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
+                key='sbi_hpv_raw_download',
+            )
+
     # 5. DEFERRALS & REFUSALS
     with tab_sbi_def:
         st.markdown(f"### Vaccine Deferrals & Refusals Analysis: {location_label}")
@@ -1994,6 +2207,37 @@ def render_sbi_dashboard(supabase) -> None:
         )
         fig_missed.update_traces(textposition='outside', cliponaxis=False)
         st.plotly_chart(fig_missed, width='stretch', key='sbi_def_ref_summary')
+
+        st.divider()
+
+        outcome_frames = []
+        for frame, deferred_cols, refused_cols in [
+            (g1_view, ['MR Deferred', 'Td Deferred'], ['MR Refused', 'Td Refused']),
+            (g7_view, ['MR Deferred', 'Td Deferred'], ['MR Refused', 'Td Refused']),
+            (hpv_view, ['HPV Deferred 1', 'HPV Deferred 2'], ['HPV Refused 1', 'HPV Refused 2']),
+        ]:
+            if frame is None or frame.empty:
+                continue
+            part = frame[['Report Date']].copy()
+            deferred_total = pd.Series(0.0, index=frame.index)
+            refused_total = pd.Series(0.0, index=frame.index)
+            for col in deferred_cols:
+                if col in frame.columns:
+                    deferred_total = deferred_total.add(pd.to_numeric(frame[col], errors='coerce').fillna(0), fill_value=0)
+            for col in refused_cols:
+                if col in frame.columns:
+                    refused_total = refused_total.add(pd.to_numeric(frame[col], errors='coerce').fillna(0), fill_value=0)
+            part['Deferred'] = deferred_total
+            part['Refused'] = refused_total
+            outcome_frames.append(part)
+
+        if outcome_frames:
+            render_daily_trend(
+                pd.concat(outcome_frames, ignore_index=True),
+                [('Deferred', 'Deferred'), ('Refused', 'Refused')],
+                title='Daily Deferrals and Refusals by Report Date',
+                key='sbi_def_ref_daily_trend', colors=['#F9A825', '#D32F2F'],
+            )
 
         st.divider()
 
