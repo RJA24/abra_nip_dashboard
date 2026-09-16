@@ -540,9 +540,10 @@ if st.session_state.get('active_program') == 'SBI':
     with tab_sbi_target:
         st.markdown(f"### SBI Target Overview: {location_label}")
 
-        target_tab_baseline, target_tab_actual = st.tabs([
+        target_tab_baseline, target_tab_actual, target_tab_compare = st.tabs([
             "Baseline Targets",
             "Actual Targets",
+            "Baseline vs Actual",
         ])
 
         # ------------------------------------------
@@ -987,90 +988,6 @@ if st.session_state.get('active_program') == 'SBI':
 
                 st.divider()
 
-                # Baseline vs Actual comparison uses only fully completed schools.
-                st.markdown(
-                    '''<h4 style="margin-bottom:0.5rem;">
-                    <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
-                    Baseline vs Actual Targets
-                    </h4>''',
-                    unsafe_allow_html=True
-                )
-                st.caption(
-                    "Only schools marked Complete are included in this comparison so pending or partial entries do not artificially lower actual targets."
-                )
-
-                complete_ids = set(
-                    df_actual_complete['School ID'].astype(str).str.strip().tolist()
-                )
-                df_baseline_complete = df_baseline_actual_view[
-                    df_baseline_actual_view['School ID'].astype(str).str.strip().isin(complete_ids)
-                ].copy()
-
-                if df_actual_complete.empty:
-                    st.info("No school has a Complete actual-target entry yet, so a baseline comparison is not available.")
-                else:
-                    baseline_g1 = df_baseline_complete['G1 Total'].sum()
-                    baseline_g4 = df_baseline_complete['G4 Female'].sum()
-                    baseline_g7 = df_baseline_complete['G7 Total'].sum()
-
-                    df_target_compare = pd.DataFrame({
-                        'Grade Level': ['Grade 1', 'Grade 4 Female', 'Grade 7'],
-                        'Baseline': [baseline_g1, baseline_g4, baseline_g7],
-                        'Actual': [actual_g1, actual_g4, actual_g7],
-                    })
-                    df_target_compare['Difference'] = df_target_compare['Actual'] - df_target_compare['Baseline']
-                    df_target_compare['Change %'] = np.where(
-                        df_target_compare['Baseline'] > 0,
-                        df_target_compare['Difference'] / df_target_compare['Baseline'] * 100,
-                        0
-                    )
-
-                    st.dataframe(
-                        df_target_compare,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            'Baseline': st.column_config.NumberColumn('Baseline', format='%d'),
-                            'Actual': st.column_config.NumberColumn('Actual', format='%d'),
-                            'Difference': st.column_config.NumberColumn('Difference', format='%+d'),
-                            'Change %': st.column_config.NumberColumn('Change', format='%+.1f%%'),
-                        }
-                    )
-
-                    df_target_compare_melt = df_target_compare.melt(
-                        id_vars='Grade Level',
-                        value_vars=['Baseline', 'Actual'],
-                        var_name='Target Type',
-                        value_name='Students'
-                    )
-                    fig_actual_compare = px.bar(
-                        df_target_compare_melt,
-                        x='Grade Level',
-                        y='Students',
-                        color='Target Type',
-                        barmode='group',
-                        text_auto='.0f',
-                        color_discrete_sequence=['#1E88E5', '#43A047']
-                    )
-                    fig_actual_compare.update_traces(textposition='outside')
-                    fig_actual_compare.update_layout(
-                        dragmode=False,
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        xaxis_title='',
-                        yaxis_title='Number of Eligible Students',
-                        height=450,
-                        margin=dict(l=10, r=10, t=30, b=50),
-                        legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
-                        legend_title_text=''
-                    )
-                    st.plotly_chart(
-                        fig_actual_compare,
-                        use_container_width=True,
-                        key='sbi_actual_baseline_compare'
-                    )
-
-                st.divider()
-
                 # Geographic distribution of the actual targets entered so far.
                 st.markdown("#### Geographic Distribution of Actual Targets")
                 df_actual_geo_chart = df_actual_geo.sort_values('Total Eligible', ascending=True).copy()
@@ -1199,7 +1116,8 @@ if st.session_state.get('active_program') == 'SBI':
 
                 st.divider()
 
-                # Detailed table with baseline comparison and variance.
+                # Detailed actual-target table. Comparison fields live in the
+                # dedicated Baseline vs Actual sub-tab below.
                 st.markdown(
                     '''<h4 style="margin-bottom:0.5rem;">
                     <i class="fa-solid fa-list-check" style="color:#0033A0; margin-right:8px;"></i>
@@ -1209,20 +1127,6 @@ if st.session_state.get('active_program') == 'SBI':
                 )
 
                 with st.expander("View and download detailed actual school targets", expanded=False):
-                    baseline_school_compare = df_baseline_actual_view[[
-                        'School ID', 'G1 Total', 'G4 Female', 'G7 Total'
-                    ]].copy()
-                    baseline_school_compare = baseline_school_compare.rename(columns={
-                        'G1 Total': 'Baseline G1',
-                        'G4 Female': 'Baseline G4 Female',
-                        'G7 Total': 'Baseline G7',
-                    })
-                    baseline_school_compare['Baseline Total'] = (
-                        baseline_school_compare['Baseline G1']
-                        + baseline_school_compare['Baseline G4 Female']
-                        + baseline_school_compare['Baseline G7']
-                    )
-
                     actual_table_cols = [
                         'Municipality', 'Barangay', 'School ID', 'School Name',
                         'Target Entry Status', 'Target Fields Entered',
@@ -1232,22 +1136,6 @@ if st.session_state.get('active_program') == 'SBI':
                     df_actual_table = df_actual_view[
                         [c for c in actual_table_cols if c in df_actual_view.columns]
                     ].copy()
-                    df_actual_table = df_actual_table.merge(
-                        baseline_school_compare,
-                        on='School ID',
-                        how='left'
-                    )
-
-                    df_actual_table['G1 Difference'] = df_actual_table['G1 Total'] - df_actual_table['Baseline G1']
-                    df_actual_table['G4 Difference'] = df_actual_table['G4 Female'] - df_actual_table['Baseline G4 Female']
-                    df_actual_table['G7 Difference'] = df_actual_table['G7 Total'] - df_actual_table['Baseline G7']
-                    df_actual_table['Total Difference'] = df_actual_table['Total Eligible'] - df_actual_table['Baseline Total']
-
-                    # Variance is meaningful only when a school has completed all
-                    # requested target fields.
-                    incomplete_mask = df_actual_table['Target Entry Status'] != 'Complete'
-                    for diff_col in ['G1 Difference', 'G4 Difference', 'G7 Difference', 'Total Difference']:
-                        df_actual_table.loc[incomplete_mask, diff_col] = np.nan
 
                     status_order = pd.CategoricalDtype(
                         categories=['Complete', 'Partial', 'Pending'],
@@ -1273,14 +1161,6 @@ if st.session_state.get('active_program') == 'SBI':
                             'G7 Female': st.column_config.NumberColumn('G7 Female', format='%d'),
                             'G7 Total': st.column_config.NumberColumn('Actual G7', format='%d'),
                             'Total Eligible': st.column_config.NumberColumn('Actual Total', format='%d'),
-                            'Baseline G1': st.column_config.NumberColumn('Baseline G1', format='%d'),
-                            'Baseline G4 Female': st.column_config.NumberColumn('Baseline G4 Female', format='%d'),
-                            'Baseline G7': st.column_config.NumberColumn('Baseline G7', format='%d'),
-                            'Baseline Total': st.column_config.NumberColumn('Baseline Total', format='%d'),
-                            'G1 Difference': st.column_config.NumberColumn('G1 Difference', format='%+d'),
-                            'G4 Difference': st.column_config.NumberColumn('G4 Difference', format='%+d'),
-                            'G7 Difference': st.column_config.NumberColumn('G7 Difference', format='%+d'),
-                            'Total Difference': st.column_config.NumberColumn('Total Difference', format='%+d'),
                         }
                     )
 
@@ -1292,6 +1172,524 @@ if st.session_state.get('active_program') == 'SBI':
                         mime="text/csv",
                         key="dl_sbi_actual_targets"
                     )
+
+        # ------------------------------------------
+        # BASELINE VS ACTUAL COMPARISON
+        # ------------------------------------------
+        with target_tab_compare:
+            st.markdown(
+                '''<h4 style="margin-bottom:0.25rem;">
+                <i class="fa-solid fa-code-compare" style="color:#0033A0; margin-right:8px;"></i>
+                Baseline vs Actual Target Comparison
+                </h4>''',
+                unsafe_allow_html=True
+            )
+            st.caption(
+                "Comparisons use only schools with Complete actual-target submissions. "
+                "Partial and pending entries are excluded to avoid understating actual targets."
+            )
+
+            if df_sbi_targets.empty:
+                st.warning("Baseline target data is unavailable.")
+            elif df_sbi_actual_targets.empty:
+                st.warning("Actual target data is unavailable.")
+            else:
+                df_cmp_actual = df_sbi_actual_targets.copy()
+                df_cmp_baseline = df_sbi_targets.copy()
+
+                # Normalize School IDs so the two sources join reliably.
+                for df_norm in [df_cmp_actual, df_cmp_baseline]:
+                    if 'School ID' in df_norm.columns:
+                        df_norm['School ID'] = (
+                            df_norm['School ID']
+                            .astype(str)
+                            .str.strip()
+                            .str.replace(r'\.0$', '', regex=True)
+                        )
+
+                if view_mode == "Specific Municipality":
+                    df_cmp_actual = df_cmp_actual[
+                        df_cmp_actual['Municipality'].str.upper() == selected_muni.upper()
+                    ].copy()
+                    df_cmp_baseline = df_cmp_baseline[
+                        df_cmp_baseline['Municipality'].str.upper() == selected_muni.upper()
+                    ].copy()
+
+                cmp_actual_numeric = [
+                    'G1 Total', 'G4 Female', 'G7 Total', 'Total Eligible'
+                ]
+                for col in cmp_actual_numeric:
+                    if col in df_cmp_actual.columns:
+                        df_cmp_actual[col] = pd.to_numeric(
+                            df_cmp_actual[col], errors='coerce'
+                        ).fillna(0)
+
+                cmp_baseline_numeric = ['G1 Total', 'G4 Female', 'G7 Total']
+                for col in cmp_baseline_numeric:
+                    if col in df_cmp_baseline.columns:
+                        df_cmp_baseline[col] = pd.to_numeric(
+                            df_cmp_baseline[col], errors='coerce'
+                        ).fillna(0)
+
+                df_cmp_baseline['Baseline Total'] = (
+                    df_cmp_baseline['G1 Total']
+                    + df_cmp_baseline['G4 Female']
+                    + df_cmp_baseline['G7 Total']
+                )
+
+                df_cmp_actual_complete = df_cmp_actual[
+                    df_cmp_actual['Target Entry Status'] == 'Complete'
+                ].copy()
+
+                complete_cmp_ids = set(
+                    df_cmp_actual_complete['School ID'].astype(str).str.strip().tolist()
+                )
+                df_cmp_baseline_complete = df_cmp_baseline[
+                    df_cmp_baseline['School ID'].astype(str).str.strip().isin(complete_cmp_ids)
+                ].copy()
+
+                if df_cmp_actual_complete.empty:
+                    st.info(
+                        "No school has a Complete actual-target submission yet, so comparison analytics are not available."
+                    )
+                else:
+                    # ------------------------------------------
+                    # OVERALL COMPARISON KPIs
+                    # ------------------------------------------
+                    baseline_total_cmp = df_cmp_baseline_complete['Baseline Total'].sum()
+                    actual_total_cmp = df_cmp_actual_complete['Total Eligible'].sum()
+                    total_diff_cmp = actual_total_cmp - baseline_total_cmp
+                    total_change_cmp = (
+                        total_diff_cmp / baseline_total_cmp * 100
+                        if baseline_total_cmp > 0 else 0
+                    )
+
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric(
+                        "Schools Compared",
+                        f"{len(df_cmp_actual_complete):,}",
+                        "Complete submissions only",
+                        delta_color="off"
+                    )
+                    k2.metric(
+                        "Baseline Total",
+                        f"{baseline_total_cmp:,.0f}",
+                        "Matched schools",
+                        delta_color="off"
+                    )
+                    k3.metric(
+                        "Actual Total",
+                        f"{actual_total_cmp:,.0f}",
+                        "Matched schools",
+                        delta_color="off"
+                    )
+                    k4.metric(
+                        "Overall Difference",
+                        f"{total_diff_cmp:+,.0f}",
+                        f"{total_change_cmp:+.1f}% vs baseline",
+                        delta_color="off"
+                    )
+
+                    st.divider()
+
+                    # ------------------------------------------
+                    # GRADE-LEVEL COMPARISON
+                    # ------------------------------------------
+                    st.markdown(
+                        '''<h4 style="margin-bottom:0.5rem;">
+                        <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
+                        Comparison by Grade Level
+                        </h4>''',
+                        unsafe_allow_html=True
+                    )
+
+                    df_target_compare = pd.DataFrame({
+                        'Grade Level': ['Grade 1', 'Grade 4 Female', 'Grade 7'],
+                        'Baseline': [
+                            df_cmp_baseline_complete['G1 Total'].sum(),
+                            df_cmp_baseline_complete['G4 Female'].sum(),
+                            df_cmp_baseline_complete['G7 Total'].sum(),
+                        ],
+                        'Actual': [
+                            df_cmp_actual_complete['G1 Total'].sum(),
+                            df_cmp_actual_complete['G4 Female'].sum(),
+                            df_cmp_actual_complete['G7 Total'].sum(),
+                        ],
+                    })
+                    df_target_compare['Difference'] = (
+                        df_target_compare['Actual'] - df_target_compare['Baseline']
+                    )
+                    df_target_compare['Change %'] = np.where(
+                        df_target_compare['Baseline'] > 0,
+                        df_target_compare['Difference'] / df_target_compare['Baseline'] * 100,
+                        0
+                    )
+
+                    st.dataframe(
+                        df_target_compare,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'Baseline': st.column_config.NumberColumn('Baseline', format='%d'),
+                            'Actual': st.column_config.NumberColumn('Actual', format='%d'),
+                            'Difference': st.column_config.NumberColumn('Difference', format='%+d'),
+                            'Change %': st.column_config.NumberColumn('Change', format='%+.1f%%'),
+                        }
+                    )
+
+                    df_target_compare_melt = df_target_compare.melt(
+                        id_vars='Grade Level',
+                        value_vars=['Baseline', 'Actual'],
+                        var_name='Target Type',
+                        value_name='Students'
+                    )
+                    fig_target_compare = px.bar(
+                        df_target_compare_melt,
+                        x='Grade Level',
+                        y='Students',
+                        color='Target Type',
+                        barmode='group',
+                        text_auto='.0f',
+                        color_discrete_sequence=['#1E88E5', '#43A047']
+                    )
+                    fig_target_compare.update_traces(textposition='outside')
+                    fig_target_compare.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title='',
+                        yaxis_title='Number of Eligible Students',
+                        height=450,
+                        margin=dict(l=10, r=10, t=30, b=50),
+                        legend=dict(
+                            orientation='h',
+                            yanchor='top', y=-0.15,
+                            xanchor='center', x=0.5
+                        ),
+                        legend_title_text=''
+                    )
+                    st.plotly_chart(
+                        fig_target_compare,
+                        use_container_width=True,
+                        key='sbi_compare_grade_chart'
+                    )
+
+                    st.divider()
+
+                    # ------------------------------------------
+                    # GEOGRAPHIC COMPARISON
+                    # ------------------------------------------
+                    geo_col_cmp = (
+                        'Municipality'
+                        if view_mode == "All Municipalities (Abra)"
+                        else 'Barangay'
+                    )
+
+                    baseline_geo_cmp = (
+                        df_cmp_baseline_complete
+                        .groupby(geo_col_cmp, dropna=False)
+                        .agg(
+                            Baseline_G1=('G1 Total', 'sum'),
+                            Baseline_G4=('G4 Female', 'sum'),
+                            Baseline_G7=('G7 Total', 'sum'),
+                            Baseline_Total=('Baseline Total', 'sum'),
+                            Schools=('School ID', 'nunique'),
+                        )
+                        .reset_index()
+                    )
+                    actual_geo_cmp = (
+                        df_cmp_actual_complete
+                        .groupby(geo_col_cmp, dropna=False)
+                        .agg(
+                            Actual_G1=('G1 Total', 'sum'),
+                            Actual_G4=('G4 Female', 'sum'),
+                            Actual_G7=('G7 Total', 'sum'),
+                            Actual_Total=('Total Eligible', 'sum'),
+                        )
+                        .reset_index()
+                    )
+                    df_geo_compare = baseline_geo_cmp.merge(
+                        actual_geo_cmp,
+                        on=geo_col_cmp,
+                        how='outer'
+                    ).fillna(0)
+                    df_geo_compare['Difference'] = (
+                        df_geo_compare['Actual_Total'] - df_geo_compare['Baseline_Total']
+                    )
+                    df_geo_compare['Change %'] = np.where(
+                        df_geo_compare['Baseline_Total'] > 0,
+                        df_geo_compare['Difference'] / df_geo_compare['Baseline_Total'] * 100,
+                        0
+                    )
+
+                    st.markdown(
+                        '''<h4 style="margin-bottom:0.5rem;">
+                        <i class="fa-solid fa-map-location-dot" style="color:#0033A0; margin-right:8px;"></i>
+                        Geographic Comparison
+                        </h4>''',
+                        unsafe_allow_html=True
+                    )
+
+                    df_geo_compare_table = df_geo_compare.sort_values(
+                        'Actual_Total', ascending=False
+                    ).copy()
+                    st.dataframe(
+                        df_geo_compare_table,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'Schools': st.column_config.NumberColumn('Schools', format='%d'),
+                            'Baseline_G1': st.column_config.NumberColumn('Baseline G1', format='%d'),
+                            'Actual_G1': st.column_config.NumberColumn('Actual G1', format='%d'),
+                            'Baseline_G4': st.column_config.NumberColumn('Baseline G4 Female', format='%d'),
+                            'Actual_G4': st.column_config.NumberColumn('Actual G4 Female', format='%d'),
+                            'Baseline_G7': st.column_config.NumberColumn('Baseline G7', format='%d'),
+                            'Actual_G7': st.column_config.NumberColumn('Actual G7', format='%d'),
+                            'Baseline_Total': st.column_config.NumberColumn('Baseline Total', format='%d'),
+                            'Actual_Total': st.column_config.NumberColumn('Actual Total', format='%d'),
+                            'Difference': st.column_config.NumberColumn('Difference', format='%+d'),
+                            'Change %': st.column_config.NumberColumn('Change', format='%+.1f%%'),
+                        }
+                    )
+
+                    df_geo_compare_chart = df_geo_compare.sort_values(
+                        'Actual_Total', ascending=True
+                    ).copy()
+                    df_geo_compare_melt = df_geo_compare_chart.melt(
+                        id_vars=[geo_col_cmp],
+                        value_vars=['Baseline_Total', 'Actual_Total'],
+                        var_name='Target Type',
+                        value_name='Students'
+                    )
+                    df_geo_compare_melt['Target Type'] = df_geo_compare_melt['Target Type'].map({
+                        'Baseline_Total': 'Baseline',
+                        'Actual_Total': 'Actual',
+                    })
+                    fig_geo_compare = px.bar(
+                        df_geo_compare_melt,
+                        x='Students',
+                        y=geo_col_cmp,
+                        color='Target Type',
+                        orientation='h',
+                        barmode='group',
+                        text_auto='.0f',
+                        color_discrete_sequence=['#1E88E5', '#43A047']
+                    )
+                    fig_geo_compare.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title='Number of Eligible Students',
+                        yaxis_title='',
+                        height=max(450, len(df_geo_compare_chart) * 55),
+                        margin=dict(l=10, r=20, t=30, b=55),
+                        legend=dict(
+                            orientation='h',
+                            yanchor='top', y=-0.12,
+                            xanchor='center', x=0.5
+                        ),
+                        legend_title_text=''
+                    )
+                    st.plotly_chart(
+                        fig_geo_compare,
+                        use_container_width=True,
+                        key='sbi_compare_geo_chart'
+                    )
+
+                    st.divider()
+
+                    # ------------------------------------------
+                    # SCHOOL-LEVEL COMPARISON
+                    # ------------------------------------------
+                    st.markdown(
+                        '''<h4 style="margin-bottom:0.5rem;">
+                        <i class="fa-solid fa-school" style="color:#0033A0; margin-right:8px;"></i>
+                        School-Level Comparison
+                        </h4>''',
+                        unsafe_allow_html=True
+                    )
+
+                    baseline_school_cmp = df_cmp_baseline_complete[[
+                        'School ID', 'G1 Total', 'G4 Female', 'G7 Total', 'Baseline Total'
+                    ]].copy().rename(columns={
+                        'G1 Total': 'Baseline G1',
+                        'G4 Female': 'Baseline G4 Female',
+                        'G7 Total': 'Baseline G7',
+                    })
+
+                    actual_school_cols = [
+                        'Municipality', 'Barangay', 'School ID', 'School Name',
+                        'G1 Total', 'G4 Female', 'G7 Total', 'Total Eligible'
+                    ]
+                    df_school_compare = df_cmp_actual_complete[
+                        [c for c in actual_school_cols if c in df_cmp_actual_complete.columns]
+                    ].copy().rename(columns={
+                        'G1 Total': 'Actual G1',
+                        'G4 Female': 'Actual G4 Female',
+                        'G7 Total': 'Actual G7',
+                        'Total Eligible': 'Actual Total',
+                    })
+                    df_school_compare = df_school_compare.merge(
+                        baseline_school_cmp,
+                        on='School ID',
+                        how='left'
+                    )
+                    df_school_compare['G1 Difference'] = (
+                        df_school_compare['Actual G1'] - df_school_compare['Baseline G1']
+                    )
+                    df_school_compare['G4 Difference'] = (
+                        df_school_compare['Actual G4 Female'] - df_school_compare['Baseline G4 Female']
+                    )
+                    df_school_compare['G7 Difference'] = (
+                        df_school_compare['Actual G7'] - df_school_compare['Baseline G7']
+                    )
+                    df_school_compare['Total Difference'] = (
+                        df_school_compare['Actual Total'] - df_school_compare['Baseline Total']
+                    )
+                    df_school_compare['Change %'] = np.where(
+                        df_school_compare['Baseline Total'] > 0,
+                        df_school_compare['Total Difference'] / df_school_compare['Baseline Total'] * 100,
+                        0
+                    )
+
+                    if view_mode == "All Municipalities (Abra)":
+                        df_school_compare['School Label'] = (
+                            df_school_compare['School Name'].astype(str).str.strip()
+                            + ' - ' + df_school_compare['Municipality'].astype(str).str.strip()
+                            + ' [' + df_school_compare['School ID'].astype(str).str.strip() + ']'
+                        )
+                    else:
+                        df_school_compare['School Label'] = (
+                            df_school_compare['School Name'].astype(str).str.strip()
+                            + ' [' + df_school_compare['School ID'].astype(str).str.strip() + ']'
+                        )
+
+                    compare_school_limit = st.selectbox(
+                        "Schools shown in comparison chart:",
+                        ["Top 25 by absolute difference", "Top 50 by absolute difference", "All Schools"],
+                        index=0,
+                        key='sbi_compare_school_limit'
+                    )
+
+                    df_school_compare_plot = df_school_compare.copy()
+                    df_school_compare_plot['Absolute Difference'] = (
+                        df_school_compare_plot['Total Difference'].abs()
+                    )
+                    df_school_compare_plot = df_school_compare_plot.sort_values(
+                        'Absolute Difference', ascending=False
+                    )
+                    if compare_school_limit.startswith('Top 25'):
+                        df_school_compare_plot = df_school_compare_plot.head(25)
+                    elif compare_school_limit.startswith('Top 50'):
+                        df_school_compare_plot = df_school_compare_plot.head(50)
+
+                    df_school_compare_plot = df_school_compare_plot.sort_values(
+                        'Actual Total', ascending=True
+                    )
+                    df_school_compare_melt = df_school_compare_plot.melt(
+                        id_vars=['School Label'],
+                        value_vars=['Baseline Total', 'Actual Total'],
+                        var_name='Target Type',
+                        value_name='Students'
+                    )
+                    fig_school_compare = px.bar(
+                        df_school_compare_melt,
+                        x='Students',
+                        y='School Label',
+                        color='Target Type',
+                        orientation='h',
+                        barmode='group',
+                        text_auto='.0f',
+                        color_discrete_sequence=['#1E88E5', '#43A047']
+                    )
+                    fig_school_compare.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title='Number of Eligible Students',
+                        yaxis_title='',
+                        height=max(550, len(df_school_compare_plot) * 42),
+                        margin=dict(l=10, r=20, t=30, b=60),
+                        legend=dict(
+                            orientation='h',
+                            yanchor='top', y=-0.10,
+                            xanchor='center', x=0.5
+                        ),
+                        legend_title_text='',
+                        bargap=0.15
+                    )
+                    st.plotly_chart(
+                        fig_school_compare,
+                        use_container_width=True,
+                        key='sbi_compare_school_chart',
+                        config={
+                            'scrollZoom': False,
+                            'displayModeBar': True,
+                            'toImageButtonOptions': {
+                                'format': 'png',
+                                'filename': f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}",
+                                'scale': 2
+                            }
+                        }
+                    )
+
+                    st.divider()
+
+                    # ------------------------------------------
+                    # DETAILED COMPARISON TABLE
+                    # ------------------------------------------
+                    st.markdown(
+                        '''<h4 style="margin-bottom:0.5rem;">
+                        <i class="fa-solid fa-table" style="color:#0033A0; margin-right:8px;"></i>
+                        Detailed School Comparison
+                        </h4>''',
+                        unsafe_allow_html=True
+                    )
+
+                    with st.expander(
+                        "View and download detailed baseline vs actual comparison",
+                        expanded=False
+                    ):
+                        comparison_display_cols = [
+                            'Municipality', 'Barangay', 'School ID', 'School Name',
+                            'Baseline G1', 'Actual G1', 'G1 Difference',
+                            'Baseline G4 Female', 'Actual G4 Female', 'G4 Difference',
+                            'Baseline G7', 'Actual G7', 'G7 Difference',
+                            'Baseline Total', 'Actual Total', 'Total Difference', 'Change %'
+                        ]
+                        df_school_compare_table = df_school_compare[
+                            [c for c in comparison_display_cols if c in df_school_compare.columns]
+                        ].copy().sort_values(
+                            ['Municipality', 'School Name']
+                        )
+
+                        st.dataframe(
+                            df_school_compare_table,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                'Baseline G1': st.column_config.NumberColumn('Baseline G1', format='%d'),
+                                'Actual G1': st.column_config.NumberColumn('Actual G1', format='%d'),
+                                'G1 Difference': st.column_config.NumberColumn('G1 Difference', format='%+d'),
+                                'Baseline G4 Female': st.column_config.NumberColumn('Baseline G4 Female', format='%d'),
+                                'Actual G4 Female': st.column_config.NumberColumn('Actual G4 Female', format='%d'),
+                                'G4 Difference': st.column_config.NumberColumn('G4 Difference', format='%+d'),
+                                'Baseline G7': st.column_config.NumberColumn('Baseline G7', format='%d'),
+                                'Actual G7': st.column_config.NumberColumn('Actual G7', format='%d'),
+                                'G7 Difference': st.column_config.NumberColumn('G7 Difference', format='%+d'),
+                                'Baseline Total': st.column_config.NumberColumn('Baseline Total', format='%d'),
+                                'Actual Total': st.column_config.NumberColumn('Actual Total', format='%d'),
+                                'Total Difference': st.column_config.NumberColumn('Total Difference', format='%+d'),
+                                'Change %': st.column_config.NumberColumn('Change', format='%+.1f%%'),
+                            }
+                        )
+
+                        csv_compare = df_school_compare_table.to_csv(index=False).encode('utf-8-sig')
+                        st.download_button(
+                            label="Download Baseline vs Actual Comparison (CSV)",
+                            data=csv_compare,
+                            file_name=f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}.csv",
+                            mime='text/csv',
+                            key='dl_sbi_target_comparison'
+                        )
+
 
 
     # 3. MR & TD (GRADES 1 & 7)
