@@ -63,6 +63,11 @@ def _safe_pct(numerator, denominator, default=0.0):
     return result.fillna(default)
 
 
+def _logout_session() -> None:
+    st.session_state.clear()
+    st.rerun()
+
+
 def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -100,9 +105,12 @@ def render_sbi_dashboard(supabase) -> None:
         
         st.divider()
         
-        if st.button("Main Menu", width="stretch"):
+        if st.button("Main Menu", width="stretch", key="sbi_main_menu"):
             st.session_state['active_program'] = None
             st.rerun()
+
+        if st.button("Logout", width="stretch", key="sbi_logout"):
+            _logout_session()
             
         with st.expander("Dashboard Filters", expanded=True):
             view_mode = st.radio(
@@ -2577,3 +2585,4 @@ def render_sbi_dashboard(supabase) -> None:
                             st.cache_data.clear()
                     except Exception as e:
                         st.error(f"SBI Target Sync Failed: {e}")
+

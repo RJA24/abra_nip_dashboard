@@ -140,7 +140,7 @@ st.markdown("""
 try:
     supabase = init_supabase()
 except Exception as e:
-    st.error("⚠️ Supabase Connection Error: Please ensure SUPABASE_URL and SUPABASE_KEY are set in Streamlit Secrets.")
+    st.error("Supabase connection failed. Please check SUPABASE_URL and SUPABASE_KEY in Streamlit Secrets.")
     st.stop()
 
 
@@ -173,8 +173,8 @@ if st.session_state['logged_in']:
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
         st.session_state['assigned_muni'] = "None"
-        st.warning("⏱️ You have been automatically logged out due to 30 minutes of inactivity.")
-        time.sleep(2)
+        st.toast("Session expired after 30 minutes of inactivity.")
+        time.sleep(1)
         st.rerun()
     else:
         st.session_state['last_active'] = current_time
@@ -208,13 +208,19 @@ def _start_dashboard_session(display_name, role, assigned_muni="Abra Province", 
         logger.exception("Unable to create access log")
 
 
+def _logout_session():
+    """Clear the current application session and return to the login screen."""
+    st.session_state.clear()
+    st.rerun()
+
+
 if not st.session_state.get('logged_in', False):
     bg_css = """
     <style>
     .stApp {
         background: linear-gradient(
-            rgba(240, 242, 246, 0.8),
-            rgba(240, 242, 246, 0.8)
+            rgba(240, 242, 246, 0.80),
+            rgba(240, 242, 246, 0.80)
         ),
         url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true") !important;
         background-size: cover !important;
@@ -228,17 +234,17 @@ if not st.session_state.get('logged_in', False):
 
     col1, col2, col3 = st.columns([1, 2.5, 1])
     with col2:
-        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px; text-transform: uppercase;'>National Immunization Program</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #475569; font-size: 1.2rem; margin-bottom: 2rem;'>Secure Provincial Command Center</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center;font-family:Impact,sans-serif;letter-spacing:2px;text-transform:uppercase;'>National Immunization Program</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;color:#475569;font-size:1.05rem;margin-bottom:1.5rem;'>Abra Provincial Dashboard</p>", unsafe_allow_html=True)
 
         account_tab, guest_tab = st.tabs(["Account Login", "Guest Access"])
 
         with account_tab:
             with st.form("account_login_form", border=True):
-                st.markdown("### 🔐 Registered Account")
+                st.markdown("### Registered Account")
                 username_input = st.text_input("Username", key="login_username").strip()
                 password_input = st.text_input("Password", type="password", key="login_password")
-                submit_account = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+                submit_account = st.form_submit_button("Sign In", type="primary", width="stretch")
 
                 if submit_account:
                     result = authenticate_user(supabase, username_input, password_input)
@@ -250,15 +256,14 @@ if not st.session_state.get('logged_in', False):
                         role = str(user.get('role') or 'Guest / Viewer')
                         assigned_muni = str(user.get('assigned_muni') or user.get('municipality') or 'Abra Province')
                         _start_dashboard_session(display_name, role, assigned_muni, username_input)
-                        st.toast(f"Welcome, {display_name}!", icon="✅")
+                        st.toast(f"Welcome, {display_name}.")
                         st.rerun()
 
         with guest_tab:
             with st.form("guest_login_form", border=True):
-                st.markdown("### 👋 Visitor Access")
-                st.caption("Guest access can view dashboards but cannot use administration controls.")
+                st.markdown("### Visitor Access")
                 visitor_name = st.text_input("Your Name", placeholder="e.g., Dr. Cruz / DOH Rep", key="guest_name").strip()
-                submit_guest = st.form_submit_button("Continue as Guest", use_container_width=True)
+                submit_guest = st.form_submit_button("Continue as Guest", width="stretch")
 
                 if submit_guest:
                     if not visitor_name:
@@ -266,90 +271,140 @@ if not st.session_state.get('logged_in', False):
                     else:
                         db_name = f"Visitor ({visitor_name})"
                         _start_dashboard_session(db_name, "Guest", "Abra Province", "")
-                        st.toast(f"Welcome, {visitor_name}!", icon="👋")
+                        st.toast(f"Welcome, {visitor_name}.")
                         st.rerun()
 
     st.stop()
 
 # ==========================================
-# 4.5. THE PROGRAM ROUTING MENU
+# 4.5. PROGRAM ROUTING MENU
 # ==========================================
-# If the user is logged in, but hasn't picked a program yet, show the big buttons!
 if st.session_state.get('logged_in', False) and st.session_state.get('active_program') is None:
-    
-    # Keep the beautiful mountain background active
-    bg_css = """
+    menu_css = """
     <style>
     .stApp {
-        background: linear-gradient(rgba(240, 242, 246, 0.4), rgba(240, 242, 246, 0.4)), 
-        url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true") !important;
+        background:
+            linear-gradient(rgba(244,247,250,0.28), rgba(244,247,250,0.42)),
+            url("https://github.com/RJA24/abra_sia_2026/blob/main/Abra%20(2).png?raw=true") !important;
         background-size: cover !important;
-        background-position: center !important;
+        background-position: center center !important;
         background-attachment: fixed !important;
     }
     header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
-    
-    /* 🎨 CSS Magic for the Giant Translucent Pill Buttons */
-    div.element-container:has(.big-btn-marker) + div.element-container button {
-        height: 180px !important;
-        border-radius: 90px !important; 
-        background-color: rgba(255, 255, 255, 0.45) !important; 
-        backdrop-filter: blur(10px) !important;
-        border: 2px solid rgba(255, 255, 255, 0.6) !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
-        transition: all 0.3s ease-in-out !important;
+
+    .block-container {
+        max-width: 1240px !important;
+        padding-top: 1rem !important;
+        padding-bottom: 2rem !important;
     }
-    div.element-container:has(.big-btn-marker) + div.element-container button p {
-        font-size: 36px !important;
+
+    .nip-menu-hero {
+        max-width: 820px;
+        margin: 3vh auto 2rem auto;
+        text-align: center;
+    }
+    .nip-menu-logos {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 18px;
+        margin-bottom: 1.6rem;
+    }
+    .nip-menu-logos img {
+        width: 82px;
+        height: 82px;
+        object-fit: contain;
+        filter: drop-shadow(0 5px 8px rgba(0,0,0,0.18));
+    }
+    .nip-menu-title {
+        margin: 0;
+        font-family: "Arial Black", Impact, sans-serif;
+        font-size: clamp(2.7rem, 5vw, 4.7rem);
+        line-height: 0.98;
+        letter-spacing: 0.055em;
+        color: #172033;
+        text-transform: uppercase;
+        text-shadow: 0 2px 8px rgba(255,255,255,0.28);
+    }
+
+    div.element-container:has(.program-btn-marker) + div.element-container button {
+        height: 112px !important;
+        border-radius: 24px !important;
+        background: rgba(255,255,255,0.58) !important;
+        backdrop-filter: blur(14px) !important;
+        -webkit-backdrop-filter: blur(14px) !important;
+        border: 1px solid rgba(255,255,255,0.88) !important;
+        box-shadow: 0 12px 32px rgba(15,23,42,0.14) !important;
+        transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease !important;
+    }
+    div.element-container:has(.program-btn-marker) + div.element-container button p {
         font-family: "Arial Black", Impact, sans-serif !important;
+        font-size: clamp(1.6rem, 2.5vw, 2.2rem) !important;
         font-weight: 900 !important;
-        color: #000000 !important;
-        letter-spacing: 2px !important;
+        letter-spacing: 0.08em !important;
+        color: #111827 !important;
     }
-    div.element-container:has(.big-btn-marker) + div.element-container button:hover {
-        background-color: rgba(255, 255, 255, 0.7) !important;
-        transform: translateY(-5px) !important;
-        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2) !important;
+    div.element-container:has(.program-btn-marker) + div.element-container button:hover {
+        transform: translateY(-3px) !important;
+        background: rgba(255,255,255,0.76) !important;
+        box-shadow: 0 16px 38px rgba(15,23,42,0.20) !important;
+    }
+
+    div.element-container:has(.menu-logout-marker) + div.element-container button {
+        min-height: 40px !important;
+        border-radius: 10px !important;
+        background: rgba(255,255,255,0.62) !important;
+        border: 1px solid rgba(255,255,255,0.85) !important;
+        backdrop-filter: blur(10px) !important;
+        -webkit-backdrop-filter: blur(10px) !important;
+    }
+
+    @media (max-width: 800px) {
+        .nip-menu-hero { margin-top: 1rem; }
+        .nip-menu-logos img { width: 68px; height: 68px; }
+        div.element-container:has(.program-btn-marker) + div.element-container button {
+            height: 88px !important;
+            border-radius: 20px !important;
+        }
     }
     </style>
     """
-    st.markdown(bg_css, unsafe_allow_html=True)
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    
-    # 🏛️ Logos and Title
-    c_logo1, c_logo2, c_logo3 = st.columns([1, 2, 1])
-    with c_logo2:
-        st.markdown(
-            '''
-            <div style="text-align: center; margin-bottom: 20px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" width="90" style="margin-right: 15px; filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.2));">
-                <img src="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true" width="90" style="filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.2));">
-            </div>
-            ''', 
-            unsafe_allow_html=True
-        )
-        st.markdown("<h1 style='text-align: center; font-family: \"Arial Black\", Impact, sans-serif; letter-spacing: 2px;'>NATIONAL IMMUNIZATION PROGRAM</h1>", unsafe_allow_html=True)
-    
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown(menu_css, unsafe_allow_html=True)
 
-    # 🔘 The Big Buttons
-    col_gap1, col_btn1, col_gap2, col_btn2, col_gap3 = st.columns([1, 3, 0.5, 3, 1])
-    
-    with col_btn1:
-        st.markdown('<span class="big-btn-marker"></span>', unsafe_allow_html=True)
-        if st.button("MR SIA", use_container_width=True):
+    top_space, logout_col = st.columns([8, 1.25])
+    with logout_col:
+        st.markdown('<span class="menu-logout-marker"></span>', unsafe_allow_html=True)
+        if st.button("Logout", key="program_menu_logout", width="stretch"):
+            _logout_session()
+
+    st.markdown(
+        """
+        <div class="nip-menu-hero">
+            <div class="nip-menu-logos">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" alt="Province of Abra seal">
+                <img src="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true" alt="Provincial Health Office logo">
+            </div>
+            <h1 class="nip-menu-title">National<br>Immunization<br>Program</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left_pad, mr_col, gap_col, sbi_col, right_pad = st.columns([0.8, 3.4, 0.35, 3.4, 0.8])
+
+    with mr_col:
+        st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("MR SIA", key="open_mr_sia", width="stretch"):
             st.session_state['active_program'] = 'SIA'
             st.rerun()
-            
-    with col_btn2:
-        st.markdown('<span class="big-btn-marker"></span>', unsafe_allow_html=True)
-        if st.button("SBI", use_container_width=True):
+
+    with sbi_col:
+        st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
+        if st.button("SBI", key="open_sbi", width="stretch"):
             st.session_state['active_program'] = 'SBI'
             st.rerun()
 
-    # Stop execution here so the dashboard underneath doesn't load yet
     st.stop()
-
 
 
 # ==========================================

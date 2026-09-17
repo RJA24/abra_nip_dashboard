@@ -50,6 +50,11 @@ def get_last_updated_time():
     return datetime.now(tz).strftime("%B %d, %Y | %I:%M %p")
 
 
+def _logout_session():
+    st.session_state.clear()
+    st.rerun()
+
+
 def render_sia_dashboard(supabase):
     st.title("Abra Supplemental Immunization Activity (SIA) 2026")
 
@@ -77,13 +82,15 @@ def render_sia_dashboard(supabase):
     
         st.divider()
     
-        # --- NEW: Navigation Button ---
-        if st.button("⬅️ Main Menu", use_container_width=True):
+        if st.button("Main Menu", width="stretch", key="sia_main_menu"):
             st.session_state['active_program'] = None
             st.rerun()
+
+        if st.button("Logout", width="stretch", key="sia_logout"):
+            _logout_session()
         
         # 2. Dynamic Filters (Expanded by default to prevent dropdown cutoffs)
-        with st.expander("🎛️ DASHBOARD FILTERS", expanded=True):
+        with st.expander("Dashboard Filters", expanded=True):
             view_mode = st.radio("Geographic Level:", ["All Municipalities (Abra)", "Specific Municipality"])
         
             if view_mode == "Specific Municipality":
@@ -102,32 +109,17 @@ def render_sia_dashboard(supabase):
             gender_filter = st.selectbox("Target Gender:", ["Total (Both)", "Male", "Female"])
         
         # 3. System Actions
-        with st.expander("🛠️ SYSTEM ACTIONS", expanded=False):
-            if st.button("🔄 Refresh Data", use_container_width=True):
+        with st.expander("System Actions", expanded=False):
+            if st.button("Refresh Data", width="stretch", key="sia_refresh"):
                 st.cache_data.clear()
-                st.toast("Dashboard Interface Refreshed!", icon="🔄")
+                st.toast("Dashboard data refreshed.")
                 time.sleep(0.5)
                 st.rerun()
-            
-            if st.button("🚪 Logout", type="primary", use_container_width=True):
-            
-                # The continuous tracker handles the logging now, so we just clear the session variables
-                st.session_state['logged_in'] = False
-                st.session_state['username'] = ""
-                st.session_state['user_name'] = ""
-                st.session_state['user_role'] = ""
-                st.session_state['assigned_muni'] = ""
-                st.session_state['active_program'] = None
-            
-                # Optional cleanup: remove the tracking variables as well
-                if 'login_time' in st.session_state:
-                    del st.session_state['login_time']
-                if 'log_id' in st.session_state:
-                    del st.session_state['log_id']
-                
-                st.rerun()
-            
-        st.caption(f"🕒 Last Sync: {last_updated}")
+
+        st.markdown(
+            f'<span style="color:#64748b;font-size:0.85rem;"><i class="fa-solid fa-clock" style="margin-right:6px;"></i>Last Sync: {last_updated}</span>',
+            unsafe_allow_html=True
+        )
 
     # --- DATA HELPER FUNCTIONS ---
 
