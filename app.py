@@ -9,6 +9,7 @@ from auth_utils import authenticate_user
 from core.data import init_supabase
 from programs.sbi import render_sbi_dashboard
 from programs.sia import render_sia_dashboard
+from admin import render_admin_dashboard
 
 logger = logging.getLogger("abra_nip_dashboard")
 logger.setLevel(logging.INFO)
@@ -395,7 +396,13 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 
     st.markdown('<div class="program-button-spacer"></div>', unsafe_allow_html=True)
 
-    left_pad, mr_col, gap_col, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
+    if st.session_state.get("user_role") == "System Admin":
+        left_pad, mr_col, gap_one, sbi_col, gap_two, admin_col, right_pad = st.columns(
+            [0.55, 2.6, 0.25, 2.6, 0.25, 2.6, 0.55]
+        )
+    else:
+        left_pad, mr_col, gap_one, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
+        admin_col = None
 
     with mr_col:
         st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
@@ -408,6 +415,13 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         if st.button("SBI", key="open_sbi", width="stretch"):
             st.session_state['active_program'] = 'SBI'
             st.rerun()
+
+    if admin_col is not None:
+        with admin_col:
+            st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
+            if st.button("ADMINISTRATION", key="open_admin", width="stretch"):
+                st.session_state['active_program'] = 'ADMIN'
+                st.rerun()
 
     st.stop()
 
@@ -423,6 +437,13 @@ if active_program == "SBI":
 
 if active_program == "SIA":
     render_sia_dashboard(supabase)
+    st.stop()
+
+if active_program == "ADMIN":
+    if st.session_state.get("user_role") != "System Admin":
+        st.session_state["active_program"] = None
+        st.rerun()
+    render_admin_dashboard(supabase)
     st.stop()
 
 # Safety fallback for an unknown program value.

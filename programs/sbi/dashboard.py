@@ -15,9 +15,8 @@ import plotly.graph_objects as go
 import pytz
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-from streamlit_gsheets import GSheetsConnection
 
-from core.config import ABRA_MUNIS, SBI_SHEET_URL
+from core.config import ABRA_MUNIS
 from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
 from programs.sbi.analytics import (
     available_date_bounds,
@@ -35,12 +34,7 @@ from programs.sbi.reporting import (
     render_raw_export,
     render_tally_tabs,
 )
-from db_utils import (
-    consolidate_sbi_targets,
-    replace_table_with_rollback,
-    update_session_log_throttled,
-    validate_sbi_targets,
-)
+from db_utils import update_session_log_throttled
 
 
 def _get_last_updated_time() -> str:
@@ -586,8 +580,8 @@ def render_sbi_dashboard(supabase) -> None:
         )
 
     # --- DASHBOARD TABS ---
-    sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals", "Admin Panel"])
-    tab_sbi_exec, tab_sbi_target, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def, tab_sbi_admin = sbi_tabs
+    sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals"])
+    tab_sbi_exec, tab_sbi_target, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def = sbi_tabs
 
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
@@ -943,7 +937,7 @@ def render_sbi_dashboard(supabase) -> None:
         # ------------------------------------------
         with target_tab_baseline:
             if df_sbi_targets.empty:
-                st.warning("Target database is empty. Please go to the Admin Panel tab to sync the database.")
+                st.warning("Target database is empty. Open Administration > Data Sync to sync SBI targets.")
             else:
                 df_tgt_view = df_sbi_targets.copy()
                 if view_mode == "Specific Municipality":
@@ -2510,79 +2504,3 @@ def render_sbi_dashboard(supabase) -> None:
             )
         else:
             st.info("No deferral or refusal records are available for this selection.")
-
-
-    # 6. ADMIN PANEL (SBI SYNC)
-    with tab_sbi_admin:
-        st.markdown("### System Administration")
-        if st.session_state.get('user_role') != "System Admin":
-            st.info("This section is restricted to authenticated System Administrators.")
-        else:
-            st.success("Administrator controls unlocked.")
-            st.divider()
-            
-            st.markdown("### Phase 1: SBI Target Database Sync")
-            st.write("Pull, clean, and compress the official DepEd Enrollment baseline.")
-            
-            if st.button("Sync SBI Target Database", type="secondary", width="stretch", key="sync_sbi_targets_btn"):
-                with st.spinner("Downloading and processing DepEd master sheet..."):
-                    try:
-                        conn = st.connection("gsheets", type=GSheetsConnection)
-                        
-                        # THE FIX: Changed skiprows from 4 to 5 to accurately grab the header row!
-                        df_raw = conn.read(spreadsheet=SBI_SHEET_URL, worksheet="Target by School", skiprows=5, ttl=0)
-                        
-                        if df_raw.empty:
-                            st.error("Failed to read the DepEd Target sheet.")
-                        else:
-                            df_raw.columns = [str(c).strip() for c in df_raw.columns]
-                            if 'Province' in df_raw.columns:
-                                df_raw = df_raw[df_raw['Province'].astype(str).str.upper() == 'ABRA'].copy()
-                                
-                            df_raw['Municipality'] = df_raw['Municipality'].astype(str).str.strip().str.title()
-                            df_raw['School_name'] = df_raw['School_name'].astype(str).str.strip()
-                            df_raw['beis_school_id'] = df_raw['beis_school_id'].astype(str).str.replace(r'\.0$', '', regex=True)
-                            
-                            target_cols = {
-                                'Municipality': 'municipality', 'Barangay': 'barangay',
-                                'beis_school_id': 'school_id', 'School_name': 'school_name',
-                                'g1male': 'g1_male', 'g1female': 'g1_female',
-                                'g4female': 'g4_female', 'g7male': 'g7_male', 'g7female': 'g7_female'
-                            }
-                            df_push = df_raw[[c for c in target_cols.keys() if c in df_raw.columns]].rename(columns=target_cols)
-                            
-                            for c in ['g1_male', 'g1_female', 'g4_female', 'g7_male', 'g7_female']:
-                                if c in df_push.columns:
-                                    df_push[c] = pd.to_numeric(df_push[c], errors='coerce').fillna(0).astype(int)
-                                    
-                            df_push['g1_total'] = df_push.get('g1_male', 0) + df_push.get('g1_female', 0)
-                            df_push['g7_total'] = df_push.get('g7_male', 0) + df_push.get('g7_female', 0)
-
-                            # DepEd exports can legitimately repeat a BEIS School ID.
-                            # Consolidate repeated rows before validating uniqueness so
-                            # duplicate exports do not inflate school-level targets.
-                            df_push, dedupe_report = consolidate_sbi_targets(df_push)
-
-                            valid, validation_message = validate_sbi_targets(df_push)
-                            if not valid:
-                                raise ValueError(f"SBI target validation failed: {validation_message}")
-
-                            df_push = df_push.replace({np.nan: None})
-
-                            if dedupe_report['duplicate_ids_consolidated'] or dedupe_report['exact_duplicates_removed']:
-                                st.info(
-                                    "DepEd duplicate cleanup: "
-                                    f"{dedupe_report['input_rows']:,} source rows → "
-                                    f"{dedupe_report['output_rows']:,} unique schools; "
-                                    f"{dedupe_report['exact_duplicates_removed']:,} exact duplicate row(s) removed; "
-                                    f"{dedupe_report['duplicate_ids_consolidated']:,} repeated School ID(s) consolidated."
-                                )
-
-                            records = df_push.to_dict(orient='records')
-                            inserted = replace_table_with_rollback(supabase, 'sbi_targets', records)
-
-                            st.success(f"SBI Targets successfully synced to Supabase ({inserted:,} records).")
-                            st.cache_data.clear()
-                    except Exception as e:
-                        st.error(f"SBI Target Sync Failed: {e}")
-

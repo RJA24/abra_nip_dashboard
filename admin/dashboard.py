@@ -1,0 +1,643 @@
+from __future__ import annotations
+
+from datetime import datetime
+import time
+
+import numpy as np
+import pandas as pd
+import pytz
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+
+from auth_utils import hash_password
+from core.config import SIA_SHEET_URL, SBI_SHEET_URL
+from core.geo import clean_and_process_car_data
+from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
+
+
+MANILA_TZ = pytz.timezone("Asia/Manila")
+
+
+def _now_string() -> str:
+    return datetime.now(MANILA_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
+
+
+def _audit(supabase, action: str) -> None:
+    try:
+        supabase.table("access_logs").insert(
+            {
+                "timestamp": _now_string(),
+                "name": st.session_state.get("user_name") or st.session_state.get("username") or "System Admin",
+                "role": "System Admin",
+                "action": f"Admin: {action}",
+            }
+        ).execute()
+    except Exception:
+        pass
+
+
+def _logout_session() -> None:
+    st.session_state.clear()
+    st.rerun()
+
+
+def _table_row_count(supabase, table: str, key_column: str) -> int:
+    total = 0
+    offset = 0
+    limit = 1000
+    while True:
+        response = (
+            supabase.table(table)
+            .select(key_column)
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        rows = response.data or []
+        total += len(rows)
+        if len(rows) < limit:
+            break
+        offset += limit
+    return total
+
+
+def _load_accounts(supabase) -> pd.DataFrame:
+    response = supabase.table("user_accounts").select("*").execute()
+    if not response.data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(response.data)
+    for col in ["username", "name", "role", "account_status"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
+    # Old rows may not have account_status. Authentication treats them as approved.
+    df.loc[df["account_status"].eq(""), "account_status"] = "Approved"
+    return df
+
+
+def _load_admin_logs(supabase, limit: int = 200) -> pd.DataFrame:
+    response = (
+        supabase.table("access_logs")
+        .select("*")
+        .order("id", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    if not response.data:
+        return pd.DataFrame(columns=["timestamp", "name", "role", "action"])
+
+    df = pd.DataFrame(response.data)
+    if "action" not in df.columns:
+        df["action"] = ""
+    df["action"] = df["action"].fillna("").astype(str)
+    df = df[df["action"].str.startswith("Admin:", na=False)].copy()
+    display_cols = [c for c in ["timestamp", "name", "action"] if c in df.columns]
+    return df[display_cols]
+
+
+def _active_admin_mask(accounts: pd.DataFrame) -> pd.Series:
+    if accounts.empty:
+        return pd.Series(dtype=bool)
+    status = accounts["account_status"].fillna("Approved").astype(str).str.strip().str.lower()
+    return accounts["role"].eq("System Admin") & status.isin({"approved", "active"})
+
+
+def _prepare_sia_targets() -> pd.DataFrame:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+
+    mr_cols = [
+        "Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total",
+        "6-12m_M", "6-12m_F", "6-12m_Total",
+        "13-23m_M", "13-23m_F", "13-23m_Total",
+        "24-59m_M", "24-59m_F", "24-59m_Total",
+    ]
+    df_mr_nat = clean_and_process_car_data(
+        conn.read(
+            spreadsheet=SIA_SHEET_URL,
+            worksheet="MR Target(CAR)",
+            usecols=list(range(14)),
+            skiprows=2,
+            names=mr_cols,
+            ttl=0,
+        ),
+        mr_cols,
+    )
+
+    mr_act_cols = [
+        "Code", "Location", "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-59m_Total",
+        "Act_MR_6-12m_M", "Act_MR_6-12m_F", "Act_MR_6-12m_Total",
+        "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_13-23m_Total",
+        "Act_MR_24-59m_M", "Act_MR_24-59m_F", "Act_MR_24-59m_Total",
+    ]
+    df_mr_act = clean_and_process_car_data(
+        conn.read(
+            spreadsheet=SIA_SHEET_URL,
+            worksheet="MR Actual Target(UPDATE THIS)",
+            usecols=list(range(14)),
+            skiprows=2,
+            names=mr_act_cols,
+            ttl=0,
+        ),
+        mr_act_cols,
+    )
+
+    vita_cols = [
+        "Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total",
+        "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total",
+    ]
+    df_vita_nat = clean_and_process_car_data(
+        conn.read(
+            spreadsheet=SIA_SHEET_URL,
+            worksheet="Vitamin A Target",
+            usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9],
+            skiprows=2,
+            names=vita_cols,
+            ttl=0,
+        ),
+        vita_cols,
+    )
+
+    vita_act_cols = [
+        "Code", "Location", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_6-11m_Total",
+        "Act_VitA_12-59m_M", "Act_VitA_12-59m_F", "Act_VitA_12-59m_Total", "Act_VitA_Total",
+    ]
+    df_vita_act = clean_and_process_car_data(
+        conn.read(
+            spreadsheet=SIA_SHEET_URL,
+            worksheet="Vitamin A Actual Target(UPDATE THIS)",
+            usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9],
+            skiprows=2,
+            names=vita_act_cols,
+            ttl=0,
+        ),
+        vita_act_cols,
+    )
+
+    if df_mr_nat.empty:
+        raise ValueError("The MR projected target sheet returned no records.")
+
+    for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
+        df_vita_nat[c] = pd.to_numeric(
+            df_vita_nat[c].astype(str).str.replace(",", ""), errors="coerce"
+        ).fillna(0)
+    df_vita_nat["VitA_Total_M"] = df_vita_nat["VitA_6-11m_M"] + df_vita_nat["VitA_12-59m_M"]
+    df_vita_nat["VitA_Total_F"] = df_vita_nat["VitA_6-11m_F"] + df_vita_nat["VitA_12-59m_F"]
+
+    for c in ["Act_VitA_6-11m_M", "Act_VitA_12-59m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_F"]:
+        df_vita_act[c] = pd.to_numeric(
+            df_vita_act[c].astype(str).str.replace(",", ""), errors="coerce"
+        ).fillna(0)
+    df_vita_act["Act_VitA_Total_M"] = df_vita_act["Act_VitA_6-11m_M"] + df_vita_act["Act_VitA_12-59m_M"]
+    df_vita_act["Act_VitA_Total_F"] = df_vita_act["Act_VitA_6-11m_F"] + df_vita_act["Act_VitA_12-59m_F"]
+
+    df_merged = df_mr_nat.copy()
+    df_merged = pd.merge(
+        df_merged,
+        df_mr_act[
+            [
+                "Code", "Act_MR_6-59m_Total", "Act_MR_6-59m_M", "Act_MR_6-59m_F",
+                "Act_MR_6-12m_Total", "Act_MR_6-12m_M", "Act_MR_6-12m_F",
+                "Act_MR_13-23m_Total", "Act_MR_13-23m_M", "Act_MR_13-23m_F",
+                "Act_MR_24-59m_Total", "Act_MR_24-59m_M", "Act_MR_24-59m_F",
+            ]
+        ],
+        on="Code",
+        how="left",
+    )
+    df_merged = pd.merge(
+        df_merged,
+        df_vita_nat[
+            [
+                "Code", "VitA_6-11m_Total", "VitA_12-59m_Total", "VitA_Total",
+                "VitA_6-11m_M", "VitA_6-11m_F", "VitA_12-59m_M", "VitA_12-59m_F",
+                "VitA_Total_M", "VitA_Total_F",
+            ]
+        ],
+        on="Code",
+        how="left",
+    )
+    df_merged = pd.merge(
+        df_merged,
+        df_vita_act[
+            [
+                "Code", "Act_VitA_6-11m_Total", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F",
+                "Act_VitA_12-59m_Total", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F",
+                "Act_VitA_Total", "Act_VitA_Total_M", "Act_VitA_Total_F",
+            ]
+        ],
+        on="Code",
+        how="left",
+    )
+
+    source_columns = [
+        "Code", "Location", "Level", "Parent_Province", "Parent_Municipality",
+        "6-59m_Total", "6-12m_Total", "13-23m_Total", "24-59m_Total",
+        "6-59m_M", "6-59m_F", "6-12m_M", "6-12m_F", "13-23m_M", "13-23m_F", "24-59m_M", "24-59m_F",
+        "VitA_6-11m_Total", "VitA_12-59m_Total", "VitA_Total",
+        "VitA_6-11m_M", "VitA_6-11m_F", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_Total_M", "VitA_Total_F",
+        "Act_MR_6-59m_Total", "Act_MR_6-12m_Total", "Act_MR_13-23m_Total", "Act_MR_24-59m_Total",
+        "Act_VitA_6-11m_Total", "Act_VitA_12-59m_Total", "Act_VitA_Total",
+        "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-12m_M", "Act_MR_6-12m_F",
+        "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_24-59m_M", "Act_MR_24-59m_F",
+        "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F",
+        "Act_VitA_Total_M", "Act_VitA_Total_F",
+    ]
+    df_push = df_merged[source_columns].copy()
+    df_push.columns = [
+        "code", "location", "level", "parent_province", "parent_municipality",
+        "grand_total_6_59m", "grand_total_6_12m", "grand_total_13_23m", "grand_total_24_59m",
+        "mr_6_59m_m", "mr_6_59m_f", "mr_6_12m_m", "mr_6_12m_f", "mr_13_23m_m", "mr_13_23m_f", "mr_24_59m_m", "mr_24_59m_f",
+        "vita_6_11m", "vita_12_59m", "vita_total",
+        "vita_6_11m_m", "vita_6_11m_f", "vita_12_59m_m", "vita_12_59m_f", "vita_total_m", "vita_total_f",
+        "actual_mr_6_59m_total", "actual_mr_6_12m_total", "actual_mr_13_23m_total", "actual_mr_24_59m_total",
+        "actual_vita_6_11m_total", "actual_vita_12_59m_total", "actual_vita_total",
+        "actual_mr_6_59m_m", "actual_mr_6_59m_f", "actual_mr_6_12m_m", "actual_mr_6_12m_f",
+        "actual_mr_13_23m_m", "actual_mr_13_23m_f", "actual_mr_24_59m_m", "actual_mr_24_59m_f",
+        "actual_vita_6_11m_m", "actual_vita_6_11m_f", "actual_vita_12_59m_m", "actual_vita_12_59m_f",
+        "actual_vita_total_m", "actual_vita_total_f",
+    ]
+
+    numeric_cols = df_push.columns[5:]
+    for c in numeric_cols:
+        df_push[c] = pd.to_numeric(df_push[c], errors="coerce").fillna(0).astype(int)
+
+    df_push["code"] = df_push["code"].fillna("").astype(str).str.strip()
+    if (df_push["code"] == "").any():
+        raise ValueError("One or more MR SIA target rows have a blank geographic code.")
+    if df_push["code"].duplicated().any():
+        raise ValueError("Duplicate geographic codes were detected in the prepared MR SIA targets.")
+
+    return df_push.replace({np.nan: None})
+
+
+def _sync_sia_targets(supabase) -> int:
+    df_push = _prepare_sia_targets()
+    records = df_push.to_dict(orient="records")
+    if not records:
+        raise ValueError("Refusing to sync an empty MR SIA target dataset.")
+
+    # Preserve the established SIA behavior: upsert by the table's configured key.
+    for start in range(0, len(records), 500):
+        supabase.table("targets").upsert(records[start:start + 500]).execute()
+    return len(records)
+
+
+def _prepare_sbi_targets() -> tuple[pd.DataFrame, dict]:
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df_raw = conn.read(
+        spreadsheet=SBI_SHEET_URL,
+        worksheet="Target by School",
+        skiprows=5,
+        ttl=0,
+    )
+    if df_raw.empty:
+        raise ValueError("The SBI Target by School sheet returned no records.")
+
+    df_raw.columns = [str(c).strip() for c in df_raw.columns]
+    if "Province" in df_raw.columns:
+        df_raw = df_raw[df_raw["Province"].astype(str).str.upper() == "ABRA"].copy()
+
+    required_source = {
+        "Municipality", "Barangay", "beis_school_id", "School_name",
+        "g1male", "g1female", "g4female", "g7male", "g7female",
+    }
+    missing = sorted(required_source - set(df_raw.columns))
+    if missing:
+        raise ValueError(f"Missing SBI source columns: {', '.join(missing)}")
+
+    df_raw["Municipality"] = df_raw["Municipality"].astype(str).str.strip().str.title()
+    df_raw["School_name"] = df_raw["School_name"].astype(str).str.strip()
+    df_raw["beis_school_id"] = df_raw["beis_school_id"].astype(str).str.replace(r"\.0$", "", regex=True)
+
+    target_cols = {
+        "Municipality": "municipality",
+        "Barangay": "barangay",
+        "beis_school_id": "school_id",
+        "School_name": "school_name",
+        "g1male": "g1_male",
+        "g1female": "g1_female",
+        "g4female": "g4_female",
+        "g7male": "g7_male",
+        "g7female": "g7_female",
+    }
+    df_push = df_raw[list(target_cols)].rename(columns=target_cols)
+
+    for c in ["g1_male", "g1_female", "g4_female", "g7_male", "g7_female"]:
+        df_push[c] = pd.to_numeric(df_push[c], errors="coerce").fillna(0).astype(int)
+    df_push["g1_total"] = df_push["g1_male"] + df_push["g1_female"]
+    df_push["g7_total"] = df_push["g7_male"] + df_push["g7_female"]
+
+    df_push, dedupe_report = consolidate_sbi_targets(df_push)
+    valid, validation_message = validate_sbi_targets(df_push)
+    if not valid:
+        raise ValueError(validation_message)
+
+    return df_push.replace({np.nan: None}), dedupe_report
+
+
+def _sync_sbi_targets(supabase) -> tuple[int, dict]:
+    df_push, dedupe_report = _prepare_sbi_targets()
+    records = df_push.to_dict(orient="records")
+    inserted = replace_table_with_rollback(supabase, "sbi_targets", records)
+    return inserted, dedupe_report
+
+
+def _render_sidebar() -> None:
+    with st.sidebar:
+        st.markdown(
+            f"""
+            <div style="text-align:center;padding:10px 0 15px 0;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png"
+                     width="90" style="margin-bottom:15px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
+                <h3 style="margin:0;font-size:1.15rem;font-weight:700;">{st.session_state.get('user_name', 'System Admin')}</h3>
+                <p style="margin:2px 0 12px 0;font-size:0.85rem;opacity:0.8;font-style:italic;">System Admin</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.divider()
+        if st.button("Main Menu", width="stretch", key="admin_main_menu"):
+            st.session_state["active_program"] = None
+            st.rerun()
+        if st.button("Logout", width="stretch", key="admin_logout"):
+            _logout_session()
+
+
+def _render_overview(supabase) -> None:
+    accounts = _load_accounts(supabase)
+    active_admins = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
+
+    try:
+        sia_count = _table_row_count(supabase, "targets", "code")
+    except Exception:
+        sia_count = 0
+    try:
+        sbi_count = _table_row_count(supabase, "sbi_targets", "school_id")
+    except Exception:
+        sbi_count = 0
+
+    logs = _load_admin_logs(supabase, 200)
+    sync_logs = logs[logs["action"].str.contains("target sync complete", case=False, na=False)] if not logs.empty else logs
+    last_sync = str(sync_logs.iloc[0]["timestamp"]) if not sync_logs.empty and "timestamp" in sync_logs.columns else "Not recorded"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Active Admins", active_admins)
+    c2.metric("MR SIA Target Rows", f"{sia_count:,}")
+    c3.metric("SBI School Rows", f"{sbi_count:,}")
+    c4.metric("Last Target Sync", last_sync)
+
+    st.markdown("#### Data Status")
+    status = pd.DataFrame(
+        [
+            {"Program": "MR SIA", "Database": "targets", "Rows": sia_count, "Status": "Ready" if sia_count else "Empty"},
+            {"Program": "SBI", "Database": "sbi_targets", "Rows": sbi_count, "Status": "Ready" if sbi_count else "Empty"},
+        ]
+    )
+    st.dataframe(
+        status,
+        width="stretch",
+        hide_index=True,
+        column_config={"Rows": st.column_config.NumberColumn("Rows", format="%d")},
+    )
+
+    st.markdown("#### Recent Admin Activity")
+    if logs.empty:
+        st.write("No admin activity has been recorded yet.")
+    else:
+        st.dataframe(logs.head(12), width="stretch", hide_index=True)
+
+
+def _render_data_sync(supabase) -> None:
+    st.markdown("#### MR SIA Targets")
+    try:
+        current_sia = _table_row_count(supabase, "targets", "code")
+    except Exception:
+        current_sia = 0
+    st.metric("Current Database Rows", f"{current_sia:,}")
+
+    if st.button("Sync MR SIA Targets", type="primary", width="stretch", key="admin_sync_sia"):
+        with st.spinner("Syncing MR SIA targets..."):
+            try:
+                rows = _sync_sia_targets(supabase)
+                _audit(supabase, f"MR SIA target sync complete | rows={rows}")
+                st.cache_data.clear()
+                st.toast(f"MR SIA targets synced: {rows:,} rows.")
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as exc:
+                _audit(supabase, f"MR SIA target sync failed | {type(exc).__name__}")
+                st.error(f"MR SIA target sync failed: {exc}")
+
+    st.divider()
+    st.markdown("#### SBI Targets")
+    try:
+        current_sbi = _table_row_count(supabase, "sbi_targets", "school_id")
+    except Exception:
+        current_sbi = 0
+    st.metric("Current Database Rows", f"{current_sbi:,}")
+
+    if st.button("Sync SBI Targets", type="primary", width="stretch", key="admin_sync_sbi"):
+        with st.spinner("Syncing SBI targets..."):
+            try:
+                rows, report = _sync_sbi_targets(supabase)
+                _audit(
+                    supabase,
+                    "SBI target sync complete | "
+                    f"rows={rows} | exact_duplicates={report.get('exact_duplicates_removed', 0)} | "
+                    f"repeated_ids={report.get('duplicate_ids_consolidated', 0)}",
+                )
+                st.cache_data.clear()
+                st.toast(f"SBI targets synced: {rows:,} schools.")
+                time.sleep(0.5)
+                st.rerun()
+            except Exception as exc:
+                _audit(supabase, f"SBI target sync failed | {type(exc).__name__}")
+                st.error(f"SBI target sync failed: {exc}")
+
+    st.divider()
+    st.markdown("#### Sync History")
+    logs = _load_admin_logs(supabase, 200)
+    if logs.empty:
+        st.write("No target sync history has been recorded yet.")
+    else:
+        sync_logs = logs[logs["action"].str.contains("target sync", case=False, na=False)].head(20)
+        if sync_logs.empty:
+            st.write("No target sync history has been recorded yet.")
+        else:
+            st.dataframe(sync_logs, width="stretch", hide_index=True)
+
+
+def _render_admin_accounts(supabase) -> None:
+    accounts = _load_accounts(supabase)
+    current_username = str(st.session_state.get("username") or "").strip()
+
+    if accounts.empty:
+        admin_df = pd.DataFrame(columns=["name", "username", "account_status"])
+    else:
+        admin_df = accounts[accounts["role"].eq("System Admin")].copy()
+
+    if not admin_df.empty:
+        admin_df["Current"] = admin_df["username"].eq(current_username)
+        display = admin_df[["name", "username", "account_status", "Current"]].rename(
+            columns={"name": "Name", "username": "Username", "account_status": "Status"}
+        )
+        st.dataframe(display, width="stretch", hide_index=True)
+    else:
+        st.write("No System Admin accounts were returned by the database.")
+
+    active_admin_count = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
+
+    st.markdown("#### Add Backup Admin")
+    if active_admin_count >= 2:
+        st.write("Two active System Admin accounts are already configured.")
+        create_admin = False
+        new_name = new_username = new_password = ""
+    else:
+        with st.form("admin_add_backup_form"):
+            new_name = st.text_input("Display Name")
+            new_username = st.text_input("Username")
+            new_password = st.text_input("Temporary Password", type="password")
+            create_admin = st.form_submit_button("Create Admin Account", type="primary")
+
+    if create_admin:
+        username = new_username.strip()
+        display_name = new_name.strip() or username
+        if not username or not new_password:
+            st.error("Username and password are required.")
+        elif len(new_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        else:
+            existing = (
+                supabase.table("user_accounts")
+                .select("username")
+                .eq("username", username)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                st.error("That username already exists.")
+            else:
+                supabase.table("user_accounts").insert(
+                    {
+                        "username": username,
+                        "password_hash": hash_password(new_password),
+                        "name": display_name,
+                        "role": "System Admin",
+                        "account_status": "Approved",
+                        "failed_attempts": 0,
+                    }
+                ).execute()
+                _audit(supabase, f"Admin account created | username={username}")
+                st.toast(f"Admin account created: {username}")
+                st.rerun()
+
+    if admin_df.empty:
+        return
+
+    usernames = admin_df["username"].tolist()
+
+    st.divider()
+    st.markdown("#### Reset Password")
+    with st.form("admin_reset_password_form"):
+        reset_username = st.selectbox("Admin Account", usernames, key="admin_reset_username")
+        reset_password = st.text_input("New Password", type="password", key="admin_reset_password")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="admin_reset_confirm")
+        reset_submit = st.form_submit_button("Reset Password")
+
+    if reset_submit:
+        if len(reset_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        elif reset_password != confirm_password:
+            st.error("The passwords do not match.")
+        else:
+            supabase.table("user_accounts").update(
+                {"password_hash": hash_password(reset_password), "failed_attempts": 0}
+            ).eq("username", reset_username).execute()
+            _audit(supabase, f"Password reset | username={reset_username}")
+            st.toast(f"Password reset for {reset_username}.")
+
+    st.divider()
+    st.markdown("#### Account Status")
+    action_username = st.selectbox("Admin Account", usernames, key="admin_status_username")
+    selected_row = admin_df[admin_df["username"].eq(action_username)].iloc[0]
+    selected_status = str(selected_row.get("account_status") or "Approved").strip()
+    selected_is_active = selected_status.lower() in {"approved", "active"}
+    active_count = int(_active_admin_mask(accounts).sum())
+
+    col_enable, col_disable = st.columns(2)
+    with col_enable:
+        enable_blocked = selected_is_active or active_count >= 2
+        if st.button("Enable Account", width="stretch", disabled=enable_blocked, key="admin_enable_account"):
+            supabase.table("user_accounts").update(
+                {"account_status": "Approved", "failed_attempts": 0}
+            ).eq("username", action_username).execute()
+            _audit(supabase, f"Admin account enabled | username={action_username}")
+            st.toast(f"Enabled {action_username}.")
+            st.rerun()
+
+    with col_disable:
+        disable_blocked = action_username == current_username or (selected_is_active and active_count <= 1)
+        if st.button("Disable Account", width="stretch", disabled=disable_blocked, key="admin_disable_account"):
+            supabase.table("user_accounts").update(
+                {"account_status": "Disabled"}
+            ).eq("username", action_username).execute()
+            _audit(supabase, f"Admin account disabled | username={action_username}")
+            st.toast(f"Disabled {action_username}.")
+            st.rerun()
+
+    st.markdown("#### Delete Admin Account")
+    delete_confirm = st.text_input(
+        "Type the username to confirm deletion",
+        key="admin_delete_confirm",
+    )
+    delete_blocked = action_username == current_username or (selected_is_active and active_count <= 1)
+    if st.button("Delete Admin Account", type="secondary", disabled=delete_blocked, key="admin_delete_account"):
+        if delete_confirm.strip() != action_username:
+            st.error("The confirmation username does not match.")
+        else:
+            supabase.table("user_accounts").delete().eq("username", action_username).execute()
+            _audit(supabase, f"Admin account deleted | username={action_username}")
+            st.toast(f"Deleted {action_username}.")
+            st.rerun()
+
+
+def _render_audit_log(supabase) -> None:
+    logs = _load_admin_logs(supabase, 300)
+    if logs.empty:
+        st.write("No admin activity has been recorded yet.")
+        return
+
+    st.dataframe(logs, width="stretch", hide_index=True)
+    st.download_button(
+        "Download Audit Log (CSV)",
+        data=logs.to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_Admin_Audit_Log.csv",
+        mime="text/csv",
+        key="admin_audit_download",
+    )
+
+
+def render_admin_dashboard(supabase) -> None:
+    if st.session_state.get("user_role") != "System Admin":
+        st.session_state["active_program"] = None
+        st.rerun()
+
+    _render_sidebar()
+
+    st.title("System Administration")
+    overview_tab, sync_tab, accounts_tab, audit_tab = st.tabs(
+        ["Overview", "Data Sync", "Admin Accounts", "Audit Log"]
+    )
+
+    with overview_tab:
+        _render_overview(supabase)
+
+    with sync_tab:
+        _render_data_sync(supabase)
+
+    with accounts_tab:
+        _render_admin_accounts(supabase)
+
+    with audit_tab:
+        _render_audit_log(supabase)
