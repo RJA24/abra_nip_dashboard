@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 from datetime import datetime
@@ -257,7 +258,7 @@ if not st.session_state.get('logged_in', False):
                         role = str(user.get('role') or 'Guest / Viewer')
                         assigned_muni = str(user.get('assigned_muni') or user.get('municipality') or 'Abra Province')
                         _start_dashboard_session(display_name, role, assigned_muni, username_input)
-                        st.toast(f"Welcome, {display_name}.")
+                        st.session_state['welcome_notice'] = f"Welcome, {display_name}."
                         st.rerun()
 
         with guest_tab:
@@ -272,7 +273,7 @@ if not st.session_state.get('logged_in', False):
                     else:
                         db_name = f"Visitor ({visitor_name})"
                         _start_dashboard_session(db_name, "Guest", "Abra Province", "")
-                        st.toast(f"Welcome, {visitor_name}.")
+                        st.session_state['welcome_notice'] = f"Welcome, {visitor_name}."
                         st.rerun()
 
     st.stop()
@@ -356,6 +357,62 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         box-shadow: 0 16px 38px rgba(15,23,42,0.20) !important;
     }
 
+    .admin-button-spacer {
+        height: 0.9rem;
+    }
+    div.element-container:has(.admin-btn-marker) + div.element-container button {
+        height: 48px !important;
+        border-radius: 12px !important;
+        background: rgba(255,255,255,0.62) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(255,255,255,0.88) !important;
+        box-shadow: 0 8px 22px rgba(15,23,42,0.12) !important;
+    }
+    div.element-container:has(.admin-btn-marker) + div.element-container button p {
+        font-size: 0.98rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.02em !important;
+        color: #1f2937 !important;
+    }
+    div.element-container:has(.admin-btn-marker) + div.element-container button p::before {
+        content: "\f3ed";
+        font-family: "Font Awesome 6 Free" !important;
+        font-weight: 900 !important;
+        margin-right: 0.5rem;
+        color: #0033A0;
+    }
+    div.element-container:has(.admin-btn-marker) + div.element-container button:hover {
+        background: rgba(255,255,255,0.80) !important;
+        border-color: rgba(0,51,160,0.28) !important;
+    }
+
+    .nip-welcome-toast {
+        position: fixed;
+        top: 4.6rem;
+        right: 1.6rem;
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.8rem 1rem;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.94);
+        border: 1px solid rgba(15,23,42,0.10);
+        box-shadow: 0 12px 30px rgba(15,23,42,0.18);
+        color: #1f2937;
+        font-size: 0.95rem;
+        font-weight: 600;
+        animation: nipToastFade 4.6s ease forwards;
+    }
+    .nip-welcome-toast i {
+        color: #15803d;
+        font-size: 1.05rem;
+    }
+    @keyframes nipToastFade {
+        0%, 78% { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(-6px); visibility: hidden; }
+    }
 
     @media (max-width: 1000px) {
         .nip-menu-title {
@@ -396,13 +453,17 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 
     st.markdown('<div class="program-button-spacer"></div>', unsafe_allow_html=True)
 
-    if st.session_state.get("user_role") == "System Admin":
-        left_pad, mr_col, gap_one, sbi_col, gap_two, admin_col, right_pad = st.columns(
-            [0.55, 2.6, 0.25, 2.6, 0.25, 2.6, 0.55]
+    welcome_notice = st.session_state.pop("welcome_notice", None)
+    if welcome_notice:
+        notice_html = (
+            '<div class="nip-welcome-toast">'
+            '<i class="fa-solid fa-circle-check"></i>'
+            f'<span>{html.escape(str(welcome_notice))}</span>'
+            '</div>'
         )
-    else:
-        left_pad, mr_col, gap_one, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
-        admin_col = None
+        st.markdown(notice_html, unsafe_allow_html=True)
+
+    left_pad, mr_col, gap_one, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
 
     with mr_col:
         st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
@@ -416,10 +477,12 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
             st.session_state['active_program'] = 'SBI'
             st.rerun()
 
-    if admin_col is not None:
+    if st.session_state.get("user_role") == "System Admin":
+        st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
+        admin_left, admin_col, admin_right = st.columns([2.35, 1.3, 2.35])
         with admin_col:
-            st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
-            if st.button("ADMINISTRATION", key="open_admin", width="stretch"):
+            st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
+            if st.button("Administration", key="open_admin", width="stretch"):
                 st.session_state['active_program'] = 'ADMIN'
                 st.rerun()
 
