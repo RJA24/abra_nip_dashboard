@@ -293,43 +293,44 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
     header[data-testid="stHeader"] { background: rgba(0,0,0,0) !important; }
 
     .block-container {
-        max-width: 1240px !important;
-        padding-top: 1rem !important;
-        padding-bottom: 2rem !important;
+        max-width: 1320px !important;
+        padding-top: 0.15rem !important;
+        padding-bottom: 1.5rem !important;
     }
 
     .nip-menu-hero {
-        max-width: 820px;
-        margin: 3vh auto 2rem auto;
+        max-width: 1180px;
+        margin: 0.15rem auto 0.8rem auto;
         text-align: center;
     }
     .nip-menu-logos {
         display: flex;
         justify-content: center;
         align-items: center;
-        gap: 18px;
-        margin-bottom: 1.6rem;
+        gap: 14px;
+        margin-bottom: 0.65rem;
     }
     .nip-menu-logos img {
-        width: 82px;
-        height: 82px;
+        width: 76px;
+        height: 76px;
         object-fit: contain;
         filter: drop-shadow(0 5px 8px rgba(0,0,0,0.18));
     }
     .nip-menu-title {
         margin: 0;
         font-family: "Arial Black", Impact, sans-serif;
-        font-size: clamp(2.7rem, 5vw, 4.7rem);
-        line-height: 0.98;
-        letter-spacing: 0.055em;
+        font-size: clamp(2.35rem, 4.1vw, 4rem);
+        line-height: 1;
+        letter-spacing: 0.045em;
         color: #172033;
         text-transform: uppercase;
         text-shadow: 0 2px 8px rgba(255,255,255,0.28);
+        white-space: nowrap;
     }
 
     div.element-container:has(.program-btn-marker) + div.element-container button {
-        height: 112px !important;
-        border-radius: 24px !important;
+        height: 148px !important;
+        border-radius: 999px !important;
         background: rgba(255,255,255,0.58) !important;
         backdrop-filter: blur(14px) !important;
         -webkit-backdrop-filter: blur(14px) !important;
@@ -350,32 +351,25 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         box-shadow: 0 16px 38px rgba(15,23,42,0.20) !important;
     }
 
-    div.element-container:has(.menu-logout-marker) + div.element-container button {
-        min-height: 40px !important;
-        border-radius: 10px !important;
-        background: rgba(255,255,255,0.62) !important;
-        border: 1px solid rgba(255,255,255,0.85) !important;
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
+
+    @media (max-width: 1000px) {
+        .nip-menu-title {
+            font-size: clamp(2rem, 5vw, 3.1rem);
+            white-space: normal;
+        }
     }
 
     @media (max-width: 800px) {
-        .nip-menu-hero { margin-top: 1rem; }
-        .nip-menu-logos img { width: 68px; height: 68px; }
+        .nip-menu-hero { margin-top: 0; }
+        .nip-menu-logos img { width: 64px; height: 64px; }
         div.element-container:has(.program-btn-marker) + div.element-container button {
-            height: 88px !important;
-            border-radius: 20px !important;
+            height: 108px !important;
+            border-radius: 999px !important;
         }
     }
     </style>
     """
     st.markdown(menu_css, unsafe_allow_html=True)
-
-    top_space, logout_col = st.columns([8, 1.25])
-    with logout_col:
-        st.markdown('<span class="menu-logout-marker"></span>', unsafe_allow_html=True)
-        if st.button("Logout", key="program_menu_logout", width="stretch"):
-            _logout_session()
 
     st.markdown(
         """
@@ -384,13 +378,13 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
                 <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" alt="Province of Abra seal">
                 <img src="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true" alt="Provincial Health Office logo">
             </div>
-            <h1 class="nip-menu-title">National<br>Immunization<br>Program</h1>
+            <h1 class="nip-menu-title">National Immunization Program</h1>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    left_pad, mr_col, gap_col, sbi_col, right_pad = st.columns([0.8, 3.4, 0.35, 3.4, 0.8])
+    left_pad, mr_col, gap_col, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
 
     with mr_col:
         st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
