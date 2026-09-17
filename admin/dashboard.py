@@ -103,6 +103,76 @@ def _active_admin_mask(accounts: pd.DataFrame) -> pd.Series:
     return accounts["role"].eq("System Admin") & status.isin({"approved", "active"})
 
 
+def _section_heading(icon: str, text: str) -> None:
+    st.markdown(
+        f"""
+        <div class="admin-section-heading">
+            <i class="fa-solid {icon}" aria-hidden="true"></i>
+            <span>{text}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_kpi_card(icon: str, label: str, value: str, detail: str = "") -> None:
+    detail_html = f'<div class="admin-kpi-detail">{detail}</div>' if detail else ""
+    st.markdown(
+        f"""
+        <div class="admin-kpi-card">
+            <div class="admin-kpi-top">
+                <i class="fa-solid {icon}" aria-hidden="true"></i>
+                <span>{label}</span>
+            </div>
+            <div class="admin-kpi-value">{value}</div>
+            {detail_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _format_timestamp(value: object) -> tuple[str, str]:
+    raw = str(value or "").strip()
+    if not raw or raw.lower() in {"none", "nan", "not recorded"}:
+        return "Not recorded", ""
+
+    parsed = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(parsed):
+        return raw, ""
+
+    return parsed.strftime("%b %d, %Y"), parsed.strftime("%I:%M %p").lstrip("0")
+
+
+def _clean_activity(action: object) -> tuple[str, str]:
+    raw = str(action or "").strip()
+    if raw.lower().startswith("admin:"):
+        raw = raw.split(":", 1)[1].strip()
+
+    parts = [part.strip() for part in raw.split("|") if part.strip()]
+    if not parts:
+        return "", ""
+
+    activity = parts[0]
+    detail_labels = {
+        "rows": "Rows",
+        "exact_duplicates": "Exact duplicates",
+        "repeated_ids": "Repeated IDs",
+        "username": "Username",
+    }
+
+    details = []
+    for part in parts[1:]:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            label = detail_labels.get(key.strip(), key.strip().replace("_", " ").title())
+            details.append(f"{label}: {value.strip()}")
+        else:
+            details.append(part)
+
+    return activity, " · ".join(details)
+
+
 def _prepare_sia_targets() -> pd.DataFrame:
     conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -372,26 +442,50 @@ def _render_overview(supabase) -> None:
         sia_count = _table_row_count(supabase, "targets", "code")
     except Exception:
         sia_count = 0
+
     try:
         sbi_count = _table_row_count(supabase, "sbi_targets", "school_id")
     except Exception:
         sbi_count = 0
 
     logs = _load_admin_logs(supabase, 200)
-    sync_logs = logs[logs["action"].str.contains("target sync complete", case=False, na=False)] if not logs.empty else logs
-    last_sync = str(sync_logs.iloc[0]["timestamp"]) if not sync_logs.empty and "timestamp" in sync_logs.columns else "Not recorded"
+    sync_logs = (
+        logs[logs["action"].str.contains("target sync complete", case=False, na=False)]
+        if not logs.empty
+        else logs
+    )
+    last_sync_raw = (
+        sync_logs.iloc[0]["timestamp"]
+        if not sync_logs.empty and "timestamp" in sync_logs.columns
+        else "Not recorded"
+    )
+    last_sync_date, last_sync_time = _format_timestamp(last_sync_raw)
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Active Admins", active_admins)
-    c2.metric("MR SIA Target Rows", f"{sia_count:,}")
-    c3.metric("SBI School Rows", f"{sbi_count:,}")
-    c4.metric("Last Target Sync", last_sync)
+    c1, c2, c3, c4 = st.columns(4, gap="medium")
+    with c1:
+        _render_kpi_card("fa-user-shield", "Active Admins", f"{active_admins:,}")
+    with c2:
+        _render_kpi_card("fa-syringe", "MR SIA Target Rows", f"{sia_count:,}")
+    with c3:
+        _render_kpi_card("fa-school", "SBI School Rows", f"{sbi_count:,}")
+    with c4:
+        _render_kpi_card("fa-clock-rotate-left", "Last Target Sync", last_sync_date, last_sync_time)
 
-    st.markdown("#### Data Status")
+    _section_heading("fa-database", "Data Status")
     status = pd.DataFrame(
         [
-            {"Program": "MR SIA", "Database": "targets", "Rows": sia_count, "Status": "Ready" if sia_count else "Empty"},
-            {"Program": "SBI", "Database": "sbi_targets", "Rows": sbi_count, "Status": "Ready" if sbi_count else "Empty"},
+            {
+                "Program": "MR SIA",
+                "Database": "targets",
+                "Rows": sia_count,
+                "Status": "Ready" if sia_count else "Empty",
+            },
+            {
+                "Program": "SBI",
+                "Database": "sbi_targets",
+                "Rows": sbi_count,
+                "Status": "Ready" if sbi_count else "Empty",
+            },
         ]
     )
     st.dataframe(
@@ -401,15 +495,34 @@ def _render_overview(supabase) -> None:
         column_config={"Rows": st.column_config.NumberColumn("Rows", format="%d")},
     )
 
-    st.markdown("#### Recent Admin Activity")
+    _section_heading("fa-clock-rotate-left", "Recent Admin Activity")
     if logs.empty:
         st.write("No admin activity has been recorded yet.")
     else:
-        st.dataframe(logs.head(12), width="stretch", hide_index=True)
+        recent = logs.head(10).copy()
+        recent[["Activity", "Details"]] = recent["action"].apply(
+            lambda value: pd.Series(_clean_activity(value))
+        )
+        recent["Date / Time"] = recent["timestamp"].apply(
+            lambda value: " ".join(filter(None, _format_timestamp(value)))
+        )
+        recent = recent.rename(columns={"name": "Admin"})
+        display_cols = ["Date / Time", "Admin", "Activity", "Details"]
+        st.dataframe(
+            recent[[c for c in display_cols if c in recent.columns]],
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Date / Time": st.column_config.TextColumn("Date / Time", width="medium"),
+                "Admin": st.column_config.TextColumn("Admin", width="medium"),
+                "Activity": st.column_config.TextColumn("Activity", width="medium"),
+                "Details": st.column_config.TextColumn("Details", width="large"),
+            },
+        )
 
 
 def _render_data_sync(supabase) -> None:
-    st.markdown("#### MR SIA Targets")
+    _section_heading("fa-syringe", "MR SIA Targets")
     try:
         current_sia = _table_row_count(supabase, "targets", "code")
     except Exception:
@@ -430,7 +543,7 @@ def _render_data_sync(supabase) -> None:
                 st.error(f"MR SIA target sync failed: {exc}")
 
     st.divider()
-    st.markdown("#### SBI Targets")
+    _section_heading("fa-school", "SBI Targets")
     try:
         current_sbi = _table_row_count(supabase, "sbi_targets", "school_id")
     except Exception:
@@ -456,7 +569,7 @@ def _render_data_sync(supabase) -> None:
                 st.error(f"SBI target sync failed: {exc}")
 
     st.divider()
-    st.markdown("#### Sync History")
+    _section_heading("fa-clock-rotate-left", "Sync History")
     logs = _load_admin_logs(supabase, 200)
     if logs.empty:
         st.write("No target sync history has been recorded yet.")
@@ -488,7 +601,7 @@ def _render_admin_accounts(supabase) -> None:
 
     active_admin_count = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
 
-    st.markdown("#### Add Backup Admin")
+    _section_heading("fa-user-plus", "Add Backup Admin")
     if active_admin_count >= 2:
         st.write("Two active System Admin accounts are already configured.")
         create_admin = False
@@ -538,7 +651,7 @@ def _render_admin_accounts(supabase) -> None:
     usernames = admin_df["username"].tolist()
 
     st.divider()
-    st.markdown("#### Reset Password")
+    _section_heading("fa-key", "Reset Password")
     with st.form("admin_reset_password_form"):
         reset_username = st.selectbox("Admin Account", usernames, key="admin_reset_username")
         reset_password = st.text_input("New Password", type="password", key="admin_reset_password")
@@ -558,7 +671,7 @@ def _render_admin_accounts(supabase) -> None:
             st.toast(f"Password reset for {reset_username}.")
 
     st.divider()
-    st.markdown("#### Account Status")
+    _section_heading("fa-user-shield", "Account Status")
     action_username = st.selectbox("Admin Account", usernames, key="admin_status_username")
     selected_row = admin_df[admin_df["username"].eq(action_username)].iloc[0]
     selected_status = str(selected_row.get("account_status") or "Approved").strip()
@@ -586,7 +699,7 @@ def _render_admin_accounts(supabase) -> None:
             st.toast(f"Disabled {action_username}.")
             st.rerun()
 
-    st.markdown("#### Delete Admin Account")
+    _section_heading("fa-user-xmark", "Delete Admin Account")
     delete_confirm = st.text_input(
         "Type the username to confirm deletion",
         key="admin_delete_confirm",
@@ -625,7 +738,96 @@ def render_admin_dashboard(supabase) -> None:
 
     _render_sidebar()
 
-    st.title("System Administration")
+    st.markdown(
+        """
+        <style>
+        .admin-page-title {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin: 0.15rem 0 1.25rem 0;
+        }
+        .admin-page-title i {
+            color: #0033A0;
+            font-size: 1.9rem;
+        }
+        .admin-page-title h1 {
+            margin: 0;
+            font-size: clamp(2rem, 3vw, 2.8rem);
+            line-height: 1.05;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+        }
+        .admin-kpi-card {
+            min-height: 138px;
+            background: #ffffff;
+            border: 1px solid #dfe5ee;
+            border-bottom: 5px solid #0033A0;
+            border-radius: 10px;
+            padding: 1rem 1.05rem 0.9rem 1.05rem;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+            overflow: hidden;
+        }
+        .admin-kpi-top {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            color: #334155;
+            font-size: 0.91rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .admin-kpi-top i {
+            color: #0033A0;
+            width: 1.1rem;
+            text-align: center;
+        }
+        .admin-kpi-value {
+            color: #0033A0;
+            font-size: clamp(1.7rem, 2.3vw, 2.35rem);
+            line-height: 1.05;
+            font-weight: 800;
+            margin-top: 0.8rem;
+            overflow-wrap: anywhere;
+        }
+        .admin-kpi-detail {
+            color: #64748b;
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-top: 0.35rem;
+        }
+        .admin-section-heading {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin: 1.55rem 0 0.8rem 0;
+            color: #1e293b;
+            font-size: 1.35rem;
+            font-weight: 750;
+        }
+        .admin-section-heading i {
+            color: #0033A0;
+            width: 1.35rem;
+            text-align: center;
+        }
+        @media (max-width: 900px) {
+            .admin-kpi-top {
+                white-space: normal;
+            }
+            .admin-kpi-value {
+                font-size: 1.55rem;
+            }
+        }
+        </style>
+
+        <div class="admin-page-title">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            <h1>System Administration</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     overview_tab, sync_tab, accounts_tab, audit_tab = st.tabs(
         ["Overview", "Data Sync", "Admin Accounts", "Audit Log"]
     )
@@ -640,4 +842,5 @@ def render_admin_dashboard(supabase) -> None:
         _render_admin_accounts(supabase)
 
     with audit_tab:
+        _section_heading("fa-clipboard-list", "Audit Log")
         _render_audit_log(supabase)
