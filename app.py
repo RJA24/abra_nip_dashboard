@@ -328,6 +328,10 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         white-space: nowrap;
     }
 
+    .program-button-spacer {
+        height: clamp(2.5rem, 7vh, 5.25rem);
+    }
+
     div.element-container:has(.program-btn-marker) + div.element-container button {
         height: 148px !important;
         border-radius: 999px !important;
@@ -362,7 +366,12 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
     @media (max-width: 800px) {
         .nip-menu-hero { margin-top: 0; }
         .nip-menu-logos img { width: 64px; height: 64px; }
-        div.element-container:has(.program-btn-marker) + div.element-container button {
+        .program-button-spacer { height: 2rem; }
+        .program-button-spacer {
+        height: clamp(2.5rem, 7vh, 5.25rem);
+    }
+
+    div.element-container:has(.program-btn-marker) + div.element-container button {
             height: 108px !important;
             border-radius: 999px !important;
         }
@@ -383,6 +392,8 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         """,
         unsafe_allow_html=True,
     )
+
+    st.markdown('<div class="program-button-spacer"></div>', unsafe_allow_html=True)
 
     left_pad, mr_col, gap_col, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
 
