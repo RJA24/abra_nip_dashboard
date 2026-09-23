@@ -17,6 +17,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from core.config import ABRA_MUNIS
+from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
 from programs.sbi.analytics import (
     available_date_bounds,
@@ -27,6 +28,7 @@ from programs.sbi.analytics import (
     prepare_mr_td_events,
     reason_summary,
 )
+from programs.sbi.requirements import render_vaccine_requirements
 from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
@@ -66,6 +68,9 @@ def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
     last_updated = _get_last_updated_time()
+    user_role = str(st.session_state.get("user_role") or "Guest")
+    assigned_muni = canonical_municipality_name(st.session_state.get("assigned_muni") or "")
+    is_rhu_encoder = user_role == "RHU Encoder"
     st_autorefresh(interval=3600000, limit=None, key="sbi_hourly_data_refresh")
 
     # --- SESSION TRACKING (throttled to reduce database writes) ---
@@ -99,25 +104,39 @@ def render_sbi_dashboard(supabase) -> None:
         
         st.divider()
         
-        if st.button("Main Menu", width="stretch", key="sbi_main_menu"):
-            st.session_state['active_program'] = None
-            st.rerun()
+        if not is_rhu_encoder:
+            if st.button("Main Menu", width="stretch", key="sbi_main_menu"):
+                st.session_state['active_program'] = None
+                st.rerun()
 
         if st.button("Logout", width="stretch", key="sbi_logout"):
             _logout_session()
             
         with st.expander("Dashboard Filters", expanded=True):
-            view_mode = st.radio(
-                "Geographic Level:",
-                ["All Municipalities (Abra)", "Specific Municipality"],
-                key="sbi_geo_mode"
-            )
-            if view_mode == "Specific Municipality":
-                selected_muni = st.selectbox(
-                    "Select Municipality:", ABRA_MUNIS, key="sbi_muni_sel"
+            if is_rhu_encoder:
+                assigned_key = normalize_municipality_key(assigned_muni)
+                valid_keys = {normalize_municipality_key(m): canonical_municipality_name(m) for m in ABRA_MUNIS}
+                if assigned_key not in valid_keys:
+                    st.error("This RHU Encoder account has no valid assigned municipality.")
+                    st.stop()
+                view_mode = "Specific Municipality"
+                selected_muni = valid_keys[assigned_key]
+                st.markdown(
+                    f'<span style="font-weight:700;color:#334155;">Assigned Municipality:</span> {selected_muni}',
+                    unsafe_allow_html=True,
                 )
             else:
-                selected_muni = "None"
+                view_mode = st.radio(
+                    "Geographic Level:",
+                    ["All Municipalities (Abra)", "Specific Municipality"],
+                    key="sbi_geo_mode"
+                )
+                if view_mode == "Specific Municipality":
+                    selected_muni = st.selectbox(
+                        "Select Municipality:", ABRA_MUNIS, key="sbi_muni_sel"
+                    )
+                else:
+                    selected_muni = "None"
 
             period_mode = st.selectbox(
                 "Reporting Period:",
@@ -580,8 +599,15 @@ def render_sbi_dashboard(supabase) -> None:
         )
 
     # --- DASHBOARD TABS ---
-    sbi_tabs = st.tabs(["Executive Summary", "Targets Overview", "MR & Td (Grades 1 & 7)", "HPV (Grade 4)", "Deferrals & Refusals"])
-    tab_sbi_exec, tab_sbi_target, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def = sbi_tabs
+    sbi_tabs = st.tabs([
+        "Executive Summary",
+        "Targets Overview",
+        "Vaccine Requirements",
+        "MR & Td (Grades 1 & 7)",
+        "HPV (Grade 4)",
+        "Deferrals & Refusals",
+    ])
+    tab_sbi_exec, tab_sbi_target, tab_sbi_requirements, tab_sbi_mr, tab_sbi_hpv, tab_sbi_def = sbi_tabs
 
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
@@ -2090,7 +2116,18 @@ def render_sbi_dashboard(supabase) -> None:
 
 
 
-    # 3. MR & TD (GRADES 1 & 7)
+    # 3. VACCINE REQUIREMENTS
+    with tab_sbi_requirements:
+        render_vaccine_requirements(
+            supabase=supabase,
+            actual_targets=df_sbi_actual_targets,
+            view_mode=view_mode,
+            selected_muni=selected_muni,
+            user_role=user_role,
+            assigned_muni=assigned_muni,
+        )
+
+    # 4. MR & TD (GRADES 1 & 7)
     with tab_sbi_mr:
         st.markdown(f"### Measles-Rubella (MR) & Tetanus-diphtheria (Td): {location_label}")
         mr_combined_tab, mr_g1_tab, mr_g7_tab = st.tabs([

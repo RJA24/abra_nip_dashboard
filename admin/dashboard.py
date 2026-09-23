@@ -12,7 +12,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 from auth_utils import hash_password
-from core.config import SIA_SHEET_URL, SBI_SHEET_URL
+from core.config import ABRA_MUNIS, SIA_SHEET_URL, SBI_SHEET_URL
 from core.geo import clean_and_process_car_data, fetch_abra_geojson
 from core.map_labels import (
     build_label_records,
@@ -22,6 +22,7 @@ from core.map_labels import (
     save_label_records,
     table_available as map_label_table_available,
 )
+from core.vaccine_requirements import requirements_schema_available
 from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
 
 
@@ -76,7 +77,7 @@ def _load_accounts(supabase) -> pd.DataFrame:
         return pd.DataFrame()
 
     df = pd.DataFrame(response.data)
-    for col in ["username", "name", "role", "account_status"]:
+    for col in ["username", "name", "role", "account_status", "assigned_muni"]:
         if col not in df.columns:
             df[col] = ""
         df[col] = df[col].fillna("").astype(str).str.strip()
@@ -1011,6 +1012,152 @@ def _render_map_label_editor(supabase) -> None:
         display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
     st.dataframe(display, width="stretch", hide_index=True)
 
+
+
+def _render_rhu_accounts(supabase) -> None:
+    ready, message = requirements_schema_available(supabase)
+    if not ready:
+        st.error(
+            f"RHU Encoder setup is not complete ({message}). Run supabase/002_sbi_vaccine_requirements.sql once, then reload this page."
+        )
+        return
+
+    accounts = _load_accounts(supabase)
+    if accounts.empty:
+        rhu_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status"])
+    else:
+        rhu_df = accounts[accounts["role"].eq("RHU Encoder")].copy()
+
+    _section_heading("fa-users-gear", "RHU Encoder Accounts")
+    if not rhu_df.empty:
+        display = rhu_df[["name", "username", "assigned_muni", "account_status"]].rename(
+            columns={
+                "name": "Name",
+                "username": "Username",
+                "assigned_muni": "Municipality",
+                "account_status": "Status",
+            }
+        )
+        st.dataframe(display.sort_values(["Municipality", "Username"]), width="stretch", hide_index=True)
+    else:
+        st.write("No RHU Encoder accounts are configured yet.")
+
+    _section_heading("fa-user-plus", "Create RHU Encoder")
+    with st.form("rhu_create_account_form"):
+        c1, c2 = st.columns(2)
+        with c1:
+            new_name = st.text_input("Display Name", placeholder="e.g., La Paz RHU")
+            new_username = st.text_input("Username", key="rhu_new_username")
+        with c2:
+            new_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, key="rhu_new_muni")
+            new_password = st.text_input("Temporary Password", type="password", key="rhu_new_password")
+        create_rhu = st.form_submit_button("Create RHU Encoder", type="primary")
+
+    if create_rhu:
+        username = new_username.strip()
+        display_name = new_name.strip() or f"{new_muni} RHU"
+        if not username or not new_password:
+            st.error("Username and password are required.")
+        elif len(new_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        else:
+            existing = (
+                supabase.table("user_accounts")
+                .select("username")
+                .eq("username", username)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                st.error("That username already exists.")
+            else:
+                supabase.table("user_accounts").insert(
+                    {
+                        "username": username,
+                        "password_hash": hash_password(new_password),
+                        "name": display_name,
+                        "role": "RHU Encoder",
+                        "assigned_muni": new_muni,
+                        "account_status": "Approved",
+                        "failed_attempts": 0,
+                    }
+                ).execute()
+                _audit(supabase, f"RHU Encoder created | username={username} | municipality={new_muni}")
+                st.toast(f"RHU Encoder created: {username}")
+                st.rerun()
+
+    if rhu_df.empty:
+        return
+
+    usernames = sorted(rhu_df["username"].dropna().astype(str).tolist())
+
+    st.divider()
+    _section_heading("fa-location-dot", "Municipality Assignment")
+    with st.form("rhu_assignment_form"):
+        assign_username = st.selectbox("RHU Account", usernames, key="rhu_assign_username")
+        current_row = rhu_df[rhu_df["username"].eq(assign_username)].iloc[0]
+        current_muni = str(current_row.get("assigned_muni") or ABRA_MUNIS[0]).strip()
+        current_index = ABRA_MUNIS.index(current_muni) if current_muni in ABRA_MUNIS else 0
+        assign_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, index=current_index, key="rhu_assign_muni")
+        assign_submit = st.form_submit_button("Update Assignment")
+    if assign_submit:
+        supabase.table("user_accounts").update({"assigned_muni": assign_muni}).eq("username", assign_username).execute()
+        _audit(supabase, f"RHU assignment updated | username={assign_username} | municipality={assign_muni}")
+        st.toast(f"Updated {assign_username} to {assign_muni}.")
+        st.rerun()
+
+    st.divider()
+    _section_heading("fa-key", "Reset RHU Password")
+    with st.form("rhu_reset_password_form"):
+        reset_username = st.selectbox("RHU Account", usernames, key="rhu_reset_username")
+        reset_password = st.text_input("New Password", type="password", key="rhu_reset_password")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="rhu_reset_confirm")
+        reset_submit = st.form_submit_button("Reset Password")
+    if reset_submit:
+        if len(reset_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        elif reset_password != confirm_password:
+            st.error("The passwords do not match.")
+        else:
+            supabase.table("user_accounts").update(
+                {"password_hash": hash_password(reset_password), "failed_attempts": 0}
+            ).eq("username", reset_username).execute()
+            _audit(supabase, f"RHU password reset | username={reset_username}")
+            st.toast(f"Password reset for {reset_username}.")
+
+    st.divider()
+    _section_heading("fa-user-lock", "RHU Account Status")
+    action_username = st.selectbox("RHU Account", usernames, key="rhu_status_username")
+    selected_row = rhu_df[rhu_df["username"].eq(action_username)].iloc[0]
+    selected_status = str(selected_row.get("account_status") or "Approved").strip()
+    selected_active = selected_status.lower() in {"approved", "active"}
+    e1, e2 = st.columns(2)
+    with e1:
+        if st.button("Enable Account", width="stretch", disabled=selected_active, key="rhu_enable_account"):
+            supabase.table("user_accounts").update(
+                {"account_status": "Approved", "failed_attempts": 0}
+            ).eq("username", action_username).execute()
+            _audit(supabase, f"RHU account enabled | username={action_username}")
+            st.rerun()
+    with e2:
+        if st.button("Disable Account", width="stretch", disabled=not selected_active, key="rhu_disable_account"):
+            supabase.table("user_accounts").update(
+                {"account_status": "Disabled"}
+            ).eq("username", action_username).execute()
+            _audit(supabase, f"RHU account disabled | username={action_username}")
+            st.rerun()
+
+    _section_heading("fa-user-xmark", "Delete RHU Account")
+    delete_confirm = st.text_input("Type the RHU username to confirm deletion", key="rhu_delete_confirm")
+    if st.button("Delete RHU Account", type="secondary", key="rhu_delete_account"):
+        if delete_confirm.strip() != action_username:
+            st.error("The confirmation username does not match.")
+        else:
+            supabase.table("user_accounts").delete().eq("username", action_username).execute()
+            _audit(supabase, f"RHU account deleted | username={action_username}")
+            st.toast(f"Deleted {action_username}.")
+            st.rerun()
+
 def _render_admin_accounts(supabase) -> None:
     accounts = _load_accounts(supabase)
     current_username = str(st.session_state.get("username") or "").strip()
@@ -1258,8 +1405,8 @@ def render_admin_dashboard(supabase) -> None:
         unsafe_allow_html=True,
     )
 
-    overview_tab, sync_tab, map_tab, accounts_tab, audit_tab = st.tabs(
-        ["Overview", "Data Sync", "Map Labels", "Admin Accounts", "Audit Log"]
+    overview_tab, sync_tab, map_tab, rhu_accounts_tab, accounts_tab, audit_tab = st.tabs(
+        ["Overview", "Data Sync", "Map Labels", "RHU Accounts", "Admin Accounts", "Audit Log"]
     )
 
     with overview_tab:
@@ -1270,6 +1417,9 @@ def render_admin_dashboard(supabase) -> None:
 
     with map_tab:
         _render_map_label_editor(supabase)
+
+    with rhu_accounts_tab:
+        _render_rhu_accounts(supabase)
 
     with accounts_tab:
         _render_admin_accounts(supabase)

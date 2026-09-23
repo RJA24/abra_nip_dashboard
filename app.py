@@ -258,6 +258,8 @@ if not st.session_state.get('logged_in', False):
                         role = str(user.get('role') or 'Guest / Viewer')
                         assigned_muni = str(user.get('assigned_muni') or user.get('municipality') or 'Abra Province')
                         _start_dashboard_session(display_name, role, assigned_muni, username_input)
+                        if role == "RHU Encoder":
+                            st.session_state['active_program'] = 'SBI'
                         st.session_state['welcome_notice'] = f"Welcome, {display_name}."
                         st.rerun()
 
@@ -281,6 +283,15 @@ if not st.session_state.get('logged_in', False):
 # ==========================================
 # 4.5. PROGRAM ROUTING MENU
 # ==========================================
+# RHU Encoder accounts are intentionally restricted to SBI and their assigned municipality.
+if (
+    st.session_state.get('logged_in', False)
+    and st.session_state.get('user_role') == 'RHU Encoder'
+    and st.session_state.get('active_program') is None
+):
+    st.session_state['active_program'] = 'SBI'
+    st.rerun()
+
 if st.session_state.get('logged_in', False) and st.session_state.get('active_program') is None:
     menu_css = """
     <style>
@@ -493,6 +504,9 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 # 5. PROGRAM ROUTER
 # ==========================================
 active_program = st.session_state.get("active_program")
+if st.session_state.get('user_role') == 'RHU Encoder' and active_program != 'SBI':
+    st.session_state['active_program'] = 'SBI'
+    st.rerun()
 
 if active_program == "SBI":
     render_sbi_dashboard(supabase)

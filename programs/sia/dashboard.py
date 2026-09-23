@@ -3368,3 +3368,4 @@ def render_sia_dashboard(supabase):
         st.error(f"Dashboard Error: {e}")
 
     render_footer()
+
