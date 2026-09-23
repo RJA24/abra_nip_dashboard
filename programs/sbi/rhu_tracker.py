@@ -348,6 +348,199 @@ def _summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metri
     return pd.DataFrame(rows)
 
 
+def _events_for_exact_date(events: dict[str, pd.DataFrame], target_date: date) -> dict[str, pd.DataFrame]:
+    """Return VaccTrack event rows whose Report Date matches one calendar date."""
+    result: dict[str, pd.DataFrame] = {}
+    for key, frame in events.items():
+        if frame is None or frame.empty or "Report Date" not in frame.columns:
+            result[key] = pd.DataFrame(columns=frame.columns if isinstance(frame, pd.DataFrame) else None)
+            continue
+        dates = pd.to_datetime(frame["Report Date"], errors="coerce").dt.date
+        result[key] = frame.loc[dates.eq(target_date)].copy()
+    return result
+
+
+def _entries_for_exact_date(entries: pd.DataFrame, target_date: date) -> pd.DataFrame:
+    if entries is None or entries.empty or "activity_date" not in entries.columns:
+        return pd.DataFrame(columns=entries.columns if isinstance(entries, pd.DataFrame) else None)
+    dates = pd.to_datetime(entries["activity_date"], errors="coerce").dt.date
+    return entries.loc[dates.eq(target_date)].copy()
+
+
+def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Compare RHU Activity Date with VaccTrack Report Date, metric by metric.
+
+    Rows where neither source has activity for a metric are omitted so a Grade 1
+    activity date does not incorrectly flag Grade 4 or Grade 7 as Not Updated.
+    """
+    tracker_dates: set[date] = set()
+    if entries is not None and not entries.empty and "activity_date" in entries.columns:
+        tracker_dates = set(
+            pd.to_datetime(entries["activity_date"], errors="coerce").dropna().dt.date.tolist()
+        )
+
+    vacc_dates: set[date] = set()
+    for frame in events.values():
+        if frame is None or frame.empty or "Report Date" not in frame.columns:
+            continue
+        vacc_dates.update(
+            pd.to_datetime(frame["Report Date"], errors="coerce").dropna().dt.date.tolist()
+        )
+
+    rows: list[dict] = []
+    for target_date in sorted(tracker_dates | vacc_dates):
+        day_entries = _entries_for_exact_date(entries, target_date)
+        day_events = _events_for_exact_date(events, target_date)
+
+        for metric in METRICS.keys():
+            tracker_value, tracker_rows = _sum_tracker_metric(day_entries, metric)
+            vacc_value = _sum_event_metric(day_events, metric)
+
+            # Skip vaccine/grade combinations with no activity from either source.
+            if tracker_rows == 0 and abs(vacc_value) < 0.5:
+                continue
+
+            diff = tracker_value - vacc_value
+            rows.append(
+                {
+                    "Date": target_date,
+                    "Metric": metric,
+                    "RHU Tracker": int(round(tracker_value)),
+                    "VaccTrack": int(round(vacc_value)),
+                    "Difference": int(round(diff)),
+                    "Status": _status(diff, tracker_rows),
+                }
+            )
+
+    return pd.DataFrame(
+        rows,
+        columns=["Date", "Metric", "RHU Tracker", "VaccTrack", "Difference", "Status"],
+    )
+
+
+def _daily_difference_matrix(daily: pd.DataFrame) -> pd.DataFrame:
+    if daily is None or daily.empty:
+        return pd.DataFrame(columns=["Date", *METRICS.keys(), "Issues"])
+
+    pivot = daily.pivot_table(
+        index="Date",
+        columns="Metric",
+        values="Difference",
+        aggfunc="sum",
+    ).reindex(columns=list(METRICS.keys()))
+
+    issues = (
+        daily.assign(_issue=daily["Status"].ne("Matched").astype(int))
+        .groupby("Date")["_issue"]
+        .sum()
+    )
+
+    def _fmt(value):
+        if pd.isna(value):
+            return "—"
+        value = int(round(float(value)))
+        return f"+{value}" if value > 0 else str(value)
+
+    out = pivot.map(_fmt).reset_index()
+    out["Issues"] = out["Date"].map(issues).fillna(0).astype(int)
+    return out.sort_values("Date", ascending=False).reset_index(drop=True)
+
+
+def _render_daily_discrepancy_tally(
+    entries: pd.DataFrame,
+    events: dict[str, pd.DataFrame],
+    key_prefix: str,
+    filename_prefix: str,
+) -> None:
+    daily = _daily_reconciliation(entries, events)
+    if daily.empty:
+        return
+
+    st.markdown(
+        '''<h4 style="margin-bottom:0.25rem;">
+        <i class="fa-solid fa-calendar-days" style="color:#0033A0;margin-right:8px;"></i>
+        Daily Discrepancy Tally
+        </h4>''',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div style="color:#64748b;font-size:0.9rem;margin-bottom:0.7rem;">'
+        'Date comparison uses <strong>RHU Tracker Activity Date</strong> versus '
+        '<strong>VaccTrack Report Date</strong>. If cumulative totals match but daily rows do not, '
+        'check whether VaccTrack was encoded under a later report date.</div>',
+        unsafe_allow_html=True,
+    )
+
+    issue_dates = sorted(
+        daily.loc[daily["Status"].ne("Matched"), "Date"].dropna().unique().tolist(),
+        reverse=True,
+    )
+
+    show_issues_only = st.toggle(
+        "Show discrepancy dates only",
+        value=True,
+        key=f"{key_prefix}_daily_issues_only",
+    )
+
+    matrix = _daily_difference_matrix(daily)
+    if show_issues_only:
+        matrix = matrix[matrix["Issues"].gt(0)].copy()
+
+    if matrix.empty:
+        st.success("No daily discrepancies were found for this selection.")
+    else:
+        st.dataframe(
+            matrix,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Date": st.column_config.DateColumn("Date", format="MMM DD, YYYY"),
+                "Issues": st.column_config.NumberColumn("Issues", format="%d"),
+            },
+        )
+
+    with st.expander("View detailed daily reconciliation", expanded=False):
+        detail = daily.sort_values(
+            ["Date", "Status", "Metric"],
+            ascending=[False, True, True],
+        ).copy()
+        st.dataframe(detail, width="stretch", hide_index=True)
+        st.download_button(
+            "Download Daily Discrepancy Tally (CSV)",
+            data=detail.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"{filename_prefix}_Daily_Discrepancy_Tally.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_daily_csv",
+        )
+
+    if not issue_dates:
+        return
+
+    inspect_date = st.selectbox(
+        "Inspect discrepancy date",
+        issue_dates,
+        format_func=lambda d: d.strftime("%b %d, %Y") if hasattr(d, "strftime") else str(d),
+        key=f"{key_prefix}_daily_date",
+    )
+    day_entries = _entries_for_exact_date(entries, inspect_date)
+    day_events = _events_for_exact_date(events, inspect_date)
+    school = _school_comparison(day_entries, day_events)
+    if school.empty:
+        return
+
+    school = school[school["Status"].ne("Matched")].copy()
+    if school.empty:
+        st.write("No school-level discrepancy remains for the selected date.")
+        return
+
+    st.markdown(f"##### School-Level Discrepancies: {inspect_date.strftime('%b %d, %Y')}")
+    st.dataframe(
+        school.sort_values(["Status", "Metric", "School Name"]),
+        width="stretch",
+        hide_index=True,
+    )
+
+
 def _tracker_school_metric(entries: pd.DataFrame, metric: str) -> pd.DataFrame:
     config = METRICS[metric]
     if entries.empty:
@@ -577,6 +770,15 @@ def _render_check(
     summary = _summary_table(entries, events)
     st.dataframe(summary, width="stretch", hide_index=True)
 
+    st.divider()
+    _render_daily_discrepancy_tally(
+        entries,
+        events,
+        key_prefix="rhu_check",
+        filename_prefix=f"SBI_RHU_vs_VaccTrack_{assigned_muni.replace(' ', '_')}",
+    )
+
+    st.divider()
     school = _school_comparison(entries, events)
     if school.empty:
         return
@@ -634,6 +836,16 @@ def _render_coordinator_view(
     drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key="rhu_coord_drill_muni")
     drill_entries = _entries_for_muni_period(all_entries, drill_muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
     drill_events = _events_for_muni_period(g1_events, g7_events, hpv_events, drill_muni, start_date, end_date)
+
+    st.divider()
+    _render_daily_discrepancy_tally(
+        drill_entries,
+        drill_events,
+        key_prefix="rhu_coord",
+        filename_prefix=f"SBI_RHU_vs_VaccTrack_{drill_muni.replace(' ', '_')}",
+    )
+
+    st.divider()
     school = _school_comparison(drill_entries, drill_events)
     if school.empty:
         st.write(f"No RHU Tracker or VaccTrack school data is available for {drill_muni} in this period.")
