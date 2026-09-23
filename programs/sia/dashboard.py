@@ -17,6 +17,7 @@ from core.data import (
     fetch_vacctrack_data,
     fetch_opt_data,
 )
+from core.map_labels import canonical_municipality_name, get_label_nudge, get_runtime_label_nudges
 from core.geo import (
     fetch_abra_geojson,
     fetch_barangay_geojson,
@@ -517,38 +518,8 @@ def render_sia_dashboard(supabase):
                             mr_lons, mr_lats, mr_texts = [], [], []
                             va_lons, va_lats, va_texts = [], [], []
                         
-                            # --- NEW: Manual Coordinate Nudges to Prevent Label Collision ---
-                            # Adjusting by 0.01 moves the label roughly 1 kilometer.
-                            label_nudges = {
-                                'BANGUED': {'lat': +0.015, 'lon': -0.015},
-                                'BOLINEY': {'lat': -0.015, 'lon': -0.015},
-                                'BUCAY': {'lat': -0.025, 'lon': -0.020},
-                                'BUCLOC': {'lat': 0.0, 'lon': 0.0},
-                                'DAGUIOMAN': {'lat': -0.015, 'lon': -0.015},
-                                'DANGLAS': {'lat': -0.015, 'lon': -0.015},
-                                'DOLORES': {'lat': 0.00, 'lon': 0.0},
-                                'LA PAZ': {'lat': -0.015, 'lon': -0.015},
-                                'LACUB': {'lat': -0.015, 'lon': -0.015},
-                                'LAGANGILANG': {'lat': -0.015, 'lon': +0.015},
-                                'LAGAYAN': {'lat': 0.0, 'lon': 0.0},
-                                'LANGIDEN': {'lat': +0.015, 'lon': -0.025},
-                                'LICUAN-BAAY': {'lat': -0.015, 'lon': -0.015},
-                                'LUBA': {'lat': 0.0, 'lon': 0.0},
-                                'MALIBCONG': {'lat': 0.0, 'lon': 0.0},
-                                'MANABO': {'lat': -0.005, 'lon': -0.020},       
-                                'PEŃARRUBIA': {'lat': -0.01, 'lon': -0.01},
-                                'PIDIGAN': {'lat': 0.0, 'lon': 0.00},
-                                'PILAR': {'lat': -0.015, 'lon': -0.02},  
-                                'SALLAPADAN': {'lat': +0.020, 'lon': +0.015},  
-                                'SAN ISIDRO': {'lat': +0.015, 'lon': -0.015},  
-                                'SAN JUAN': {'lat': 0.0, 'lon': +0.015},  
-                                'SAN QUINTIN': {'lat': -0.015, 'lon': 0.00},  
-                                'TAYUM': {'lat': -0.015, 'lon': 0.00},       
-                                'TINEG': {'lat': -0.06, 'lon': -0.025},
-                                'TUBO': {'lat': +0.06, 'lon': +0.025},     
-                                'VILLAVICIOSA': {'lat': -0.020, 'lon': +0.015}  
-                            }
-                        
+                            label_nudges = get_runtime_label_nudges(supabase)
+
                             for feat in abra_geo.get('features', []):
                                 std_name = feat['properties'].get('Standard_Name', '')
                                 match = df_geo_summary[df_geo_summary['Map_Location'] == std_name]
@@ -556,12 +527,12 @@ def render_sia_dashboard(supabase):
                                     lon, lat = get_polygon_centroid(feat.get('geometry', {}))
                                     if lon is not None and lat is not None:
                                     
-                                        # Apply the manual nudge if the municipality is in our list
-                                        if std_name in label_nudges:
-                                            lat += label_nudges[std_name]['lat']
-                                            lon += label_nudges[std_name]['lon']
+                                        # Apply the shared municipality label position offset.
+                                        nudge = get_label_nudge(label_nudges, std_name)
+                                        lat += nudge['lat']
+                                        lon += nudge['lon']
                                         
-                                        display_name = std_name.title()
+                                        display_name = canonical_municipality_name(std_name)
                                         mr_cov = match['MR Coverage %'].values[0]
                                         mr_lons.append(lon)
                                         mr_lats.append(lat)

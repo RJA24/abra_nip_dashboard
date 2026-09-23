@@ -20,6 +20,7 @@ import streamlit as st
 
 from core.config import ABRA_MUNIS
 from core.geo import fetch_abra_geojson, get_polygon_centroid
+from core.map_labels import get_label_nudge, get_runtime_label_nudges
 
 
 def _geo_key(value: object) -> str:
@@ -402,37 +403,7 @@ def render_municipality_choropleth(
         hover_data=hover_data,
     )
 
-    # Exact municipality label adjustments carried over from the MR SIA map.
-    # Keys are normalized because the SBI renderer uses accent-insensitive joins.
-    label_nudges = {
-        "BANGUED": {"lat": +0.015, "lon": -0.015},
-        "BOLINEY": {"lat": -0.015, "lon": -0.015},
-        "BUCAY": {"lat": -0.025, "lon": -0.020},
-        "BUCLOC": {"lat": 0.000, "lon": 0.000},
-        "DAGUIOMAN": {"lat": -0.015, "lon": -0.015},
-        "DANGLAS": {"lat": -0.015, "lon": -0.015},
-        "DOLORES": {"lat": 0.000, "lon": 0.000},
-        "LAPAZ": {"lat": -0.015, "lon": -0.015},
-        "LACUB": {"lat": -0.015, "lon": -0.015},
-        "LAGANGILANG": {"lat": -0.015, "lon": +0.015},
-        "LAGAYAN": {"lat": 0.000, "lon": 0.000},
-        "LANGIDEN": {"lat": +0.015, "lon": -0.025},
-        "LICUANBAAY": {"lat": -0.015, "lon": -0.015},
-        "LUBA": {"lat": 0.000, "lon": 0.000},
-        "MALIBCONG": {"lat": 0.000, "lon": 0.000},
-        "MANABO": {"lat": -0.005, "lon": -0.020},
-        "PENARRUBIA": {"lat": -0.010, "lon": -0.010},
-        "PIDIGAN": {"lat": 0.000, "lon": 0.000},
-        "PILAR": {"lat": -0.015, "lon": -0.020},
-        "SALLAPADAN": {"lat": +0.020, "lon": +0.015},
-        "SANISIDRO": {"lat": +0.015, "lon": -0.015},
-        "SANJUAN": {"lat": 0.000, "lon": +0.015},
-        "SANQUINTIN": {"lat": -0.015, "lon": 0.000},
-        "TAYUM": {"lat": -0.015, "lon": 0.000},
-        "TINEG": {"lat": -0.060, "lon": -0.025},
-        "TUBO": {"lat": +0.060, "lon": +0.025},
-        "VILLAVICIOSA": {"lat": -0.020, "lon": +0.015},
-    }
+    label_nudges = get_runtime_label_nudges()
 
     label_lons: list[float] = []
     label_lats: list[float] = []
@@ -450,10 +421,9 @@ def render_municipality_choropleth(
         if lon is None or lat is None:
             continue
 
-        nudge = label_nudges.get(key_value)
-        if nudge:
-            lat += nudge["lat"]
-            lon += nudge["lon"]
+        nudge = get_label_nudge(label_nudges, key_value)
+        lat += nudge["lat"]
+        lon += nudge["lon"]
 
         label_lons.append(lon)
         label_lats.append(lat)

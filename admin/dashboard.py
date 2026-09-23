@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
+import json
 import time
 
 import numpy as np
@@ -11,7 +13,15 @@ from streamlit_gsheets import GSheetsConnection
 
 from auth_utils import hash_password
 from core.config import SIA_SHEET_URL, SBI_SHEET_URL
-from core.geo import clean_and_process_car_data
+from core.geo import clean_and_process_car_data, fetch_abra_geojson
+from core.map_labels import (
+    build_label_records,
+    invalidate_runtime_label_cache,
+    reset_all_label_positions,
+    reset_label_position,
+    save_label_records,
+    table_available as map_label_table_available,
+)
 from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
 
 
@@ -581,6 +591,426 @@ def _render_data_sync(supabase) -> None:
             st.dataframe(sync_logs, width="stretch", hide_index=True)
 
 
+
+def _bump_map_label_editor_revision() -> None:
+    st.session_state["_map_label_editor_revision"] = int(
+        st.session_state.get("_map_label_editor_revision", 0)
+    ) + 1
+    st.session_state.pop("_map_label_editor_payload", None)
+
+
+
+def _build_map_label_editor(records: pd.DataFrame):
+    import folium
+    from branca.element import MacroElement, Template
+    from folium.plugins import Draw
+    from streamlit_folium import st_folium
+
+    geojson = fetch_abra_geojson()
+    if not geojson:
+        st.error("Abra municipality boundary data could not be loaded.")
+        return None
+
+    m = folium.Map(
+        location=[17.58, 120.80],
+        zoom_start=9,
+        tiles=None,
+        control_scale=True,
+        prefer_canvas=False,
+    )
+    folium.TileLayer(
+        tiles=(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        ),
+        attr="Esri World Light Gray Canvas",
+        name="Light Gray",
+        overlay=False,
+        control=False,
+    ).add_to(m)
+
+    folium.GeoJson(
+        geojson,
+        name="Abra Municipalities",
+        style_function=lambda _feature: {
+            "fillColor": "#dbeafe",
+            "color": "#475569",
+            "weight": 1.2,
+            "fillOpacity": 0.38,
+        },
+        highlight_function=lambda _feature: {
+            "weight": 2,
+            "color": "#0033A0",
+            "fillOpacity": 0.50,
+        },
+    ).add_to(m)
+
+    draw = Draw(
+        export=False,
+        position="topright",
+        draw_options={
+            "polyline": False,
+            "polygon": False,
+            "rectangle": False,
+            "circle": False,
+            "circlemarker": False,
+            "marker": False,
+        },
+        edit_options={"edit": True, "remove": False},
+    )
+    draw.add_to(m)
+
+    labels = []
+    for _, row in records.iterrows():
+        labels.append(
+            {
+                "key": str(row["municipality_key"]),
+                "name": str(row["municipality_name"]),
+                "lat": float(row["label_lat"]),
+                "lon": float(row["label_lon"]),
+            }
+        )
+
+    class _EditableLabelLayer(MacroElement):
+        def __init__(self, draw_group_var: str, label_rows: list[dict]):
+            super().__init__()
+            self._name = "EditableLabelLayer"
+            self.draw_group_var = draw_group_var
+            self.labels_json = json.dumps(label_rows, ensure_ascii=False)
+            self._template = Template(
+                r'''
+                {% macro script(this, kwargs) %}
+                (function() {
+                    var group = {{ this.draw_group_var|safe }};
+                    var labels = {{ this.labels_json|safe }};
+                    labels.forEach(function(item) {
+                        var safeName = String(item.name)
+                            .replace(/&/g, "&amp;")
+                            .replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;")
+                            .replace(/"/g, "&quot;")
+                            .replace(/'/g, "&#039;");
+                        var icon = L.divIcon({
+                            className: "nip-label-anchor",
+                            html: '<div class="nip-label-chip">' + safeName + '</div>',
+                            iconSize: [126, 30],
+                            iconAnchor: [63, 15]
+                        });
+                        var marker = L.marker([item.lat, item.lon], {
+                            icon: icon,
+                            keyboard: true,
+                            title: item.name
+                        });
+                        marker.feature = {
+                            type: "Feature",
+                            properties: {
+                                municipality_key: item.key,
+                                municipality_name: item.name
+                            }
+                        };
+                        group.addLayer(marker);
+                    });
+                })();
+                {% endmacro %}
+                '''
+            )
+
+    _EditableLabelLayer(f"drawnItems_{draw.get_name()}", labels).add_to(m)
+
+    m.get_root().header.add_child(
+        folium.Element(
+            """
+            <style>
+            .nip-label-anchor { background: transparent !important; border: 0 !important; }
+            .nip-label-chip {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 76px;
+                padding: 3px 7px;
+                border: 1px solid rgba(15, 23, 42, 0.42);
+                border-radius: 5px;
+                background: rgba(255, 255, 255, 0.90);
+                color: #0f172a;
+                font: 700 11px/1.15 Arial, sans-serif;
+                text-align: center;
+                white-space: nowrap;
+                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+                cursor: move;
+                user-select: none;
+            }
+            .leaflet-edit-marker-selected .nip-label-chip {
+                border-color: #0033A0;
+                box-shadow: 0 0 0 2px rgba(0, 51, 160, 0.18);
+            }
+            </style>
+            """
+        )
+    )
+
+    return st_folium(
+        m,
+        key=f"nip_municipality_label_editor_map_{st.session_state.get('_map_label_editor_revision', 0)}",
+        height=650,
+        use_container_width=True,
+        returned_objects=["all_drawings", "last_clicked"],
+    )
+
+
+def _positions_from_drawings(drawings) -> dict[str, tuple[float, float]]:
+    positions: dict[str, tuple[float, float]] = {}
+    for feature in drawings or []:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get("properties") or {}
+        geometry = feature.get("geometry") or {}
+        coords = geometry.get("coordinates") or []
+        key = str(props.get("municipality_key") or "").strip()
+        if not key or geometry.get("type") != "Point" or len(coords) < 2:
+            continue
+        try:
+            positions[key] = (float(coords[1]), float(coords[0]))
+        except (TypeError, ValueError):
+            continue
+    return positions
+
+
+def _merge_pending_label_positions(records: pd.DataFrame) -> pd.DataFrame:
+    work = records.copy()
+    pending = st.session_state.get("_map_label_pending", {})
+    if not pending or work.empty:
+        return work
+
+    for key, position in pending.items():
+        mask = work["municipality_key"].eq(key)
+        if not mask.any():
+            continue
+        lat, lon = position
+        work.loc[mask, "label_lat"] = float(lat)
+        work.loc[mask, "label_lon"] = float(lon)
+        work.loc[mask, "lat_nudge"] = float(lat) - work.loc[mask, "centroid_lat"]
+        work.loc[mask, "lon_nudge"] = float(lon) - work.loc[mask, "centroid_lon"]
+        work.loc[mask, "source"] = "Unsaved"
+    return work
+
+
+def _render_map_label_editor(supabase) -> None:
+    _section_heading("fa-map-location-dot", "Municipality Label Editor")
+
+    table_ready = map_label_table_available(supabase)
+    if not table_ready:
+        st.error(
+            "Map label storage is not configured yet. Run "
+            "supabase/001_map_label_positions.sql in the Supabase SQL Editor, then reload this page."
+        )
+
+    base_records = build_label_records(supabase)
+    if base_records.empty:
+        st.error("Abra municipality label positions could not be prepared.")
+        return
+
+    effective = _merge_pending_label_positions(base_records)
+
+    st.markdown(
+        """
+        <div style="margin:0.1rem 0 0.8rem 0;color:#475569;font-size:0.92rem;">
+            Use the map's <strong>Edit layers</strong> tool, drag the municipality labels, then click
+            <strong>Save</strong> in the map toolbar. The exact coordinates and centroid nudges are calculated automatically.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    map_state = _build_map_label_editor(effective)
+    if map_state:
+        moved = _positions_from_drawings(map_state.get("all_drawings"))
+        if moved:
+            payload = "|".join(
+                f"{key}:{lat:.8f}:{lon:.8f}" for key, (lat, lon) in sorted(moved.items())
+            )
+            payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            if st.session_state.get("_map_label_editor_payload") != payload_hash:
+                pending = dict(st.session_state.get("_map_label_pending", {}))
+                current_by_key = effective.set_index("municipality_key")
+                for key, (lat, lon) in moved.items():
+                    if key not in current_by_key.index:
+                        continue
+                    current = current_by_key.loc[key]
+                    if isinstance(current, pd.DataFrame):
+                        current = current.iloc[0]
+                    if (
+                        abs(float(current["label_lat"]) - lat) > 1e-7
+                        or abs(float(current["label_lon"]) - lon) > 1e-7
+                    ):
+                        pending[key] = (lat, lon)
+                st.session_state["_map_label_pending"] = pending
+                st.session_state["_map_label_editor_payload"] = payload_hash
+                _bump_map_label_editor_revision()
+                st.rerun()
+
+    effective = _merge_pending_label_positions(base_records)
+    pending = st.session_state.get("_map_label_pending", {})
+
+    if pending:
+        st.markdown(
+            f'<div style="font-weight:700;color:#0033A0;margin:0.35rem 0 0.5rem 0;">'
+            f'{len(pending)} unsaved label change{"s" if len(pending) != 1 else ""}</div>',
+            unsafe_allow_html=True,
+        )
+
+    names = effective["municipality_name"].tolist()
+    selected_name = st.selectbox("Fine-tune municipality", names, key="map_label_selected_municipality")
+    selected = effective[effective["municipality_name"].eq(selected_name)].iloc[0]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Label Latitude", f"{float(selected['label_lat']):.6f}")
+    c2.metric("Label Longitude", f"{float(selected['label_lon']):.6f}")
+    c3.metric("Latitude Nudge", f"{float(selected['lat_nudge']):+.6f}")
+    c4.metric("Longitude Nudge", f"{float(selected['lon_nudge']):+.6f}")
+
+    edit1, edit2, action1, action2 = st.columns([1.25, 1.25, 1, 1])
+    with edit1:
+        manual_lat = st.number_input(
+            "Exact Latitude",
+            value=float(selected["label_lat"]),
+            format="%.6f",
+            step=0.001,
+            key=f"map_label_lat_{selected['municipality_key']}_{st.session_state.get('_map_label_editor_revision', 0)}",
+        )
+    with edit2:
+        manual_lon = st.number_input(
+            "Exact Longitude",
+            value=float(selected["label_lon"]),
+            format="%.6f",
+            step=0.001,
+            key=f"map_label_lon_{selected['municipality_key']}_{st.session_state.get('_map_label_editor_revision', 0)}",
+        )
+    with action1:
+        st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
+        if st.button("Apply Coordinates", width="stretch", key="map_label_apply_manual"):
+            pending = dict(st.session_state.get("_map_label_pending", {}))
+            pending[str(selected["municipality_key"])] = (float(manual_lat), float(manual_lon))
+            st.session_state["_map_label_pending"] = pending
+            _bump_map_label_editor_revision()
+            st.rerun()
+    with action2:
+        st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
+        if st.button(
+            "Reset Selected",
+            width="stretch",
+            disabled=not table_ready,
+            key="map_label_reset_selected",
+        ):
+            reset_label_position(supabase, str(selected["municipality_key"]))
+            pending = dict(st.session_state.get("_map_label_pending", {}))
+            pending.pop(str(selected["municipality_key"]), None)
+            st.session_state["_map_label_pending"] = pending
+            _bump_map_label_editor_revision()
+            _audit(supabase, f"Map label reset | municipality={selected_name}")
+            st.rerun()
+
+    last_clicked = map_state.get("last_clicked") if map_state else None
+    if last_clicked and isinstance(last_clicked, dict):
+        click_col, use_col = st.columns([2.6, 1])
+        with click_col:
+            st.markdown(
+                f"Last map click: `{float(last_clicked.get('lat', 0)):.6f}, "
+                f"{float(last_clicked.get('lng', 0)):.6f}`"
+            )
+        with use_col:
+            if st.button("Use Click Position", width="stretch", key="map_label_use_click"):
+                pending = dict(st.session_state.get("_map_label_pending", {}))
+                pending[str(selected["municipality_key"])] = (
+                    float(last_clicked["lat"]),
+                    float(last_clicked["lng"]),
+                )
+                st.session_state["_map_label_pending"] = pending
+                _bump_map_label_editor_revision()
+                st.rerun()
+
+    save_col, discard_col, reset_col = st.columns([1.2, 1.0, 1.0])
+    with save_col:
+        if st.button(
+            "Save All Changes",
+            type="primary",
+            width="stretch",
+            disabled=(not table_ready or not pending),
+            key="map_label_save_all",
+        ):
+            final_records = _merge_pending_label_positions(base_records)
+            changed = final_records[final_records["municipality_key"].isin(pending.keys())].copy()
+            save_label_records(
+                supabase,
+                changed,
+                st.session_state.get("user_name") or st.session_state.get("username") or "System Admin",
+            )
+            _audit(supabase, f"Map label positions saved | municipalities={len(changed)}")
+            st.session_state.pop("_map_label_pending", None)
+            st.session_state.pop("_map_label_editor_payload", None)
+            invalidate_runtime_label_cache()
+            _bump_map_label_editor_revision()
+            st.toast(f"Saved {len(changed)} municipality label position(s).")
+            st.rerun()
+    with discard_col:
+        if st.button(
+            "Discard Changes",
+            width="stretch",
+            disabled=not pending,
+            key="map_label_discard",
+        ):
+            st.session_state.pop("_map_label_pending", None)
+            st.session_state.pop("_map_label_editor_payload", None)
+            _bump_map_label_editor_revision()
+            st.rerun()
+    with reset_col:
+        if st.button(
+            "Reset All Defaults",
+            width="stretch",
+            disabled=not table_ready,
+            key="map_label_reset_all",
+        ):
+            st.session_state["_map_label_confirm_reset_all"] = True
+
+    if st.session_state.get("_map_label_confirm_reset_all"):
+        confirm1, confirm2 = st.columns(2)
+        with confirm1:
+            if st.button("Confirm Reset All", type="primary", width="stretch", key="map_label_confirm_reset"):
+                reset_all_label_positions(supabase)
+                st.session_state.pop("_map_label_pending", None)
+                st.session_state.pop("_map_label_editor_payload", None)
+                st.session_state.pop("_map_label_confirm_reset_all", None)
+                _bump_map_label_editor_revision()
+                _audit(supabase, "All map label positions reset to defaults")
+                st.rerun()
+        with confirm2:
+            if st.button("Cancel", width="stretch", key="map_label_cancel_reset"):
+                st.session_state.pop("_map_label_confirm_reset_all", None)
+                st.rerun()
+
+    st.divider()
+    _section_heading("fa-location-crosshairs", "Current Label Coordinates")
+    display = effective[
+        [
+            "municipality_name",
+            "label_lat",
+            "label_lon",
+            "lat_nudge",
+            "lon_nudge",
+            "source",
+        ]
+    ].copy()
+    display.columns = [
+        "Municipality",
+        "Label Lat",
+        "Label Lon",
+        "Lat Nudge",
+        "Lon Nudge",
+        "Source",
+    ]
+    for col in ["Label Lat", "Label Lon", "Lat Nudge", "Lon Nudge"]:
+        display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
+    st.dataframe(display, width="stretch", hide_index=True)
+
 def _render_admin_accounts(supabase) -> None:
     accounts = _load_accounts(supabase)
     current_username = str(st.session_state.get("username") or "").strip()
@@ -828,8 +1258,8 @@ def render_admin_dashboard(supabase) -> None:
         unsafe_allow_html=True,
     )
 
-    overview_tab, sync_tab, accounts_tab, audit_tab = st.tabs(
-        ["Overview", "Data Sync", "Admin Accounts", "Audit Log"]
+    overview_tab, sync_tab, map_tab, accounts_tab, audit_tab = st.tabs(
+        ["Overview", "Data Sync", "Map Labels", "Admin Accounts", "Audit Log"]
     )
 
     with overview_tab:
@@ -837,6 +1267,9 @@ def render_admin_dashboard(supabase) -> None:
 
     with sync_tab:
         _render_data_sync(supabase)
+
+    with map_tab:
+        _render_map_label_editor(supabase)
 
     with accounts_tab:
         _render_admin_accounts(supabase)
