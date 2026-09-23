@@ -353,6 +353,12 @@ def render_municipality_choropleth(
     target_col: str | None = None,
     vaccinated_col: str | None = None,
     remaining_col: str | None = None,
+    color_scale: str | list = "RdYlGn",
+    range_color: tuple[float, float] | list[float] | None = (0, 100),
+    value_format: str = ".1f",
+    value_suffix: str = "%",
+    hover_format: str = ":.1f",
+    colorbar_title: str = "Coverage %",
 ) -> None:
     """Render an Abra municipality choropleth with robust accent-insensitive joins."""
     if summary is None or summary.empty or "Municipality" not in summary.columns:
@@ -373,7 +379,7 @@ def render_municipality_choropleth(
     map_data["SBI_Key"] = map_data["Municipality"].map(_geo_key)
     map_data[coverage_col] = pd.to_numeric(map_data[coverage_col], errors="coerce").fillna(0)
 
-    hover_data: dict[str, object] = {"SBI_Key": False, coverage_col: ":.1f"}
+    hover_data: dict[str, object] = {"SBI_Key": False, coverage_col: hover_format}
     for col in [target_col, vaccinated_col, remaining_col]:
         if col and col in map_data.columns:
             hover_data[col] = ":,.0f"
@@ -384,8 +390,8 @@ def render_municipality_choropleth(
         locations="SBI_Key",
         featureidkey="properties.SBI_Key",
         color=coverage_col,
-        color_continuous_scale="RdYlGn",
-        range_color=[0, 100],
+        color_continuous_scale=color_scale,
+        range_color=range_color,
         map_style="white-bg",
         zoom=9.2,
         center={"lat": 17.58, "lon": 120.80},
@@ -449,7 +455,8 @@ def render_municipality_choropleth(
 
         label_lons.append(lon)
         label_lats.append(lat)
-        label_text.append(f"{row['Municipality']}<br>{float(row[coverage_col]):.1f}%")
+        label_value = format(float(row[coverage_col]), value_format)
+        label_text.append(f"{row['Municipality']}<br>{label_value}{value_suffix}")
 
     if label_lons:
         fig.add_trace(go.Scattermap(
@@ -465,7 +472,7 @@ def render_municipality_choropleth(
     fig.update_layout(
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
         height=600,
-        coloraxis_colorbar=dict(title="Coverage %"),
+        coloraxis_colorbar=dict(title=colorbar_title),
         map=dict(
             layers=[
                 dict(

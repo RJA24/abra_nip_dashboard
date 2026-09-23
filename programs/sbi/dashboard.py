@@ -1020,6 +1020,21 @@ def render_sbi_dashboard(supabase) -> None:
                 )
                 st.plotly_chart(fig_tgt_geo, width="stretch", key="sbi_tgt_geo_bar")
 
+                if view_mode == "All Municipalities (Abra)":
+                    st.divider()
+                    render_municipality_choropleth(
+                        df_geo_tgt[["Municipality", "Total Eligible"]].copy(),
+                        coverage_col="Total Eligible",
+                        title="Total Baseline Targets by Municipality",
+                        key="sbi_baseline_total_target_map",
+                        color_scale="Blues",
+                        range_color=None,
+                        value_format=",.0f",
+                        value_suffix="",
+                        hover_format=":,.0f",
+                        colorbar_title="Total Target",
+                    )
+
                 st.divider()
 
                 st.markdown(
@@ -1385,6 +1400,21 @@ def render_sbi_dashboard(supabase) -> None:
                     width="stretch",
                     key='sbi_actual_geo_chart'
                 )
+
+                if view_mode == "All Municipalities (Abra)":
+                    st.divider()
+                    render_municipality_choropleth(
+                        df_actual_geo[["Municipality", "Total Eligible"]].copy(),
+                        coverage_col="Total Eligible",
+                        title="Total Actual Targets by Municipality",
+                        key="sbi_actual_total_target_map",
+                        color_scale="Blues",
+                        range_color=None,
+                        value_format=",.0f",
+                        value_suffix="",
+                        hover_format=":,.0f",
+                        colorbar_title="Total Target",
+                    )
 
                 st.divider()
 
