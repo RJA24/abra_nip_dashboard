@@ -2119,6 +2119,7 @@ def render_sbi_dashboard(supabase) -> None:
             report_start=report_start,
             report_end=report_end,
             selected_muni=selected_muni if view_mode == "Specific Municipality" else None,
+            actual_targets=df_sbi_actual_targets,
         )
 
     # 4. MR & TD (GRADES 1 & 7)

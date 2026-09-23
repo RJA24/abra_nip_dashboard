@@ -17,6 +17,12 @@ import streamlit as st
 
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
+from programs.sbi.linelist import (
+    render_linelist_history,
+    render_linelist_upload,
+    render_vacctrack_encoding_summary,
+    schema_available as linelist_schema_available,
+)
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -270,6 +276,8 @@ def _save_editor(
             "hpv_dose2": None,
             "updated_by": username,
             "updated_at": datetime.now(MANILA_TZ).isoformat(),
+            "source_type": "manual",
+            "source_batch_id": None,
         }
         for field in fields:
             record[UI_TO_DB[field]] = int(float(row[field]))
@@ -367,11 +375,89 @@ def _entries_for_exact_date(entries: pd.DataFrame, target_date: date) -> pd.Data
     return entries.loc[dates.eq(target_date)].copy()
 
 
-def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Compare RHU Activity Date with VaccTrack Report Date, metric by metric.
+def _latest_vacctrack_report_date(events: dict[str, pd.DataFrame]) -> date | None:
+    dates: list[date] = []
+    for frame in events.values():
+        if frame is None or frame.empty or "Report Date" not in frame.columns:
+            continue
+        parsed = pd.to_datetime(frame["Report Date"], errors="coerce").dropna()
+        if not parsed.empty:
+            dates.extend(parsed.dt.date.tolist())
+    return max(dates) if dates else None
 
-    Rows where neither source has activity for a metric are omitted so a Grade 1
-    activity date does not incorrectly flag Grade 4 or Grade 7 as Not Updated.
+
+def _metric_vacctrack_report_date(events: dict[str, pd.DataFrame], metric: str) -> date | None:
+    config = METRICS[metric]
+    frame = events.get(config["event"], pd.DataFrame())
+    if frame is None or frame.empty or "Report Date" not in frame.columns:
+        return None
+    parsed = pd.to_datetime(frame["Report Date"], errors="coerce").dropna()
+    return parsed.dt.date.max() if not parsed.empty else None
+
+
+def _safe_school_cutoff(events: dict[str, pd.DataFrame]) -> date | None:
+    cutoffs = []
+    for event_key in ["g1", "g4", "g7"]:
+        frame = events.get(event_key, pd.DataFrame())
+        if frame is None or frame.empty or "Report Date" not in frame.columns:
+            continue
+        parsed = pd.to_datetime(frame["Report Date"], errors="coerce").dropna()
+        if not parsed.empty:
+            cutoffs.append(parsed.dt.date.max())
+    return min(cutoffs) if cutoffs else None
+
+
+def _fresh_summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metrics: Iterable[str] | None = None) -> pd.DataFrame:
+    rows = []
+    for metric in metrics or METRICS.keys():
+        cutoff = _metric_vacctrack_report_date(events, metric)
+        if entries is None or entries.empty:
+            verified = pd.DataFrame()
+            pending = pd.DataFrame()
+        else:
+            metric_grade = METRICS[metric]["grade"]
+            metric_entries = entries.loc[entries["grade_level"].astype(str).eq(metric_grade)].copy()
+            if cutoff is None:
+                verified = metric_entries.iloc[0:0].copy()
+                pending = metric_entries
+            else:
+                dates = pd.to_datetime(metric_entries["activity_date"], errors="coerce").dt.date
+                verified = metric_entries.loc[dates <= cutoff].copy()
+                pending = metric_entries.loc[dates > cutoff].copy()
+        tracker_value, tracker_rows = _sum_tracker_metric(verified, metric)
+        pending_value, pending_rows = _sum_tracker_metric(pending, metric)
+        vacc_value = _sum_event_metric(events, metric)
+        diff = tracker_value - vacc_value
+        rows.append({
+            "Metric": metric,
+            "RHU Tracker": int(round(tracker_value)),
+            "VaccTrack": int(round(vacc_value)),
+            "Difference": int(round(diff)),
+            "Status": _status(diff, tracker_rows),
+            "Pending RHU": int(round(pending_value)),
+            "VaccTrack Through": cutoff,
+        })
+    return pd.DataFrame(rows)
+
+
+def _verified_entries(entries: pd.DataFrame, latest_vacctrack_date: date | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if entries is None or entries.empty:
+        empty = entries.copy() if isinstance(entries, pd.DataFrame) else pd.DataFrame()
+        return empty, empty
+    dates = pd.to_datetime(entries["activity_date"], errors="coerce").dt.date
+    if latest_vacctrack_date is None:
+        return entries.iloc[0:0].copy(), entries.copy()
+    verified = entries.loc[dates <= latest_vacctrack_date].copy()
+    pending = entries.loc[dates > latest_vacctrack_date].copy()
+    return verified, pending
+
+
+def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Compare RHU Activity Date with the latest available VaccTrack Report Date.
+
+    RHU dates newer than the latest report date present in the current VaccTrack
+    extract are marked Pending VaccTrack Verification instead of being treated as
+    discrepancies. This prevents stale/manual extracts from creating false alarms.
     """
     tracker_dates: set[date] = set()
     if entries is not None and not entries.empty and "activity_date" in entries.columns:
@@ -396,8 +482,21 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
             tracker_value, tracker_rows = _sum_tracker_metric(day_entries, metric)
             vacc_value = _sum_event_metric(day_events, metric)
 
-            # Skip vaccine/grade combinations with no activity from either source.
             if tracker_rows == 0 and abs(vacc_value) < 0.5:
+                continue
+
+            metric_cutoff = _metric_vacctrack_report_date(events, metric)
+            if tracker_rows > 0 and (metric_cutoff is None or target_date > metric_cutoff):
+                rows.append(
+                    {
+                        "Date": target_date,
+                        "Metric": metric,
+                        "RHU Tracker": int(round(tracker_value)),
+                        "VaccTrack": pd.NA,
+                        "Difference": pd.NA,
+                        "Status": "Pending VaccTrack Verification",
+                    }
+                )
                 continue
 
             diff = tracker_value - vacc_value
@@ -417,7 +516,6 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
         columns=["Date", "Metric", "RHU Tracker", "VaccTrack", "Difference", "Status"],
     )
 
-
 def _daily_difference_matrix(daily: pd.DataFrame) -> pd.DataFrame:
     if daily is None or daily.empty:
         return pd.DataFrame(columns=["Date", *METRICS.keys(), "Issues"])
@@ -430,7 +528,7 @@ def _daily_difference_matrix(daily: pd.DataFrame) -> pd.DataFrame:
     ).reindex(columns=list(METRICS.keys()))
 
     issues = (
-        daily.assign(_issue=daily["Status"].ne("Matched").astype(int))
+        daily.assign(_issue=(~daily["Status"].isin(["Matched", "Pending VaccTrack Verification"])).astype(int))
         .groupby("Date")["_issue"]
         .sum()
     )
@@ -472,9 +570,37 @@ def _render_daily_discrepancy_tally(
     )
 
     issue_dates = sorted(
-        daily.loc[daily["Status"].ne("Matched"), "Date"].dropna().unique().tolist(),
+        daily.loc[~daily["Status"].isin(["Matched", "Pending VaccTrack Verification"]), "Date"].dropna().unique().tolist(),
         reverse=True,
     )
+
+    actual_issues = daily.loc[~daily["Status"].isin(["Matched", "Pending VaccTrack Verification"])].copy()
+    abs_difference = int(pd.to_numeric(actual_issues.get("Difference"), errors="coerce").abs().fillna(0).sum()) if not actual_issues.empty else 0
+    affected_school_ids: set[str] = set()
+    for issue_date in issue_dates:
+        day_entries = _entries_for_exact_date(entries, issue_date)
+        day_events = _events_for_exact_date(events, issue_date)
+        day_school = _school_comparison(day_entries, day_events)
+        if not day_school.empty:
+            day_school = day_school.loc[day_school["Status"].ne("Matched")].copy()
+            affected_school_ids.update(day_school["School ID"].dropna().astype(str).tolist())
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Discrepancy Dates", f"{len(issue_dates):,}")
+    c2.metric("Affected Schools", f"{len(affected_school_ids):,}")
+    c3.metric("Absolute Dose Difference", f"{abs_difference:,}")
+
+    pending_count = int(daily["Status"].eq("Pending VaccTrack Verification").sum())
+    if pending_count:
+        g1_cutoff = _metric_vacctrack_report_date(events, "G1 MR")
+        g4_cutoff = _metric_vacctrack_report_date(events, "G4 HPV Dose 1")
+        g7_cutoff = _metric_vacctrack_report_date(events, "G7 MR")
+        def _fmt_cutoff(value):
+            return value.strftime("%b %d, %Y") if value else "none"
+        st.info(
+            f"{pending_count:,} daily metric row(s) are pending VaccTrack verification. "
+            f"Current extract report dates — G1: {_fmt_cutoff(g1_cutoff)} | G4: {_fmt_cutoff(g4_cutoff)} | G7: {_fmt_cutoff(g7_cutoff)}."
+        )
 
     show_issues_only = st.toggle(
         "Show discrepancy dates only",
@@ -639,6 +765,9 @@ def _render_entry(supabase, targets: pd.DataFrame, assigned_muni: str, username:
     all_entries = _fetch_entries(supabase, assigned_muni)
     config = GRADE_CONFIG[grade_label]
     existing = _existing_for(all_entries, activity_date, config["code"])
+    if not existing.empty and "source_type" in existing.columns and existing["source_type"].astype(str).eq("linelist").any():
+        st.info("This date and grade already contain line-list-derived accomplishments. Revise the learner line list instead of using the manual fallback so the aggregate totals stay traceable.")
+        return
     editor_df = _prepare_editor(roster, existing, grade_label)
 
     column_config = {
@@ -767,8 +896,21 @@ def _render_check(
     all_entries = _fetch_entries(supabase, assigned_muni)
     entries = _entries_for_muni_period(all_entries, assigned_muni, start_date, end_date)
     events = _events_for_muni_period(g1_events, g7_events, hpv_events, assigned_muni, start_date, end_date)
-    summary = _summary_table(entries, events)
+    summary = _fresh_summary_table(entries, events)
     st.dataframe(summary, width="stretch", hide_index=True)
+    g1_cutoff = _metric_vacctrack_report_date(events, "G1 MR")
+    g4_cutoff = _metric_vacctrack_report_date(events, "G4 HPV Dose 1")
+    g7_cutoff = _metric_vacctrack_report_date(events, "G7 MR")
+    def _fmt_cutoff(value):
+        return value.strftime("%b %d, %Y") if value else "No report date"
+    st.markdown(
+        f"**VaccTrack current extract through:** G1 {_fmt_cutoff(g1_cutoff)} · G4 {_fmt_cutoff(g4_cutoff)} · G7 {_fmt_cutoff(g7_cutoff)}"
+    )
+    if pd.to_numeric(summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
+        st.info("RHU line-list/accomplishment values newer than the corresponding VaccTrack report date are shown as Pending RHU and are excluded from discrepancy totals until a newer extract is available.")
+
+    school_cutoff = _safe_school_cutoff(events)
+    verified_entries, _ = _verified_entries(entries, school_cutoff)
 
     st.divider()
     _render_daily_discrepancy_tally(
@@ -779,7 +921,7 @@ def _render_check(
     )
 
     st.divider()
-    school = _school_comparison(entries, events)
+    school = _school_comparison(verified_entries, events)
     if school.empty:
         return
     only_issues = st.toggle("Show discrepancies only", value=True, key="rhu_check_issues_only")
@@ -815,19 +957,21 @@ def _render_coordinator_view(
         "g7": _filter_event_period(g7_events, start_date, end_date),
         "g4": _filter_event_period(hpv_events, start_date, end_date),
     }
-    province_summary = _summary_table(province_entries, province_events)
+    province_summary = _fresh_summary_table(province_entries, province_events)
     st.markdown("#### Abra Summary")
     st.dataframe(province_summary, width="stretch", hide_index=True)
+    if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
+        st.info("Some RHU tracker values are newer than their corresponding VaccTrack report date and are pending verification.")
 
     metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key="rhu_coord_metric")
     muni_rows = []
     for muni in ABRA_MUNIS:
         muni_entries = _entries_for_muni_period(all_entries, muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
         muni_events = _events_for_muni_period(g1_events, g7_events, hpv_events, muni, start_date, end_date)
-        row = _summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
+        row = _fresh_summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
         row["Municipality"] = muni
         muni_rows.append(row)
-    muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Tracker", "VaccTrack", "Difference", "Status"]]
+    muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Tracker", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
     st.markdown("#### Municipality Reconciliation")
     st.dataframe(muni_table, width="stretch", hide_index=True)
 
@@ -836,6 +980,8 @@ def _render_coordinator_view(
     drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key="rhu_coord_drill_muni")
     drill_entries = _entries_for_muni_period(all_entries, drill_muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
     drill_events = _events_for_muni_period(g1_events, g7_events, hpv_events, drill_muni, start_date, end_date)
+    drill_cutoff = _safe_school_cutoff(drill_events)
+    drill_verified, _ = _verified_entries(drill_entries, drill_cutoff)
 
     st.divider()
     _render_daily_discrepancy_tally(
@@ -846,7 +992,7 @@ def _render_coordinator_view(
     )
 
     st.divider()
-    school = _school_comparison(drill_entries, drill_events)
+    school = _school_comparison(drill_verified, drill_events)
     if school.empty:
         st.write(f"No RHU Tracker or VaccTrack school data is available for {drill_muni} in this period.")
         return
@@ -875,6 +1021,7 @@ def render_rhu_accomplishments(
     report_start: date | None,
     report_end: date | None,
     selected_muni: str | None = None,
+    actual_targets: pd.DataFrame | None = None,
 ) -> None:
     ready, _ = schema_available(supabase)
     if not ready:
@@ -888,9 +1035,34 @@ def render_rhu_accomplishments(
             st.error("This RHU account has no valid assigned municipality. Ask the System Administrator to update the RHU account assignment.")
             return
         canonical = valid[normalize_municipality_key(canonical)]
-        entry_tab, mine_tab, check_tab = st.tabs(["Accomplishment Entry", "My Accomplishments", "VaccTrack Check"])
+        username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
+        upload_tab, history_tab, encoding_tab, entry_tab, mine_tab, check_tab = st.tabs([
+            "Line List Upload",
+            "Line List History",
+            "VaccTrack Encoding",
+            "Manual Entry (Fallback)",
+            "My Accomplishments",
+            "VaccTrack Check",
+        ])
+        line_ready, _ = linelist_schema_available(supabase)
+        with upload_tab:
+            if line_ready:
+                render_linelist_upload(supabase, targets, canonical, username)
+            else:
+                st.error("Line-list upload is not initialized. Run supabase/004_sbi_linelist.sql once, add python-calamine to requirements.txt, then reload the app.")
+        with history_tab:
+            if line_ready:
+                render_linelist_history(supabase, canonical)
+            else:
+                st.write("Run the v5.14 line-list SQL first.")
+        with encoding_tab:
+            if line_ready:
+                render_vacctrack_encoding_summary(supabase, canonical, actual_targets if actual_targets is not None else pd.DataFrame())
+            else:
+                st.write("Run the v5.14 line-list SQL first.")
         with entry_tab:
-            _render_entry(supabase, targets, canonical, str(st.session_state.get("username") or st.session_state.get("user_name") or canonical))
+            st.caption("Fallback only. Prefer the learner line-list upload so the system performs the counting automatically.")
+            _render_entry(supabase, targets, canonical, username)
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
         with check_tab:

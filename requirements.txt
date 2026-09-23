@@ -9,3 +9,4 @@ streamlit-aggrid
 folium
 streamlit-folium
 argon2-cffi>=23.1.0
+python-calamine>=0.3.1
