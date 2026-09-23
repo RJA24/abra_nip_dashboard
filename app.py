@@ -192,20 +192,21 @@ def _start_dashboard_session(display_name, role, assigned_muni="Abra Province", 
     st.session_state['user_role'] = role
     st.session_state['assigned_muni'] = assigned_muni or "Abra Province"
     st.session_state['last_active'] = time.time()
-    st.session_state['login_time'] = time.time()
-    st.session_state['last_session_log_write'] = 0
 
     try:
         manila_tz = pytz.timezone('Asia/Manila')
         current_time_str = datetime.now(manila_tz).strftime("%Y-%m-%d %I:%M:%S %p")
-        log_response = supabase.table('access_logs').insert({
+        action_bits = ["Login"]
+        if username:
+            action_bits.append(f"username={username}")
+        if assigned_muni:
+            action_bits.append(f"municipality={assigned_muni}")
+        supabase.table('access_logs').insert({
             'timestamp': current_time_str,
             'name': display_name,
             'role': role,
-            'action': 'Active Session'
+            'action': ' | '.join(action_bits)
         }).execute()
-        if log_response.data:
-            st.session_state['log_id'] = log_response.data[0]['id']
     except Exception:
         logger.exception("Unable to create access log")
 
@@ -258,8 +259,6 @@ if not st.session_state.get('logged_in', False):
                         role = str(user.get('role') or 'Guest / Viewer')
                         assigned_muni = str(user.get('assigned_muni') or user.get('municipality') or 'Abra Province')
                         _start_dashboard_session(display_name, role, assigned_muni, username_input)
-                        if role == "RHU Encoder":
-                            st.session_state['active_program'] = 'SBI'
                         st.session_state['welcome_notice'] = f"Welcome, {display_name}."
                         st.rerun()
 
@@ -283,15 +282,6 @@ if not st.session_state.get('logged_in', False):
 # ==========================================
 # 4.5. PROGRAM ROUTING MENU
 # ==========================================
-# RHU Encoder accounts are intentionally restricted to SBI and their assigned municipality.
-if (
-    st.session_state.get('logged_in', False)
-    and st.session_state.get('user_role') == 'RHU Encoder'
-    and st.session_state.get('active_program') is None
-):
-    st.session_state['active_program'] = 'SBI'
-    st.rerun()
-
 if st.session_state.get('logged_in', False) and st.session_state.get('active_program') is None:
     menu_css = """
     <style>
@@ -504,10 +494,6 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 # 5. PROGRAM ROUTER
 # ==========================================
 active_program = st.session_state.get("active_program")
-if st.session_state.get('user_role') == 'RHU Encoder' and active_program != 'SBI':
-    st.session_state['active_program'] = 'SBI'
-    st.rerun()
-
 if active_program == "SBI":
     render_sbi_dashboard(supabase)
     st.stop()

@@ -23,7 +23,6 @@ from core.map_labels import (
     save_label_records,
     table_available as map_label_table_available,
 )
-from core.vaccine_requirements import requirements_schema_available
 from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
 
 
@@ -107,6 +106,48 @@ def _load_admin_logs(supabase, limit: int = 200) -> pd.DataFrame:
     display_cols = [c for c in ["timestamp", "name", "action"] if c in df.columns]
     return df[display_cols]
 
+
+
+def _load_login_logs(supabase, limit: int = 500) -> pd.DataFrame:
+    """Load one-time login events for visitors and registered accounts."""
+    response = (
+        supabase.table("access_logs")
+        .select("*")
+        .order("id", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    if not response.data:
+        return pd.DataFrame(columns=["timestamp", "name", "role", "action", "Username", "Municipality"])
+
+    df = pd.DataFrame(response.data)
+    if "action" not in df.columns:
+        df["action"] = ""
+    df["action"] = df["action"].fillna("").astype(str)
+    mask = df["action"].str.startswith("Login", na=False) | df["action"].eq("Active Session")
+    df = df.loc[mask].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp", "name", "role", "action", "Username", "Municipality"])
+
+    def parse_detail(action: object, key: str) -> str:
+        raw = str(action or "")
+        for part in raw.split("|"):
+            part = part.strip()
+            if part.lower().startswith(key.lower() + "="):
+                return part.split("=", 1)[1].strip()
+        return ""
+
+    df["Username"] = df["action"].map(lambda x: parse_detail(x, "username"))
+    df["Municipality"] = df["action"].map(lambda x: parse_detail(x, "municipality"))
+    return df
+
+
+def _rhu_account_schema_available(supabase) -> tuple[bool, str]:
+    try:
+        supabase.table("user_accounts").select("username,assigned_muni").limit(1).execute()
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
 
 def _active_admin_mask(accounts: pd.DataFrame) -> pd.Series:
     if accounts.empty:
@@ -485,6 +526,27 @@ def _render_overview(supabase) -> None:
     with c4:
         _render_kpi_card("fa-clock-rotate-left", "Last Target Sync", last_sync_date, last_sync_time)
 
+    try:
+        login_logs = _load_login_logs(supabase, 1000)
+    except Exception:
+        login_logs = pd.DataFrame()
+    rhu_accounts = int(accounts["role"].eq("RHU Encoder").sum()) if not accounts.empty else 0
+    logins_today = 0
+    latest_login_name = "Not recorded"
+    latest_login_time = ""
+    if not login_logs.empty:
+        parsed = pd.to_datetime(login_logs.get("timestamp"), errors="coerce")
+        logins_today = int((parsed.dt.date == datetime.now(MANILA_TZ).date()).sum())
+        latest_login_name = str(login_logs.iloc[0].get("name") or "Unknown")
+        _, latest_login_time = _format_timestamp(login_logs.iloc[0].get("timestamp"))
+    l1, l2, l3 = st.columns(3, gap="medium")
+    with l1:
+        _render_kpi_card("fa-hospital-user", "RHU Accounts", f"{rhu_accounts:,}")
+    with l2:
+        _render_kpi_card("fa-right-to-bracket", "Logins Today", f"{logins_today:,}")
+    with l3:
+        _render_kpi_card("fa-user-clock", "Latest Login", latest_login_name, latest_login_time)
+
     _section_heading("fa-database", "Data Status")
     status = pd.DataFrame(
         [
@@ -533,6 +595,22 @@ def _render_overview(supabase) -> None:
                 "Details": st.column_config.TextColumn("Details", width="large"),
             },
         )
+
+
+    _section_heading("fa-right-to-bracket", "Recent Logins")
+    if login_logs.empty:
+        st.write("No login events have been recorded yet.")
+    else:
+        recent_logins = login_logs.head(10).copy()
+        recent_logins["Date / Time"] = recent_logins["timestamp"].apply(
+            lambda value: " ".join(filter(None, _format_timestamp(value)))
+        )
+        recent_logins = recent_logins.rename(columns={"name": "Name", "role": "Role"})
+        recent_cols = ["Date / Time", "Name", "Role", "Municipality"]
+        for col in recent_cols:
+            if col not in recent_logins.columns:
+                recent_logins[col] = ""
+        st.dataframe(recent_logins[recent_cols], width="stretch", hide_index=True)
 
 
 def _render_data_sync(supabase) -> None:
@@ -1018,10 +1096,10 @@ def _render_map_label_editor(supabase) -> None:
 
 
 def _render_rhu_accounts(supabase) -> None:
-    ready, message = requirements_schema_available(supabase)
+    ready, message = _rhu_account_schema_available(supabase)
     if not ready:
         st.error(
-            f"RHU Encoder setup is not complete ({message}). Run supabase/002_sbi_vaccine_requirements.sql once, then reload this page."
+            f"RHU Encoder setup is not complete ({message}). Run supabase/003_sbi_rhu_accomplishments.sql once, then reload this page."
         )
         return
 
@@ -1041,6 +1119,14 @@ def _render_rhu_accounts(supabase) -> None:
                 "account_status": "Status",
             }
         )
+        try:
+            login_logs = _load_login_logs(supabase, 1000)
+            if not login_logs.empty and "Username" in login_logs.columns:
+                latest = login_logs[login_logs["Username"].astype(str).str.strip().ne("")].drop_duplicates("Username", keep="first")
+                latest = latest[["Username", "timestamp"]].rename(columns={"timestamp": "Last Login"})
+                display = display.merge(latest, on="Username", how="left")
+        except Exception:
+            display["Last Login"] = ""
         st.dataframe(display.sort_values(["Municipality", "Username"]), width="stretch", hide_index=True)
     else:
         st.write("No RHU Encoder accounts are configured yet.")
@@ -1295,6 +1381,29 @@ def _render_admin_accounts(supabase) -> None:
             st.rerun()
 
 
+def _render_login_history(supabase) -> None:
+    logs = _load_login_logs(supabase, 500)
+    if logs.empty:
+        st.write("No login events have been recorded yet.")
+        return
+
+    view = logs.copy()
+    view["Date / Time"] = view["timestamp"].apply(lambda value: " ".join(filter(None, _format_timestamp(value))))
+    view = view.rename(columns={"name": "Name", "role": "Role"})
+    cols = ["Date / Time", "Name", "Role", "Username", "Municipality"]
+    for col in cols:
+        if col not in view.columns:
+            view[col] = ""
+    st.dataframe(view[cols], width="stretch", hide_index=True)
+    st.download_button(
+        "Download Login History (CSV)",
+        data=view[cols].to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_Login_History.csv",
+        mime="text/csv",
+        key="admin_login_history_download",
+    )
+
+
 def _render_audit_log(supabase) -> None:
     logs = _load_admin_logs(supabase, 300)
     if logs.empty:
@@ -1408,8 +1517,8 @@ def render_admin_dashboard(supabase) -> None:
         unsafe_allow_html=True,
     )
 
-    overview_tab, sync_tab, map_tab, rhu_accounts_tab, accounts_tab, audit_tab = st.tabs(
-        ["Overview", "Data Sync", "Map Labels", "RHU Accounts", "Admin Accounts", "Audit Log"]
+    overview_tab, sync_tab, map_tab, rhu_accounts_tab, accounts_tab, login_tab, audit_tab = st.tabs(
+        ["Overview", "Data Sync", "Map Labels", "RHU Accounts", "Admin Accounts", "Login History", "Audit Log"]
     )
 
     with overview_tab:
@@ -1426,6 +1535,10 @@ def render_admin_dashboard(supabase) -> None:
 
     with accounts_tab:
         _render_admin_accounts(supabase)
+
+    with login_tab:
+        _section_heading("fa-right-to-bracket", "Login History")
+        _render_login_history(supabase)
 
     with audit_tab:
         _section_heading("fa-clipboard-list", "Audit Log")

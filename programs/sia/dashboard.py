@@ -9,7 +9,6 @@ import time
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 
-from db_utils import update_session_log_throttled
 from core.config import ABRA_MUNIS
 from core.data import (
     fetch_targets_from_supabase,
@@ -60,10 +59,6 @@ def render_sia_dashboard(supabase):
     st_autorefresh(interval=3600000, limit=None, key="hourly_data_refresh")
 
 
-    # ==========================================
-    # CONTINUOUS SESSION TRACKING
-    # ==========================================
-    update_session_log_throttled(supabase, prefix="Session Duration")
 
     with st.sidebar:
         # 1. PROFILE CARD
