@@ -646,10 +646,25 @@ def _apply_import(
                 "created_by": username,
             }
         )
-        # Convert pandas missing values to null.
+        # Convert pandas/NumPy scalar values to plain Python values before
+        # sending them to PostgREST. ``hpv_dose`` becomes a float column in
+        # pandas whenever some rows are blank (e.g. 1.0 / NaN), while the
+        # Supabase column is INTEGER. Sending 1.0 can therefore fail with
+        # PostgreSQL error 22P02 (invalid input syntax for type integer).
         for key, value in list(rec.items()):
-            if not isinstance(value, (bool, int)) and (value is None or pd.isna(value)):
+            if value is None or (not isinstance(value, (bool, int, str, date, datetime)) and pd.isna(value)):
                 rec[key] = None
+                continue
+
+            if key == "hpv_dose" and value is not None:
+                rec[key] = int(float(value))
+            elif isinstance(value, np.integer):
+                rec[key] = int(value)
+            elif isinstance(value, np.floating):
+                rec[key] = float(value)
+            elif isinstance(value, np.bool_):
+                rec[key] = bool(value)
+
         upsert_rows.append(rec)
 
     if upsert_rows:
