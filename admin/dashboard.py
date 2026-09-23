@@ -24,6 +24,7 @@ from core.map_labels import (
     table_available as map_label_table_available,
 )
 from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
+from programs.sbi.vacctrack_import import render_vacctrack_importer
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -659,6 +660,9 @@ def _render_data_sync(supabase) -> None:
             except Exception as exc:
                 _audit(supabase, f"SBI target sync failed | {type(exc).__name__}")
                 st.error(f"SBI target sync failed: {exc}")
+
+    st.divider()
+    render_vacctrack_importer(supabase, audit_callback=_audit)
 
     st.divider()
     _section_heading("fa-clock-rotate-left", "Sync History")

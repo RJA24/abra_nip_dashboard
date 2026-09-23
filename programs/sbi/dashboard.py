@@ -18,7 +18,12 @@ from streamlit_autorefresh import st_autorefresh
 
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
-from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
+from core.data import (
+    fetch_sbi_actual_targets,
+    fetch_sbi_targets,
+    fetch_sbi_vacctrack,
+    fetch_sbi_vacctrack_source_info,
+)
 from programs.sbi.analytics import (
     available_date_bounds,
     build_effective_targets,
@@ -87,6 +92,7 @@ def render_sbi_dashboard(supabase) -> None:
 
     # --- FETCH DATA ---
     df_g1, df_g4, df_g7 = fetch_sbi_vacctrack()
+    vacctrack_source_info = fetch_sbi_vacctrack_source_info()
     df_sbi_targets = fetch_sbi_targets()
     df_sbi_actual_targets = fetch_sbi_actual_targets()
 
@@ -163,11 +169,35 @@ def render_sbi_dashboard(supabase) -> None:
                     report_start, report_end = default_start, default_end
                 
         with st.expander("System Actions", expanded=False):
-            if st.button("Refresh Data", width="stretch", key="sbi_refresh"):
+            if st.button(
+                "Refresh Dashboard Data",
+                width="stretch",
+                key="sbi_refresh",
+                help=(
+                    "Reloads the latest direct VaccTrack snapshots imported by the System Admin. "
+                    "For any grade without a direct import, the historical Google Sheet worksheet "
+                    "is used as fallback. Actual Targets still come from the SBI Google Sheet."
+                ),
+            ):
                 st.cache_data.clear()
-                st.toast("SBI Database Refreshed!")
+                st.toast("Reloading the latest VaccTrack, Google Sheet, and database data...")
                 time.sleep(0.5)
                 st.rerun()
+
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;margin-top:0.55rem;font-weight:700;">VaccTrack sources</div>',
+                unsafe_allow_html=True,
+            )
+            for _grade in ("G1", "G4", "G7"):
+                _info = vacctrack_source_info.get(_grade, {})
+                _source = str(_info.get("source") or "Google Sheet fallback")
+                _latest = _info.get("report_date_max")
+                _latest_text = f" · through {_latest}" if _latest else ""
+                st.markdown(
+                    f'<div style="color:#64748b;font-size:0.79rem;line-height:1.35;">'
+                    f'<strong>{_grade}</strong>: {_source}{_latest_text}</div>',
+                    unsafe_allow_html=True,
+                )
                 
         st.markdown(
             f'<span style="color:#64748b;font-size:0.85rem;"><i class="fa-solid fa-clock" style="margin-right:6px;"></i>Last Sync: {last_updated}</span>',

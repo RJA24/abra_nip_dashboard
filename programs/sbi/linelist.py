@@ -744,7 +744,7 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
 
 def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, username: str) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-file-arrow-up" style="color:#0033A0;margin-right:8px;"></i>Line List Upload</h3>',
+        '<h3><i class="fa-solid fa-file-arrow-up" style="color:#0033A0;margin-right:8px;"></i>Step 1 — Upload Line List</h3>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -755,7 +755,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
     template = _template_bytes()
     if template:
         st.download_button(
-            "Download SBI Line List Template (Excel)",
+            "1A. Download SBI Line List Template (Excel)",
             data=template,
             file_name="SBI_Linelist_Template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -763,7 +763,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
         )
 
     uploaded = st.file_uploader(
-        "Upload completed line list",
+        "1B. Upload completed line list",
         type=["xlsx", "xlsm", "csv"],
         key="sbi_linelist_upload",
         help="For a revision, upload the complete learner list for each Activity Date + School + Grade group included in the file.",
@@ -805,7 +805,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
         f"I reviewed the comparison and want to apply {total_changes:,} change(s).",
         key="linelist_revision_confirm",
     )
-    if st.button("Import / Apply Revision", type="primary", width="stretch", disabled=not confirm, key="linelist_apply_import"):
+    if st.button("1C. Import / Apply Revision", type="primary", width="stretch", disabled=not confirm, key="linelist_apply_import"):
         try:
             with st.spinner("Saving learner records and rebuilding accomplishment totals..."):
                 batch_id = _apply_import(
@@ -825,7 +825,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
 
 def render_linelist_history(supabase, municipality: str) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-clock-rotate-left" style="color:#0033A0;margin-right:8px;"></i>Line List History</h3>',
+        '<h3><i class="fa-solid fa-clock-rotate-left" style="color:#0033A0;margin-right:8px;"></i>Corrections / Line List History</h3>',
         unsafe_allow_html=True,
     )
     try:
@@ -958,7 +958,7 @@ def _encoding_rows(active: pd.DataFrame, actual_targets: pd.DataFrame, municipal
 
 def render_vacctrack_encoding_summary(supabase, municipality: str, actual_targets: pd.DataFrame) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-clipboard-list" style="color:#0033A0;margin-right:8px;"></i>VaccTrack Encoding Summary</h3>',
+        '<h3><i class="fa-solid fa-clipboard-list" style="color:#0033A0;margin-right:8px;"></i>Step 2 — VaccTrack Encoding Summary</h3>',
         unsafe_allow_html=True,
     )
     st.markdown("These counts are calculated directly from the active learner line list. Copy them into the matching VaccTrack Grade 1, Grade 4, and Grade 7 forms.")

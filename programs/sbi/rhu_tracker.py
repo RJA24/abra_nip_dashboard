@@ -889,10 +889,24 @@ def _render_check(
     end_date: date | None,
 ) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-scale-balanced" style="color:#0033A0;margin-right:8px;"></i>VaccTrack Check</h3>',
+        '<h3><i class="fa-solid fa-circle-check" style="color:#0033A0;margin-right:8px;"></i>Step 3 — Refresh & VaccTrack Check</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown("RHU Tracker values are compared with cumulative VaccTrack values for the selected dashboard reporting period.")
+    st.markdown(
+        "The comparison uses the latest official VaccTrack data available to the dashboard. "
+        "Direct extracts uploaded by the System Admin are used first; if a grade has not yet been "
+        "directly imported, the existing Google Sheet worksheet remains the fallback."
+    )
+    if st.button(
+        "Refresh VaccTrack Data",
+        width="stretch",
+        key="rhu_refresh_vacctrack",
+        help="Clears the dashboard cache and reloads the latest official VaccTrack source for Grade 1, Grade 4, and Grade 7.",
+    ):
+        st.cache_data.clear()
+        st.toast("Reloading the latest VaccTrack data...")
+        st.rerun()
+
     all_entries = _fetch_entries(supabase, assigned_muni)
     entries = _entries_for_muni_period(all_entries, assigned_muni, start_date, end_date)
     events = _events_for_muni_period(g1_events, g7_events, hpv_events, assigned_muni, start_date, end_date)
@@ -1010,6 +1024,65 @@ def _render_coordinator_view(
     )
 
 
+
+def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
+    """Simple numbered workflow for RHU encoders with mixed computer skills."""
+    st.markdown(
+        f"""
+        <div style="margin:0.15rem 0 1rem 0;padding:1rem;border:1px solid #dbe4f0;border-radius:14px;background:#f8fafc;">
+          <div style="font-size:1.02rem;font-weight:700;color:#0f172a;margin-bottom:0.8rem;">
+            <i class="fa-solid fa-route" style="color:#0033A0;margin-right:7px;"></i>RHU Encoder Process — {assigned_muni}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.7rem;">
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Upload Line List</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Fill in one row per vaccinated learner, upload the file, review the validation result, then confirm the import.</div>
+            </div>
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">2. Encode in VaccTrack</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Open the generated VaccTrack Encoding Summary and copy the calculated G1, G4, and G7 values into VaccTrack.</div>
+            </div>
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Refresh & Check</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the NIP coordinator uploads a newer VaccTrack extract, refresh the data and run VaccTrack Check.</div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Need help? Open the step-by-step guide", expanded=False):
+        st.markdown(
+            """
+**Step 1 — Upload the line list**
+
+1. Open **1. Upload Line List**.
+2. Download the Excel template if needed.
+3. Enter one row for every vaccinated learner.
+4. Upload the completed file.
+5. Read the validation result. If there are errors, correct the Excel file and upload it again.
+6. Review the Added / Modified / Removed comparison, then confirm **Import / Apply Revision**.
+
+**Step 2 — Copy the totals to VaccTrack**
+
+1. Open **2. VaccTrack Encoding**.
+2. Select the activity date.
+3. Open Grade 1, Grade 4, or Grade 7 as needed.
+4. Copy the displayed values into the matching VaccTrack form.
+
+**Step 3 — Refresh and verify**
+
+1. Wait until the NIP coordinator has uploaded the latest VaccTrack extraction in **Administration → Data Sync**.
+2. Open **3. VaccTrack Check** and press **Refresh VaccTrack Data**.
+3. Review the cumulative comparison and Daily Discrepancy Tally.
+4. **Matched** means the line-list total and the latest available VaccTrack extract agree.
+5. **Pending VaccTrack Verification** means the latest official VaccTrack extract has not yet caught up to that activity date. It is not automatically an encoding error.
+
+**If you need to correct a learner later:** open **Corrections / History**, review the previous import, then go back to **1. Upload Line List** and upload the complete revised list for the affected Activity Date + School + Grade group. The system will show what was added, modified, or removed before saving.
+            """
+        )
+
 def render_rhu_accomplishments(
     supabase,
     targets: pd.DataFrame,
@@ -1036,13 +1109,15 @@ def render_rhu_accomplishments(
             return
         canonical = valid[normalize_municipality_key(canonical)]
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
-        upload_tab, history_tab, encoding_tab, entry_tab, mine_tab, check_tab = st.tabs([
-            "Line List Upload",
-            "Line List History",
-            "VaccTrack Encoding",
-            "Manual Entry (Fallback)",
+        _render_rhu_encoder_process_guide(canonical)
+
+        upload_tab, encoding_tab, check_tab, history_tab, mine_tab, entry_tab = st.tabs([
+            "1. Upload Line List",
+            "2. VaccTrack Encoding",
+            "3. VaccTrack Check",
+            "Corrections / History",
             "My Accomplishments",
-            "VaccTrack Check",
+            "Manual Fallback",
         ])
         line_ready, _ = linelist_schema_available(supabase)
         with upload_tab:
@@ -1050,23 +1125,23 @@ def render_rhu_accomplishments(
                 render_linelist_upload(supabase, targets, canonical, username)
             else:
                 st.error("Line-list upload is not initialized. Run supabase/004_sbi_linelist.sql once, add python-calamine to requirements.txt, then reload the app.")
-        with history_tab:
-            if line_ready:
-                render_linelist_history(supabase, canonical)
-            else:
-                st.write("Run the v5.14 line-list SQL first.")
         with encoding_tab:
             if line_ready:
                 render_vacctrack_encoding_summary(supabase, canonical, actual_targets if actual_targets is not None else pd.DataFrame())
             else:
                 st.write("Run the v5.14 line-list SQL first.")
+        with check_tab:
+            _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
+        with history_tab:
+            if line_ready:
+                render_linelist_history(supabase, canonical)
+            else:
+                st.write("Run the v5.14 line-list SQL first.")
+        with mine_tab:
+            _render_my_accomplishments(supabase, canonical)
         with entry_tab:
             st.caption("Fallback only. Prefer the learner line-list upload so the system performs the counting automatically.")
             _render_entry(supabase, targets, canonical, username)
-        with mine_tab:
-            _render_my_accomplishments(supabase, canonical)
-        with check_tab:
-            _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
     else:
         _render_coordinator_view(
             supabase,

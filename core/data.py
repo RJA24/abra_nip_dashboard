@@ -23,30 +23,175 @@ def init_supabase():
     return create_client(url, key)
 
 
+VACCTRACK_IMPORT_TABLE = "sbi_vacctrack_imports"
+VACCTRACK_ROWS_TABLE = "sbi_vacctrack_rows"
+VACCTRACK_GRADES = ("G1", "G4", "G7")
+VACCTRACK_SHEETS = {"G1": "VaccTrackG1", "G4": "VaccTrackG4", "G7": "VaccTrackG7"}
+
+
+def _clean_vacctrack_frame(df: pd.DataFrame, grade: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    out.columns = [str(c).replace("\xa0", " ").strip() for c in out.columns]
+    if grade == "G7" and "Facility Name.1" in out.columns and "Updated date" not in out.columns:
+        out = out.rename(columns={"Facility Name.1": "Updated date"})
+    return out
+
+
+def _fetch_latest_imported_grade(supabase, grade: str):
+    latest = (
+        supabase.table(VACCTRACK_IMPORT_TABLE)
+        .select(
+            "id,grade_level,filename,row_count,abra_row_count,report_date_min,"
+            "report_date_max,imported_by,imported_at,completed_at,status"
+        )
+        .eq("grade_level", grade)
+        .eq("status", "Complete")
+        .order("completed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    meta = (latest.data or [None])[0]
+    if not meta:
+        return pd.DataFrame(), None
+
+    import_id = meta["id"]
+    records = []
+    offset = 0
+    limit = 1000
+    while True:
+        response = (
+            supabase.table(VACCTRACK_ROWS_TABLE)
+            .select("row_number,row_data")
+            .eq("import_id", import_id)
+            .order("row_number")
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
+        rows = response.data or []
+        records.extend(row.get("row_data") or {} for row in rows)
+        if len(rows) < limit:
+            break
+        offset += limit
+
+    return _clean_vacctrack_frame(pd.DataFrame(records), grade), meta
+
+
+@st.cache_data(ttl="15m")
+def _fetch_sbi_vacctrack_imported_cached():
+    """Read the latest completed direct-upload snapshot for each SBI grade.
+
+    A missing migration/table is treated as "no direct snapshot" so deployments can
+    continue using the historical Google Sheet source until v5.16 SQL is applied.
+    """
+    frames = {grade: pd.DataFrame() for grade in VACCTRACK_GRADES}
+    meta = {grade: None for grade in VACCTRACK_GRADES}
+    try:
+        supabase = init_supabase()
+        for grade in VACCTRACK_GRADES:
+            frame, info = _fetch_latest_imported_grade(supabase, grade)
+            frames[grade] = frame
+            meta[grade] = info
+    except Exception:
+        logger.info("Direct VaccTrack snapshot tables are unavailable; using Google Sheet fallback", exc_info=True)
+    return frames, meta
+
+
 @st.cache_data(ttl="1h")
-def _fetch_sbi_vacctrack_cached():
-    """Fetch SBI VaccTrack sheets. Exceptions escape so Streamlit never caches a failed read."""
+def _fetch_sbi_vacctrack_google_cached():
+    """Fetch historical Google Sheet VaccTrack tabs as a compatibility fallback."""
     conn = st.connection("gsheets", type=GSheetsConnection)
-    df_g1 = conn.read(spreadsheet=SBI_SHEET_URL, worksheet="VaccTrackG1", ttl="1h")
-    df_g4 = conn.read(spreadsheet=SBI_SHEET_URL, worksheet="VaccTrackG4", ttl="1h")
-    df_g7 = conn.read(spreadsheet=SBI_SHEET_URL, worksheet="VaccTrackG7", ttl="1h")
-
-    if not df_g7.empty and 'Facility Name.1' in df_g7.columns:
-        df_g7 = df_g7.rename(columns={'Facility Name.1': 'Updated date'})
-
-    for df in [df_g1, df_g4, df_g7]:
-        if not df.empty:
-            df.columns = [str(c).strip() for c in df.columns]
-
-    return df_g1, df_g4, df_g7
+    frames = {}
+    for grade, worksheet in VACCTRACK_SHEETS.items():
+        frame = conn.read(spreadsheet=SBI_SHEET_URL, worksheet=worksheet, ttl="1h")
+        frames[grade] = _clean_vacctrack_frame(frame, grade)
+    return frames
 
 
 def fetch_sbi_vacctrack():
+    """Return official SBI VaccTrack frames.
+
+    v5.16 prefers the latest completed direct upload stored in Supabase for each
+    grade independently. If a grade has never been directly imported, its existing
+    Google Sheet worksheet remains the fallback source.
+    """
     try:
-        return _fetch_sbi_vacctrack_cached()
+        imported, _meta = _fetch_sbi_vacctrack_imported_cached()
     except Exception:
-        logger.exception("Failed to fetch SBI VaccTrack data; failure was not cached")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        logger.exception("Failed to fetch imported SBI VaccTrack snapshots")
+        imported = {grade: pd.DataFrame() for grade in VACCTRACK_GRADES}
+
+    missing = [grade for grade in VACCTRACK_GRADES if imported.get(grade, pd.DataFrame()).empty]
+    google = {}
+    if missing:
+        try:
+            google = _fetch_sbi_vacctrack_google_cached()
+        except Exception:
+            logger.exception("Failed to fetch SBI VaccTrack Google Sheet fallback; failure was not cached")
+            google = {}
+
+    frames = []
+    for grade in VACCTRACK_GRADES:
+        direct = imported.get(grade, pd.DataFrame())
+        frames.append(direct if not direct.empty else google.get(grade, pd.DataFrame()))
+    return tuple(frames)
+
+
+@st.cache_data(ttl="5m")
+def _fetch_sbi_vacctrack_source_info_cached():
+    info = {
+        grade: {
+            "grade": grade,
+            "source": "Google Sheet fallback",
+            "filename": None,
+            "row_count": None,
+            "abra_row_count": None,
+            "report_date_max": None,
+            "imported_at": None,
+        }
+        for grade in VACCTRACK_GRADES
+    }
+    try:
+        _frames, meta = _fetch_sbi_vacctrack_imported_cached()
+        for grade, row in meta.items():
+            if not row:
+                continue
+            info[grade] = {
+                "grade": grade,
+                "source": "Direct VaccTrack upload",
+                "filename": row.get("filename"),
+                "row_count": row.get("row_count"),
+                "abra_row_count": row.get("abra_row_count"),
+                "report_date_max": row.get("report_date_max"),
+                "imported_at": row.get("completed_at") or row.get("imported_at"),
+            }
+
+        missing = [grade for grade in VACCTRACK_GRADES if not meta.get(grade)]
+        if missing:
+            try:
+                google = _fetch_sbi_vacctrack_google_cached()
+                for grade in missing:
+                    frame = google.get(grade, pd.DataFrame())
+                    if frame.empty or "Report date" not in frame.columns:
+                        continue
+                    dates = pd.to_datetime(frame["Report date"], errors="coerce").dropna()
+                    info[grade]["row_count"] = int(len(frame))
+                    info[grade]["report_date_max"] = (
+                        dates.max().date().isoformat() if not dates.empty else None
+                    )
+            except Exception:
+                logger.info("Could not load Google Sheet VaccTrack fallback metadata", exc_info=True)
+    except Exception:
+        logger.info("Could not load VaccTrack source metadata", exc_info=True)
+    return info
+
+
+def fetch_sbi_vacctrack_source_info():
+    try:
+        return _fetch_sbi_vacctrack_source_info_cached()
+    except Exception:
+        return {grade: {"grade": grade, "source": "Google Sheet fallback"} for grade in VACCTRACK_GRADES}
 
 
 @st.cache_data(ttl="1h")
