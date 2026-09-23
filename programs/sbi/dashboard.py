@@ -1027,12 +1027,19 @@ def render_sbi_dashboard(supabase) -> None:
                         coverage_col="Total Eligible",
                         title="Total Baseline Targets by Municipality",
                         key="sbi_baseline_total_target_map",
-                        color_scale="Blues",
+                        color_scale=[
+                            [0.00, "#B7D5EA"],
+                            [0.20, "#7FB8D8"],
+                            [0.45, "#3F8FC3"],
+                            [0.70, "#1769A6"],
+                            [1.00, "#08457E"],
+                        ],
                         range_color=None,
                         value_format=",.0f",
                         value_suffix="",
                         hover_format=":,.0f",
                         colorbar_title="Total Target",
+                        map_opacity=0.88,
                     )
 
                 st.divider()
@@ -1408,12 +1415,19 @@ def render_sbi_dashboard(supabase) -> None:
                         coverage_col="Total Eligible",
                         title="Total Actual Targets by Municipality",
                         key="sbi_actual_total_target_map",
-                        color_scale="Blues",
+                        color_scale=[
+                            [0.00, "#B7D5EA"],
+                            [0.20, "#7FB8D8"],
+                            [0.45, "#3F8FC3"],
+                            [0.70, "#1769A6"],
+                            [1.00, "#08457E"],
+                        ],
                         range_color=None,
                         value_format=",.0f",
                         value_suffix="",
                         hover_format=":,.0f",
                         colorbar_title="Total Target",
+                        map_opacity=0.88,
                     )
 
                 st.divider()

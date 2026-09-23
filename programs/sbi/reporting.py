@@ -29,6 +29,7 @@ def _geo_key(value: object) -> str:
     aliases = {
         "SALAPADAN": "SALLAPADAN",
         "LICUANBAAYLICUAN": "LICUANBAAY",
+        "BANGUEDCAPITAL": "BANGUED",
     }
     return aliases.get(key, key)
 
@@ -359,6 +360,7 @@ def render_municipality_choropleth(
     value_suffix: str = "%",
     hover_format: str = ":.1f",
     colorbar_title: str = "Coverage %",
+    map_opacity: float = 0.70,
 ) -> None:
     """Render an Abra municipality choropleth with robust accent-insensitive joins."""
     if summary is None or summary.empty or "Municipality" not in summary.columns:
@@ -395,7 +397,7 @@ def render_municipality_choropleth(
         map_style="white-bg",
         zoom=9.2,
         center={"lat": 17.58, "lon": 120.80},
-        opacity=0.70,
+        opacity=map_opacity,
         hover_name="Municipality",
         hover_data=hover_data,
     )
