@@ -64,6 +64,19 @@ def _logout_session() -> None:
     st.rerun()
 
 
+def _filter_municipality_rows(df: pd.DataFrame, municipality: str) -> pd.DataFrame:
+    """Filter municipality rows using the shared canonical key.
+
+    This intentionally treats source variants such as ``Bangued (Capital)``
+    and ``Bangued`` as the same municipality.
+    """
+    if df is None or df.empty or "Municipality" not in df.columns:
+        return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+    target_key = normalize_municipality_key(municipality)
+    row_keys = df["Municipality"].map(normalize_municipality_key)
+    return df.loc[row_keys.eq(target_key)].copy()
+
+
 def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -967,7 +980,7 @@ def render_sbi_dashboard(supabase) -> None:
             else:
                 df_tgt_view = df_sbi_targets.copy()
                 if view_mode == "Specific Municipality":
-                    df_tgt_view = df_tgt_view[df_tgt_view['Municipality'].str.upper() == selected_muni.upper()]
+                    df_tgt_view = _filter_municipality_rows(df_tgt_view, selected_muni)
 
                 # Keep target fields numeric before building summaries/charts.
                 sbi_target_numeric_cols = ['G1 Male', 'G1 Female', 'G1 Total', 'G4 Female', 'G7 Male', 'G7 Female', 'G7 Total']
@@ -1227,12 +1240,8 @@ def render_sbi_dashboard(supabase) -> None:
                         )
 
                 if view_mode == "Specific Municipality":
-                    df_actual_view = df_actual_view[
-                        df_actual_view['Municipality'].str.upper() == selected_muni.upper()
-                    ]
-                    df_baseline_actual_view = df_baseline_actual_view[
-                        df_baseline_actual_view['Municipality'].str.upper() == selected_muni.upper()
-                    ]
+                    df_actual_view = _filter_municipality_rows(df_actual_view, selected_muni)
+                    df_baseline_actual_view = _filter_municipality_rows(df_baseline_actual_view, selected_muni)
 
                 actual_numeric_cols = [
                     'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female',
@@ -1635,12 +1644,8 @@ def render_sbi_dashboard(supabase) -> None:
                         )
 
                 if view_mode == "Specific Municipality":
-                    df_cmp_actual = df_cmp_actual[
-                        df_cmp_actual['Municipality'].str.upper() == selected_muni.upper()
-                    ].copy()
-                    df_cmp_baseline = df_cmp_baseline[
-                        df_cmp_baseline['Municipality'].str.upper() == selected_muni.upper()
-                    ].copy()
+                    df_cmp_actual = _filter_municipality_rows(df_cmp_actual, selected_muni)
+                    df_cmp_baseline = _filter_municipality_rows(df_cmp_baseline, selected_muni)
 
                 cmp_actual_numeric = [
                     'G1 Total', 'G4 Female', 'G7 Total', 'Total Eligible'

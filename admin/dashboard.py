@@ -16,6 +16,7 @@ from core.config import ABRA_MUNIS, SIA_SHEET_URL, SBI_SHEET_URL
 from core.geo import clean_and_process_car_data, fetch_abra_geojson
 from core.map_labels import (
     build_label_records,
+    canonical_municipality_name,
     invalidate_runtime_label_cache,
     reset_all_label_positions,
     reset_label_position,
@@ -387,7 +388,9 @@ def _prepare_sbi_targets() -> tuple[pd.DataFrame, dict]:
     if missing:
         raise ValueError(f"Missing SBI source columns: {', '.join(missing)}")
 
-    df_raw["Municipality"] = df_raw["Municipality"].astype(str).str.strip().str.title()
+    # Canonicalize DepEd naming variants (for example, "Bangued (Capital)")
+    # before persisting baseline targets so RHU account assignments match cleanly.
+    df_raw["Municipality"] = df_raw["Municipality"].map(canonical_municipality_name)
     df_raw["School_name"] = df_raw["School_name"].astype(str).str.strip()
     df_raw["beis_school_id"] = df_raw["beis_school_id"].astype(str).str.replace(r"\.0$", "", regex=True)
 
