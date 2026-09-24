@@ -521,12 +521,22 @@ def render_vacctrack_importer(
                 st.code(message)
         return
 
+    # Use a rotating uploader key so a successful import clears the selected files
+    # on the next rerun. Otherwise Streamlit keeps the same files selected and the
+    # duplicate-file guard appears immediately after a successful import, which is
+    # technically correct but confusing to users.
+    upload_reset = int(st.session_state.get("admin_vacctrack_upload_reset", 0))
+
+    success_notice = st.session_state.pop("admin_vacctrack_import_success_notice", None)
+    if success_notice:
+        st.success(success_notice)
+
     uploaded_files = st.file_uploader(
         "Upload VaccTrack extracts",
         type=["xls", "xlsx", "csv"],
         accept_multiple_files=True,
         help="You may upload Grade 1, Grade 4, and Grade 7 together. The grade is detected from the file columns, not from the filename.",
-        key="admin_vacctrack_extract_uploads",
+        key=f"admin_vacctrack_extract_uploads_{upload_reset}",
     )
 
     parsed_files: list[dict] = []
@@ -607,10 +617,11 @@ def render_vacctrack_importer(
                 st.dataframe(item["preview"], width="stretch", hide_index=True)
 
         if exact_duplicates:
-            st.warning(
-                "The exact same file has already been imported for: "
+            st.info(
+                "Already up to date for: "
                 + ", ".join(sorted(set(exact_duplicates)))
-                + ". Re-import is blocked to prevent duplicate snapshots."
+                + ". This exact extract is already saved, so no import is needed. "
+                  "Upload a newer VaccTrack extract when new data becomes available."
             )
 
         if downgrade_grades:
@@ -631,7 +642,7 @@ def render_vacctrack_importer(
         confirm = st.checkbox(
             "I confirm that these are the latest complete VaccTrack extracts for the selected grade(s).",
             value=False,
-            key="admin_vacctrack_confirm",
+            key=f"admin_vacctrack_confirm_{upload_reset}",
         )
         if st.button(
             "Import Validated VaccTrack Extracts",
@@ -678,7 +689,13 @@ def render_vacctrack_importer(
             if failures:
                 st.error("Failed:\n\n" + "\n".join(f"- {item}" for item in failures))
             if successes and not failures:
-                st.toast("VaccTrack snapshots imported. Dashboard data will reload now.")
+                imported_grades = ", ".join(sorted({item.split(":", 1)[0] for item in successes}))
+                st.session_state["admin_vacctrack_import_success_notice"] = (
+                    f"VaccTrack import complete for {imported_grades}. The uploaded files were cleared; "
+                    "the dashboard will now use the saved snapshots."
+                )
+                st.session_state["admin_vacctrack_upload_reset"] = upload_reset + 1
+                st.toast("VaccTrack snapshots imported successfully.")
                 st.rerun()
 
     st.divider()

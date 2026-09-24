@@ -979,10 +979,19 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
             key="linelist_template_download",
         )
 
+    # Rotate the uploader key after a successful import so Streamlit clears the
+    # selected file. This prevents the just-imported file from being re-evaluated
+    # on rerun and showing an unnecessary "no changes" message.
+    upload_reset = int(st.session_state.get("sbi_linelist_upload_reset", 0))
+
+    success_notice = st.session_state.pop("sbi_linelist_import_success_notice", None)
+    if success_notice:
+        st.success(success_notice)
+
     uploaded = st.file_uploader(
         "1B. Upload completed line list",
         type=["xlsx", "xls", "xlsm", "csv"],
-        key="sbi_linelist_upload",
+        key=f"sbi_linelist_upload_{upload_reset}",
         help="For a revision, upload the complete learner list for each Activity Date + School + Grade group included in the file.",
     )
     if uploaded is None:
@@ -1015,12 +1024,15 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
 
     total_changes = len(diff["added"]) + len(diff["modified"]) + len(diff["removed"])
     if total_changes == 0:
-        st.success("This upload matches the current active line list. No changes need to be saved.")
+        st.info(
+            "Already up to date. This line list matches the saved learner records, so there is nothing to import. "
+            "If this was the file you just imported, you may continue to Step 2 — VaccTrack Encoding."
+        )
         return
 
     confirm = st.checkbox(
         f"I reviewed the comparison and want to apply {total_changes:,} change(s).",
-        key="linelist_revision_confirm",
+        key=f"linelist_revision_confirm_{upload_reset}",
     )
     if st.button("1C. Import / Apply Revision", type="primary", width="stretch", disabled=not confirm, key="linelist_apply_import"):
         try:
@@ -1034,6 +1046,11 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
                     uploaded.name,
                     raw_bytes,
                 )
+            st.session_state["sbi_linelist_import_success_notice"] = (
+                f"Line list imported successfully (Batch #{batch_id}). The upload field was cleared. "
+                "You can now continue to Step 2 — VaccTrack Encoding."
+            )
+            st.session_state["sbi_linelist_upload_reset"] = upload_reset + 1
             st.toast(f"Line list imported successfully. Batch #{batch_id}")
             st.rerun()
         except Exception as exc:
