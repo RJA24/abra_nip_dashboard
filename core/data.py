@@ -36,6 +36,48 @@ def _clean_vacctrack_frame(df: pd.DataFrame, grade: str) -> pd.DataFrame:
     out.columns = [str(c).replace("\xa0", " ").strip() for c in out.columns]
     if grade == "G7" and "Facility Name.1" in out.columns and "Updated date" not in out.columns:
         out = out.rename(columns={"Facility Name.1": "Updated date"})
+
+    # Current VaccTrack G1/G7 exports contain BOTH the newer sex-disaggregated
+    # vaccination fields and older aggregate vaccination-summary fields in the
+    # same row. analytics.py supports both schemas for historical compatibility,
+    # but leaving both sets present makes MR/Td vaccination counts get counted
+    # twice. Prefer the sex-disaggregated fields whenever they are available;
+    # keep the aggregate deferral/refusal fields because those are still needed.
+    sex_fields = {
+        "G1": [
+            "G1.A Number of Students vaccinated with MR (Male)",
+            "G1.B Number of Students vaccinated with MR (Female)",
+            "G1.C Number of Students vaccinated with TD (Male)",
+            "G1.D Number of Students vaccinated with TD (Female)",
+        ],
+        "G7": [
+            "G7.A Number of Students vaccinated with MR (Male)",
+            "G7.B Number of Students vaccinated with MR (Female)",
+            "G7.C Number of Students vaccinated with TD (Male)",
+            "G7.D Number of Students vaccinated with TD (Female)",
+        ],
+    }
+    redundant_vaccination_summary = {
+        "G1": [
+            "G1.B Number of Students vaccinated with MR",
+            "G1.C Number of Students vaccinated with TD",
+        ],
+        "G7": [
+            "G7.B Number of Students Who Received the MR Vaccine",
+            "G7.C Number of Students Who Received the TD Vaccine",
+        ],
+    }
+
+    required = sex_fields.get(grade, [])
+    if required and all(column in out.columns for column in required):
+        drop_columns = [
+            column
+            for column in redundant_vaccination_summary.get(grade, [])
+            if column in out.columns
+        ]
+        if drop_columns:
+            out = out.drop(columns=drop_columns)
+
     return out
 
 
