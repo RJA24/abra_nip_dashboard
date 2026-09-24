@@ -25,6 +25,7 @@ from core.map_labels import (
 )
 from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
 from programs.sbi.vacctrack_import import render_vacctrack_importer
+from programs.sbi.import_management import render_import_management
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -1521,8 +1522,8 @@ def render_admin_dashboard(supabase) -> None:
         unsafe_allow_html=True,
     )
 
-    overview_tab, sync_tab, map_tab, rhu_accounts_tab, accounts_tab, login_tab, audit_tab = st.tabs(
-        ["Overview", "Data Sync", "Map Labels", "RHU Accounts", "Admin Accounts", "Login History", "Audit Log"]
+    overview_tab, sync_tab, imports_tab, map_tab, rhu_accounts_tab, accounts_tab, login_tab, audit_tab = st.tabs(
+        ["Overview", "Data Sync", "Import Management", "Map Labels", "RHU Accounts", "Admin Accounts", "Login History", "Audit Log"]
     )
 
     with overview_tab:
@@ -1530,6 +1531,9 @@ def render_admin_dashboard(supabase) -> None:
 
     with sync_tab:
         _render_data_sync(supabase)
+
+    with imports_tab:
+        render_import_management(supabase, audit_callback=_audit)
 
     with map_tab:
         _render_map_label_editor(supabase)

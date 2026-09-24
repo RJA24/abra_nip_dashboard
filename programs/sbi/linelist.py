@@ -1,9 +1,8 @@
-"""SBI learner reporting upload, revisions, regional reporting, and VaccTrack encoding.
+"""SBI learner line-list upload, revisions, and VaccTrack encoding.
 
-The learner-level records are the RHU operational source. VaccTrack remains the official
-final SBI dataset. v5.17 also keeps Grade 5 HPV dose-2 records for regional reporting;
-Grade 5 is deliberately excluded from VaccTrack encoding and reconciliation because the
-current VaccTrack SBI forms do not have a Grade 5 reporting module.
+The learner-level records are the RHU operational source used to calculate what should be
+encoded into VaccTrack. VaccTrack remains the official/final SBI dataset. The v5.18 RHU
+workflow is intentionally limited to Grade 1, Grade 4, and Grade 7 to keep encoding simple.
 """
 
 from __future__ import annotations
@@ -82,10 +81,6 @@ GRADE_MAP = {
     "g4": "G4",
     "grade4": "G4",
     "grade 4": "G4",
-    "5": "G5",
-    "g5": "G5",
-    "grade5": "G5",
-    "grade 5": "G5",
     "7": "G7",
     "g7": "G7",
     "grade7": "G7",
@@ -383,7 +378,7 @@ def _validate_upload(
         if not sex:
             row_problems.append("Sex must be Male or Female")
         if not grade:
-            row_problems.append("Grade Level must be Grade 1, Grade 4, Grade 5, or Grade 7")
+            row_problems.append("Grade Level must be Grade 1, Grade 4, or Grade 7")
 
         mr_status = td_status = hpv_status = ""
         mr_lot = td_lot = hpv_lot = ""
@@ -463,23 +458,6 @@ def _validate_upload(
             mr_lot = td_lot = ""
             if hpv_status == "Given" and not hpv_lot:
                 warnings.append(f"Row {excel_row}: HPV was marked Given but HPV Lot/Batch No. is blank.")
-        elif grade == "G5":
-            if not regional:
-                row_problems.append("Grade 5 requires the v5.17 regional learner template")
-            if sex and sex != "Female":
-                row_problems.append("Grade 5 HPV learner records must be Female")
-            if hpv_dose != 2:
-                row_problems.append("Grade 5 is for HPV Dose 2 only; set HPV Dose to 2")
-            if not hpv_status:
-                row_problems.append("HPV Status is required for Grade 5")
-            if _clean_text(row.get("MR Status")) or _clean_text(row.get("Td Status")):
-                row_problems.append("MR Status and Td Status must be blank for Grade 5")
-            mr_given = None
-            td_given = None
-            mr_status = td_status = ""
-            mr_lot = td_lot = ""
-            if hpv_status == "Given" and not hpv_lot:
-                warnings.append(f"Row {excel_row}: Grade 5 HPV Dose 2 was marked Given but HPV Lot/Batch No. is blank.")
 
         needs_reason = any(status in {"Deferred", "Refused"} for status in [mr_status, td_status, hpv_status])
         if needs_reason and not reason_code:
@@ -760,7 +738,7 @@ def _aggregate_scope(active_scope: pd.DataFrame, grade: str) -> dict:
     }
 
 
-def _rebuild_aggregates(supabase, municipality: str, scopes: set[tuple[str, str, str]], batch_id: int, username: str) -> None:
+def _rebuild_aggregates(supabase, municipality: str, scopes: set[tuple[str, str, str]], batch_id: int | None, username: str) -> None:
     municipality = _canonical_muni(municipality)
     now = datetime.now(MANILA_TZ).isoformat()
     for activity_date, school_id, grade in sorted(scopes):
@@ -791,6 +769,11 @@ def _rebuild_aggregates(supabase, municipality: str, scopes: set[tuple[str, str,
 
         first = active.iloc[0]
         totals = _aggregate_scope(active, grade)
+        source_batch_id = batch_id
+        if source_batch_id is None and "import_batch_id" in active.columns:
+            batch_values = pd.to_numeric(active["import_batch_id"], errors="coerce").dropna()
+            source_batch_id = int(batch_values.max()) if not batch_values.empty else None
+
         record = {
             "municipality": municipality,
             "school_id": school_id,
@@ -802,12 +785,22 @@ def _rebuild_aggregates(supabase, municipality: str, scopes: set[tuple[str, str,
             "updated_by": username,
             "updated_at": now,
             "source_type": "linelist",
-            "source_batch_id": batch_id,
+            "source_batch_id": source_batch_id,
         }
         supabase.table(AGG_TABLE).upsert(
             record,
             on_conflict="municipality,school_id,activity_date,grade_level",
         ).execute()
+
+
+def rebuild_aggregates_after_admin_change(
+    supabase,
+    municipality: str,
+    scopes: set[tuple[str, str, str]],
+    username: str,
+) -> None:
+    """Recalculate line-list-derived RHU totals after an admin rollback/delete."""
+    _rebuild_aggregates(supabase, municipality, scopes, None, username)
 
 
 def _apply_import(
@@ -965,7 +958,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
         unsafe_allow_html=True,
     )
     st.markdown(
-        f"Upload SBI learner outcome records for **{municipality}**. The system validates each row, calculates VaccTrack totals for G1/G4/G7, tracks Grade 5 HPV Dose 2 for regional reporting, and updates the RHU tracker automatically."
+        f"Upload SBI learner outcome records for **{municipality}**. The system validates each row, calculates the G1/G4/G7 VaccTrack figures, and updates the RHU tracker automatically."
     )
     st.warning("Learner records contain identifiable vaccination information. Use only authorized RHU/NIP accounts. The current deployment still relies on application-level municipality restrictions; database-side per-RHU RLS is not yet enforced.")
 
@@ -1241,7 +1234,7 @@ def render_vacctrack_encoding_summary(supabase, municipality: str, actual_target
         '<h3><i class="fa-solid fa-clipboard-list" style="color:#0033A0;margin-right:8px;"></i>Step 2 — VaccTrack Encoding Summary</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown("These counts are calculated directly from active learner records. Copy the G1/G4/G7 values into VaccTrack. Grade 5 is intentionally excluded because VaccTrack currently has no G5 SBI form.")
+    st.markdown("These counts are calculated directly from active learner records. Copy the generated G1, G4, and G7 values into VaccTrack.")
     try:
         active = _fetch_records(supabase, municipality, active_only=True)
     except Exception as exc:
@@ -1333,16 +1326,13 @@ def render_live_linelist_summary(supabase, municipality: str) -> None:
     mr_total = int(active["MR Status Norm"].eq("Given").sum())
     td_total = int(active["Td Status Norm"].eq("Given").sum())
     g4 = active[active["grade_level"].astype(str).eq("G4")]
-    g5 = active[active["grade_level"].astype(str).eq("G5")]
     g4_hpv1 = int((g4["HPV Dose Norm"].eq(1) & g4["HPV Status Norm"].eq("Given")).sum())
     g4_hpv2 = int((g4["HPV Dose Norm"].eq(2) & g4["HPV Status Norm"].eq("Given")).sum())
-    g5_hpv2 = int((g5["HPV Dose Norm"].eq(2) & g5["HPV Status Norm"].eq("Given")).sum())
 
     st.markdown("#### Provisional RHU Learner-Record Totals")
-    a, b, c, d, e = st.columns(5)
+    a, b, c, d = st.columns(4)
     a.metric("MR", f"{mr_total:,}")
     b.metric("Td", f"{td_total:,}")
     c.metric("G4 HPV1", f"{g4_hpv1:,}")
     d.metric("G4 HPV2", f"{g4_hpv2:,}")
-    e.metric("G5 HPV2", f"{g5_hpv2:,}")
-    st.caption("Operational/provisional figures only. G5 is retained for regional reporting and is not sent to VaccTrack.")
+    st.caption("Operational/provisional figures from the uploaded learner records. VaccTrack remains the official dataset.")
