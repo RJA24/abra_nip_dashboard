@@ -23,6 +23,10 @@ from programs.sbi.linelist import (
     render_vacctrack_encoding_summary,
     schema_available as linelist_schema_available,
 )
+from programs.sbi.regional_reporting import (
+    render_regional_reporting,
+    schema_available as regional_schema_available,
+)
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -889,7 +893,7 @@ def _render_check(
     end_date: date | None,
 ) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-circle-check" style="color:#0033A0;margin-right:8px;"></i>Step 3 — Refresh & VaccTrack Check</h3>',
+        '<h3><i class="fa-solid fa-circle-check" style="color:#0033A0;margin-right:8px;"></i>Step 4 — Refresh & VaccTrack Check</h3>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1033,18 +1037,22 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
           <div style="font-size:1.02rem;font-weight:700;color:#0f172a;margin-bottom:0.8rem;">
             <i class="fa-solid fa-route" style="color:#0033A0;margin-right:7px;"></i>RHU Encoder Process — {assigned_muni}
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.7rem;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:0.7rem;">
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Upload Line List</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Fill in one row per vaccinated learner, upload the file, review the validation result, then confirm the import.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Upload Learner Records</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Record G1, G4, G5 and G7 learner outcomes, upload the file, review errors, then confirm the import.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
               <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">2. Encode in VaccTrack</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Open the generated VaccTrack Encoding Summary and copy the calculated G1, G4, and G7 values into VaccTrack.</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Copy the generated G1, G4 and G7 counts and reason totals into VaccTrack. G5 is not sent to VaccTrack.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Refresh & Check</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the NIP coordinator uploads a newer VaccTrack extract, refresh the data and run VaccTrack Check.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Regional Report</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Generate the RHU consolidated report, including G5 HPV2, deferrals/refusals, and vaccine utilization.</div>
+            </div>
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">4. Refresh & Check</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the latest VaccTrack extract is uploaded, refresh the data and check for matched, pending, or discrepant records.</div>
             </div>
           </div>
         </div>
@@ -1055,33 +1063,44 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
     with st.expander("Need help? Open the step-by-step guide", expanded=False):
         st.markdown(
             """
-**Step 1 — Upload the line list**
+**Step 1 — Upload learner records**
 
-1. Open **1. Upload Line List**.
-2. Download the Excel template if needed.
-3. Enter one row for every vaccinated learner.
-4. Upload the completed file.
-5. Read the validation result. If there are errors, correct the Excel file and upload it again.
-6. Review the Added / Modified / Removed comparison, then confirm **Import / Apply Revision**.
+1. Open **1. Upload Learner Records**.
+2. Download the current Excel template if needed.
+3. Enter one row per learner for the activity date.
+4. For Grade 1/7, complete **MR Status** and **Td Status**.
+5. For Grade 4, enter HPV Dose 1 or 2 and the HPV Status.
+6. For Grade 5, use **HPV Dose 2**. Grade 5 is kept for regional reporting only.
+7. If a vaccine is **Deferred** or **Refused**, select a Reason Code (01–19).
+8. Upload the file, correct any validation issues, review Added / Modified / Removed, then confirm the import.
 
 **Step 2 — Copy the totals to VaccTrack**
 
 1. Open **2. VaccTrack Encoding**.
-2. Select the activity date.
+2. The report date defaults to today; change it only when reviewing an earlier activity date.
 3. Open Grade 1, Grade 4, or Grade 7 as needed.
-4. Copy the displayed values into the matching VaccTrack form.
+4. Copy the generated counts and reason totals into VaccTrack.
+5. Grade 5 does not appear here because VaccTrack currently has no G5 SBI reporting form.
 
-**Step 3 — Refresh and verify**
+**Step 3 — Prepare the regional report**
 
-1. Wait until the NIP coordinator has uploaded the latest VaccTrack extraction in **Administration → Data Sync**.
-2. Open **3. VaccTrack Check** and press **Refresh VaccTrack Data**.
-3. Review the cumulative comparison and Daily Discrepancy Tally.
-4. **Matched** means the line-list total and the latest available VaccTrack extract agree.
-5. **Pending VaccTrack Verification** means the latest official VaccTrack extract has not yet caught up to that activity date. It is not automatically an encoding error.
+1. Open **3. Regional Report**.
+2. Choose the daily report date or a custom reporting period.
+3. Review the automatically generated G1/G4/G5/G7 accomplishment table.
+4. For a daily report, select the school and enter Grade 5 Female Enrolled plus vaccine received/used/unused in vials when required.
+5. Download the Regional RHU Report in Excel or CSV.
 
-**If you need to correct a learner later:** open **Corrections / History**, review the previous import, then go back to **1. Upload Line List** and upload the complete revised list for the affected Activity Date + School + Grade group. The system will show what was added, modified, or removed before saving.
+**Step 4 — Refresh and verify VaccTrack**
+
+1. Wait until the NIP coordinator uploads the latest VaccTrack extraction in **Administration → Data Sync**.
+2. Open **4. VaccTrack Check** and press **Refresh VaccTrack Data**.
+3. **Matched** means the learner-record totals and latest available VaccTrack extract agree.
+4. **Pending VaccTrack Verification** means the latest official extract has not yet caught up to the activity date; it is not automatically an encoding error.
+
+**If you need to correct a learner later:** open **Corrections / History**, then upload the complete revised list for the affected Activity Date + School + Grade group. The system shows what changed before saving.
             """
         )
+
 
 def render_rhu_accomplishments(
     supabase,
@@ -1111,10 +1130,11 @@ def render_rhu_accomplishments(
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
         _render_rhu_encoder_process_guide(canonical)
 
-        upload_tab, encoding_tab, check_tab, history_tab, mine_tab, entry_tab = st.tabs([
-            "1. Upload Line List",
+        upload_tab, encoding_tab, regional_tab, check_tab, history_tab, mine_tab, entry_tab = st.tabs([
+            "1. Upload Learner Records",
             "2. VaccTrack Encoding",
-            "3. VaccTrack Check",
+            "3. Regional Report",
+            "4. VaccTrack Check",
             "Corrections / History",
             "My Accomplishments",
             "Manual Fallback",
@@ -1124,19 +1144,31 @@ def render_rhu_accomplishments(
             if line_ready:
                 render_linelist_upload(supabase, targets, canonical, username)
             else:
-                st.error("Line-list upload is not initialized. Run supabase/004_sbi_linelist.sql once, add python-calamine to requirements.txt, then reload the app.")
+                st.error("Learner reporting is not initialized for v5.17. Run supabase/004_sbi_linelist.sql (if not already done) and then supabase/006_sbi_regional_reporting.sql, then reload the app.")
         with encoding_tab:
             if line_ready:
                 render_vacctrack_encoding_summary(supabase, canonical, actual_targets if actual_targets is not None else pd.DataFrame())
             else:
-                st.write("Run the v5.14 line-list SQL first.")
+                st.write("Run the v5.17 learner-reporting SQL migration first.")
+        with regional_tab:
+            regional_ready, _ = regional_schema_available(supabase)
+            if regional_ready:
+                render_regional_reporting(
+                    supabase,
+                    canonical,
+                    targets,
+                    actual_targets if actual_targets is not None else pd.DataFrame(),
+                    username,
+                )
+            else:
+                st.error("Regional reporting is not initialized. Run supabase/006_sbi_regional_reporting.sql once, then reload the app.")
         with check_tab:
             _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
         with history_tab:
             if line_ready:
                 render_linelist_history(supabase, canonical)
             else:
-                st.write("Run the v5.14 line-list SQL first.")
+                st.write("Run the v5.17 learner-reporting SQL migration first.")
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
         with entry_tab:

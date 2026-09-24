@@ -1,9 +1,9 @@
-"""SBI learner line-list upload, revision handling, and VaccTrack encoding summary.
+"""SBI learner reporting upload, revisions, regional reporting, and VaccTrack encoding.
 
-The learner-level line list is an operational source. VaccTrack remains the official
-final SBI reporting dataset. The module validates uploaded learner records, keeps an
-audit-friendly revision trail, derives aggregate RHU accomplishments, and produces
-VaccTrack-ready counts so RHUs do not have to count rows manually.
+The learner-level records are the RHU operational source. VaccTrack remains the official
+final SBI dataset. v5.17 also keeps Grade 5 HPV dose-2 records for regional reporting;
+Grade 5 is deliberately excluded from VaccTrack encoding and reconciliation because the
+current VaccTrack SBI forms do not have a Grade 5 reporting module.
 """
 
 from __future__ import annotations
@@ -30,7 +30,34 @@ RECORD_TABLE = "sbi_linelist_records"
 AUDIT_TABLE = "sbi_linelist_audit"
 AGG_TABLE = "sbi_rhu_accomplishments"
 
-REQUIRED_COLUMNS = [
+REGIONAL_REQUIRED_COLUMNS = [
+    "Activity Date",
+    "School ID",
+    "School Name",
+    "Learner ID / LRN",
+    "Last Name",
+    "First Name",
+    "Middle Name",
+    "Sex",
+    "Grade Level",
+    "MR Status",
+    "Td Status",
+    "HPV Dose",
+    "HPV Status",
+    "Reason Code",
+    "Remarks",
+]
+
+REGIONAL_OPTIONAL_COLUMNS = [
+    "Section",
+    "MR Lot/Batch No.",
+    "Td Lot/Batch No.",
+    "HPV Lot/Batch No.",
+    "Reason Details",
+]
+
+# Keep the v5.14/v5.15 vaccinated-only template readable during the transition.
+LEGACY_REQUIRED_COLUMNS = [
     "Activity Date",
     "School ID",
     "School Name",
@@ -55,16 +82,44 @@ GRADE_MAP = {
     "g4": "G4",
     "grade4": "G4",
     "grade 4": "G4",
+    "5": "G5",
+    "g5": "G5",
+    "grade5": "G5",
+    "grade 5": "G5",
     "7": "G7",
     "g7": "G7",
     "grade7": "G7",
     "grade 7": "G7",
 }
 
+STATUS_VALUES = {"Given", "Deferred", "Refused", "Not Given"}
+
+REASON_LABELS = {
+    "01": 'Parent/caregiver not home or decision-maker (e.g., spouse) unavailable',
+    "02": 'Fear of vaccine side effects',
+    "03": 'Concerns over vaccine safety (e.g., past adverse reaction, Dengvaxia)',
+    "04": 'Refused extra dose (already completed routine vaccines) [campaign-specific]',
+    "05": 'No time due to work or caregiving; no one to accompany child',
+    "06": 'Belief that vaccine is not effective, low quality, or expired',
+    "07": 'Belief that child is too young for vaccination',
+    "08": 'Already vaccinated or advised against it by private doctor',
+    "09": 'Religious or personal beliefs not aligned with vaccination',
+    "10": 'Lack of trust in the vaccinator',
+    "11": 'Child was sick, just recovered, or recently discharged from hospital',
+    "12": 'Unaware of vaccination schedule/activity',
+    "13": 'No health worker visit or vaccine promotion in the area',
+    "14": 'Child is visiting, recently moved, or not in target client list',
+    "15": 'Too far from site or no transportation (geographical challenges)',
+    "16": 'Language or communication barrier',
+    "17": 'Caregiver has disability or health condition limiting access',
+    "18": 'Fear of injection',
+    "19": 'Refused with no reason or Other',
+}
+
 
 def schema_available(supabase) -> tuple[bool, str]:
     try:
-        supabase.table(RECORD_TABLE).select("id").limit(1).execute()
+        supabase.table(RECORD_TABLE).select("id,mr_status,reason_code,section").limit(1).execute()
         supabase.table(IMPORT_TABLE).select("id").limit(1).execute()
         return True, ""
     except Exception as exc:
@@ -111,6 +166,35 @@ def _norm_yes_no(value: object) -> bool | None:
     if key in {"no", "n", "false", "0", "not given"}:
         return False
     return None
+
+
+def _norm_status(value: object) -> str:
+    key = _clean_text(value).lower().replace("_", " ").replace("-", " ")
+    key = re.sub(r"\s+", " ", key).strip()
+    mapping = {
+        "given": "Given",
+        "vaccinated": "Given",
+        "yes": "Given",
+        "deferred": "Deferred",
+        "defer": "Deferred",
+        "refused": "Refused",
+        "refusal": "Refused",
+        "not given": "Not Given",
+        "notgiven": "Not Given",
+        "no": "Not Given",
+    }
+    return mapping.get(key, "")
+
+
+def _norm_reason_code(value: object) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    match = re.match(r"^(\d{1,2})", text)
+    if not match:
+        return ""
+    code = match.group(1).zfill(2)
+    return code if code in REASON_LABELS else ""
 
 
 def _norm_hpv_dose(value: object) -> int | None:
@@ -172,9 +256,18 @@ def _record_hash(record: dict) -> str:
             "middle_name",
             "sex",
             "grade_level",
+            "section",
             "mr_given",
+            "mr_status",
+            "mr_lot_batch",
             "td_given",
+            "td_status",
+            "td_lot_batch",
             "hpv_dose",
+            "hpv_status",
+            "hpv_lot_batch",
+            "reason_code",
+            "reason_details",
             "remarks",
         ]
     }
@@ -211,17 +304,16 @@ def _read_upload(uploaded_file) -> tuple[pd.DataFrame | None, str]:
     try:
         if suffix == ".csv":
             return pd.read_csv(BytesIO(raw)), ""
-        if suffix in {".xlsx", ".xlsm"}:
+        if suffix in {".xlsx", ".xlsm", ".xls"}:
             try:
                 return pd.read_excel(BytesIO(raw), sheet_name="Line List", engine="calamine"), ""
             except ImportError:
                 return None, "Excel upload support is not installed. Add python-calamine>=0.3.1 to requirements.txt, or upload a CSV copy for now."
             except ValueError:
-                # A user may rename the sheet; fall back to the first worksheet.
                 return pd.read_excel(BytesIO(raw), sheet_name=0, engine="calamine"), ""
-        return None, "Use the provided .xlsx template or upload a .csv line list."
+        return None, "Use the provided .xlsx template or upload an .xlsx, .xls, .xlsm, or .csv learner file."
     except Exception as exc:
-        return None, f"Unable to read the line list: {exc}"
+        return None, f"Unable to read the learner file: {exc}"
 
 
 def _validate_upload(
@@ -229,22 +321,30 @@ def _validate_upload(
     municipality: str,
     targets: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-    """Return normalized valid rows, issue table, and non-blocking warnings."""
+    """Normalize the regional v5.17 template or the older vaccinated-only template."""
     if raw_df is None:
         return pd.DataFrame(), pd.DataFrame(), []
 
     source = raw_df.copy()
     source.columns = [_clean_text(c) for c in source.columns]
-    missing = [col for col in REQUIRED_COLUMNS if col not in source.columns]
-    if missing:
+    regional = all(col in source.columns for col in REGIONAL_REQUIRED_COLUMNS)
+    legacy = all(col in source.columns for col in LEGACY_REQUIRED_COLUMNS)
+    if not regional and not legacy:
+        missing = [col for col in REGIONAL_REQUIRED_COLUMNS if col not in source.columns]
         issues = pd.DataFrame(
             [{"Row": "Header", "Learner": "", "Problem": f"Missing required column: {col}"} for col in missing]
         )
         return pd.DataFrame(), issues, []
 
-    source = source[REQUIRED_COLUMNS].copy()
-    source = source.dropna(how="all")
-    # Remove visually blank rows.
+    if regional:
+        for col in REGIONAL_OPTIONAL_COLUMNS:
+            if col not in source.columns:
+                source[col] = None
+        selected_columns = REGIONAL_REQUIRED_COLUMNS + REGIONAL_OPTIONAL_COLUMNS
+    else:
+        selected_columns = LEGACY_REQUIRED_COLUMNS
+
+    source = source[selected_columns].copy().dropna(how="all")
     blank_mask = source.apply(lambda r: all(_clean_text(v) == "" for v in r), axis=1)
     source = source.loc[~blank_mask].copy()
 
@@ -265,9 +365,7 @@ def _validate_upload(
         middle_name = _norm_name(row.get("Middle Name"))
         sex = _norm_sex(row.get("Sex"))
         grade = _norm_grade(row.get("Grade Level"))
-        mr_given = _norm_yes_no(row.get("MR Given"))
-        td_given = _norm_yes_no(row.get("Td Given"))
-        hpv_dose = _norm_hpv_dose(row.get("HPV Dose"))
+        section = _clean_text(row.get("Section")) if regional else ""
         remarks = _clean_text(row.get("Remarks"))
         learner_label = " ".join(x for x in [first_name, middle_name, last_name] if x).strip() or learner_id or f"Row {excel_row}"
 
@@ -285,34 +383,110 @@ def _validate_upload(
         if not sex:
             row_problems.append("Sex must be Male or Female")
         if not grade:
-            row_problems.append("Grade Level must be Grade 1, Grade 4, or Grade 7")
+            row_problems.append("Grade Level must be Grade 1, Grade 4, Grade 5, or Grade 7")
+
+        mr_status = td_status = hpv_status = ""
+        mr_lot = td_lot = hpv_lot = ""
+        reason_code = reason_details = ""
+        mr_given: bool | None = None
+        td_given: bool | None = None
+        hpv_dose = _norm_hpv_dose(row.get("HPV Dose"))
+
+        if regional:
+            raw_mr_status = _clean_text(row.get("MR Status"))
+            raw_td_status = _clean_text(row.get("Td Status"))
+            raw_hpv_status = _clean_text(row.get("HPV Status"))
+            mr_status = _norm_status(raw_mr_status)
+            td_status = _norm_status(raw_td_status)
+            hpv_status = _norm_status(raw_hpv_status)
+            mr_lot = _clean_text(row.get("MR Lot/Batch No."))
+            td_lot = _clean_text(row.get("Td Lot/Batch No."))
+            hpv_lot = _clean_text(row.get("HPV Lot/Batch No."))
+            raw_reason = _clean_text(row.get("Reason Code"))
+            reason_code = _norm_reason_code(raw_reason)
+            reason_details = _clean_text(row.get("Reason Details"))
+
+            if raw_mr_status and not mr_status:
+                row_problems.append("MR Status must be Given, Deferred, Refused, or Not Given")
+            if raw_td_status and not td_status:
+                row_problems.append("Td Status must be Given, Deferred, Refused, or Not Given")
+            if raw_hpv_status and not hpv_status:
+                row_problems.append("HPV Status must be Given, Deferred, Refused, or Not Given")
+            if raw_reason and not reason_code:
+                row_problems.append("Reason Code must be one of 01 to 19")
+
+            mr_given = True if mr_status == "Given" else (False if mr_status else None)
+            td_given = True if td_status == "Given" else (False if td_status else None)
+        else:
+            legacy_mr = _norm_yes_no(row.get("MR Given"))
+            legacy_td = _norm_yes_no(row.get("Td Given"))
+            if grade in {"G1", "G7"}:
+                if _clean_text(row.get("MR Given")) and legacy_mr is None:
+                    row_problems.append("MR Given must be Yes or No")
+                if _clean_text(row.get("Td Given")) and legacy_td is None:
+                    row_problems.append("Td Given must be Yes or No")
+                if legacy_mr is None or legacy_td is None:
+                    row_problems.append("MR Given and Td Given must both be completed for Grade 1/7")
+                elif not legacy_mr and not legacy_td:
+                    row_problems.append("At least one vaccine must be marked Yes in the legacy vaccinated-only template")
+                mr_given = legacy_mr
+                td_given = legacy_td
+                mr_status = "Given" if legacy_mr else "Not Given"
+                td_status = "Given" if legacy_td else "Not Given"
+            elif grade == "G4":
+                hpv_status = "Given"
 
         if grade in {"G1", "G7"}:
-            raw_mr = _clean_text(row.get("MR Given"))
-            raw_td = _clean_text(row.get("Td Given"))
-            if raw_mr and mr_given is None:
-                row_problems.append("MR Given must be Yes or No")
-            if raw_td and td_given is None:
-                row_problems.append("Td Given must be Yes or No")
-            if mr_given is None or td_given is None:
-                row_problems.append("MR Given and Td Given must both be completed for Grade 1/7")
-            elif not mr_given and not td_given:
-                row_problems.append("At least one vaccine must be marked Yes for a vaccinated learner")
-            if _clean_text(row.get("HPV Dose")):
-                row_problems.append("HPV Dose must be blank for Grade 1/7")
+            if regional and (not mr_status or not td_status):
+                row_problems.append("MR Status and Td Status must both be completed for Grade 1/7")
+            if _clean_text(row.get("HPV Dose")) or (regional and _clean_text(row.get("HPV Status"))):
+                row_problems.append("HPV fields must be blank for Grade 1/7")
                 hpv_dose = None
+                hpv_status = ""
+                hpv_lot = ""
+            if regional and mr_status == "Given" and not mr_lot:
+                warnings.append(f"Row {excel_row}: MR was marked Given but MR Lot/Batch No. is blank.")
+            if regional and td_status == "Given" and not td_lot:
+                warnings.append(f"Row {excel_row}: Td was marked Given but Td Lot/Batch No. is blank.")
         elif grade == "G4":
             if sex and sex != "Female":
-                row_problems.append("Grade 4 HPV line-list records must be Female")
+                row_problems.append("Grade 4 HPV learner records must be Female")
             if hpv_dose not in {1, 2}:
                 row_problems.append("HPV Dose must be 1 or 2 for Grade 4")
-            if _clean_text(row.get("MR Given")) or _clean_text(row.get("Td Given")):
-                row_problems.append("MR Given and Td Given must be blank for Grade 4")
+            if regional and not hpv_status:
+                row_problems.append("HPV Status is required for Grade 4")
+            if regional and (_clean_text(row.get("MR Status")) or _clean_text(row.get("Td Status"))):
+                row_problems.append("MR Status and Td Status must be blank for Grade 4")
             mr_given = None
             td_given = None
+            mr_status = td_status = ""
+            mr_lot = td_lot = ""
+            if hpv_status == "Given" and not hpv_lot:
+                warnings.append(f"Row {excel_row}: HPV was marked Given but HPV Lot/Batch No. is blank.")
+        elif grade == "G5":
+            if not regional:
+                row_problems.append("Grade 5 requires the v5.17 regional learner template")
+            if sex and sex != "Female":
+                row_problems.append("Grade 5 HPV learner records must be Female")
+            if hpv_dose != 2:
+                row_problems.append("Grade 5 is for HPV Dose 2 only; set HPV Dose to 2")
+            if not hpv_status:
+                row_problems.append("HPV Status is required for Grade 5")
+            if _clean_text(row.get("MR Status")) or _clean_text(row.get("Td Status")):
+                row_problems.append("MR Status and Td Status must be blank for Grade 5")
+            mr_given = None
+            td_given = None
+            mr_status = td_status = ""
+            mr_lot = td_lot = ""
+            if hpv_status == "Given" and not hpv_lot:
+                warnings.append(f"Row {excel_row}: Grade 5 HPV Dose 2 was marked Given but HPV Lot/Batch No. is blank.")
+
+        needs_reason = any(status in {"Deferred", "Refused"} for status in [mr_status, td_status, hpv_status])
+        if needs_reason and not reason_code:
+            row_problems.append("Reason Code is required when a vaccine is Deferred or Refused")
 
         if row_problems:
-            for problem in row_problems:
+            for problem in dict.fromkeys(row_problems):
                 issues.append({"Row": excel_row, "Learner": learner_label, "Problem": problem})
             continue
 
@@ -336,9 +510,18 @@ def _validate_upload(
             "middle_name": middle_name or None,
             "sex": sex,
             "grade_level": grade,
+            "section": section or None,
             "mr_given": mr_given,
+            "mr_status": mr_status or None,
+            "mr_lot_batch": mr_lot or None,
             "td_given": td_given,
+            "td_status": td_status or None,
+            "td_lot_batch": td_lot or None,
             "hpv_dose": hpv_dose,
+            "hpv_status": hpv_status or None,
+            "hpv_lot_batch": hpv_lot or None,
+            "reason_code": reason_code or None,
+            "reason_details": reason_details or None,
             "remarks": remarks or None,
         }
         record["row_key"] = _row_key(record)
@@ -353,16 +536,11 @@ def _validate_upload(
         duplicates = valid[valid.duplicated("row_key", keep=False)]
         if not duplicates.empty:
             duplicate_keys = set(duplicates["row_key"])
-            for _, rec in duplicates.iterrows():
-                issue_df = pd.concat(
-                    [
-                        issue_df,
-                        pd.DataFrame(
-                            [{"Row": rec["_excel_row"], "Learner": rec["_learner_label"], "Problem": "Duplicate learner/date/school/grade row in the uploaded file"}]
-                        ),
-                    ],
-                    ignore_index=True,
-                )
+            duplicate_issues = [
+                {"Row": rec["_excel_row"], "Learner": rec["_learner_label"], "Problem": "Duplicate learner/date/school/grade row in the uploaded file"}
+                for _, rec in duplicates.iterrows()
+            ]
+            issue_df = pd.concat([issue_df, pd.DataFrame(duplicate_issues)], ignore_index=True)
             valid = valid.loc[~valid["row_key"].isin(duplicate_keys)].copy()
 
     return valid.reset_index(drop=True), issue_df.reset_index(drop=True), warnings
@@ -466,8 +644,10 @@ def _jsonable_record(record: dict | pd.Series | None) -> dict | None:
     src = dict(record)
     keep = [
         "municipality", "school_id", "school_name", "barangay", "activity_date", "learner_id",
-        "last_name", "first_name", "middle_name", "sex", "grade_level", "mr_given", "td_given",
-        "hpv_dose", "remarks", "record_hash", "is_active"
+        "last_name", "first_name", "middle_name", "sex", "grade_level", "section",
+        "mr_given", "mr_status", "mr_lot_batch", "td_given", "td_status", "td_lot_batch",
+        "hpv_dose", "hpv_status", "hpv_lot_batch", "reason_code", "reason_details",
+        "remarks", "record_hash", "is_active"
     ]
     out = {}
     for key in keep:
@@ -523,29 +703,60 @@ def _audit_rows(diff: dict, municipality: str, batch_id: int, username: str) -> 
 
 
 def _aggregate_scope(active_scope: pd.DataFrame, grade: str) -> dict:
+    empty = {
+        "mr_male": None, "mr_female": None, "td_male": None, "td_female": None,
+        "hpv_dose1": None, "hpv_dose2": None,
+        "mr_deferred": None, "mr_refused": None, "td_deferred": None, "td_refused": None,
+        "hpv_dose1_deferred": None, "hpv_dose1_refused": None,
+        "hpv_dose2_deferred": None, "hpv_dose2_refused": None,
+    }
     if active_scope.empty:
-        return {
-            "mr_male": None, "mr_female": None, "td_male": None, "td_female": None,
-            "hpv_dose1": None, "hpv_dose2": None,
-        }
+        return empty
+
+    def _status_series(name: str, given_col: str | None = None, hpv: bool = False) -> pd.Series:
+        if name in active_scope.columns:
+            series = active_scope[name].astype("string").fillna("").str.strip()
+            if series.ne("").any():
+                return series
+        if hpv:
+            dose = pd.to_numeric(active_scope.get("hpv_dose"), errors="coerce")
+            return pd.Series(np.where(dose.notna(), "Given", ""), index=active_scope.index, dtype="string")
+        if given_col and given_col in active_scope.columns:
+            values = active_scope[given_col]
+            return values.map(lambda v: "Given" if v is True else ("Not Given" if v is False else "")).astype("string")
+        return pd.Series("", index=active_scope.index, dtype="string")
+
     if grade in {"G1", "G7"}:
         male = active_scope["sex"].astype(str).eq("Male")
         female = active_scope["sex"].astype(str).eq("Female")
-        mr = active_scope["mr_given"].fillna(False).astype(bool)
-        td = active_scope["td_given"].fillna(False).astype(bool)
+        mr_status = _status_series("mr_status", "mr_given")
+        td_status = _status_series("td_status", "td_given")
         return {
-            "mr_male": int((male & mr).sum()),
-            "mr_female": int((female & mr).sum()),
-            "td_male": int((male & td).sum()),
-            "td_female": int((female & td).sum()),
+            "mr_male": int((male & mr_status.eq("Given")).sum()),
+            "mr_female": int((female & mr_status.eq("Given")).sum()),
+            "td_male": int((male & td_status.eq("Given")).sum()),
+            "td_female": int((female & td_status.eq("Given")).sum()),
             "hpv_dose1": None,
             "hpv_dose2": None,
+            "mr_deferred": int(mr_status.eq("Deferred").sum()),
+            "mr_refused": int(mr_status.eq("Refused").sum()),
+            "td_deferred": int(td_status.eq("Deferred").sum()),
+            "td_refused": int(td_status.eq("Refused").sum()),
+            "hpv_dose1_deferred": None, "hpv_dose1_refused": None,
+            "hpv_dose2_deferred": None, "hpv_dose2_refused": None,
         }
-    hpv = pd.to_numeric(active_scope["hpv_dose"], errors="coerce")
+
+    hpv = pd.to_numeric(active_scope.get("hpv_dose"), errors="coerce")
+    hpv_status = _status_series("hpv_status", hpv=True)
     return {
         "mr_male": None, "mr_female": None, "td_male": None, "td_female": None,
-        "hpv_dose1": int(hpv.eq(1).sum()),
-        "hpv_dose2": int(hpv.eq(2).sum()),
+        "hpv_dose1": int((hpv.eq(1) & hpv_status.eq("Given")).sum()),
+        "hpv_dose2": int((hpv.eq(2) & hpv_status.eq("Given")).sum()),
+        "mr_deferred": None, "mr_refused": None, "td_deferred": None, "td_refused": None,
+        "hpv_dose1_deferred": int((hpv.eq(1) & hpv_status.eq("Deferred")).sum()),
+        "hpv_dose1_refused": int((hpv.eq(1) & hpv_status.eq("Refused")).sum()),
+        "hpv_dose2_deferred": int((hpv.eq(2) & hpv_status.eq("Deferred")).sum()),
+        "hpv_dose2_refused": int((hpv.eq(2) & hpv_status.eq("Refused")).sum()),
     }
 
 
@@ -635,8 +846,10 @@ def _apply_import(
     for _, row in valid.iterrows():
         rec = {k: row.get(k) for k in [
             "row_key", "municipality", "school_id", "school_name", "barangay", "activity_date",
-            "learner_id", "last_name", "first_name", "middle_name", "sex", "grade_level",
-            "mr_given", "td_given", "hpv_dose", "remarks", "record_hash"
+            "learner_id", "last_name", "first_name", "middle_name", "sex", "grade_level", "section",
+            "mr_given", "mr_status", "mr_lot_batch", "td_given", "td_status", "td_lot_batch",
+            "hpv_dose", "hpv_status", "hpv_lot_batch", "reason_code", "reason_details",
+            "remarks", "record_hash"
         ]}
         rec.update(
             {
@@ -707,7 +920,7 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
     c3.metric("Date-School-Grade Groups", f"{scope_count:,}")
 
     if warnings:
-        with st.expander(f"Normalization notes ({len(warnings)})", expanded=False):
+        with st.expander(f"Validation notes ({len(warnings)})", expanded=False):
             for warning in warnings[:100]:
                 st.write(warning)
 
@@ -720,13 +933,17 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
         st.write("No learner rows were found in the uploaded file.")
         return
 
-    preview = valid[[
+    preview_cols = [
         "activity_date", "school_id", "school_name", "first_name", "middle_name", "last_name",
-        "sex", "grade_level", "mr_given", "td_given", "hpv_dose"
-    ]].copy()
+        "sex", "grade_level", "mr_status", "td_status", "hpv_dose", "hpv_status", "reason_code"
+    ]
+    for col in preview_cols:
+        if col not in valid.columns:
+            valid[col] = None
+    preview = valid[preview_cols].copy()
     preview.columns = [
         "Activity Date", "School ID", "School Name", "First Name", "Middle Name", "Last Name",
-        "Sex", "Grade", "MR Given", "Td Given", "HPV Dose"
+        "Sex", "Grade", "MR Status", "Td Status", "HPV Dose", "HPV Status", "Reason Code"
     ]
     st.markdown("#### Validated preview")
     st.dataframe(preview.head(100), width="stretch", hide_index=True)
@@ -748,9 +965,9 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
         unsafe_allow_html=True,
     )
     st.markdown(
-        f"Upload vaccinated learner records for **{municipality}**. The system validates each row, calculates VaccTrack totals, and updates the RHU tracker automatically."
+        f"Upload SBI learner outcome records for **{municipality}**. The system validates each row, calculates VaccTrack totals for G1/G4/G7, tracks Grade 5 HPV Dose 2 for regional reporting, and updates the RHU tracker automatically."
     )
-    st.warning("Dry run: use dummy learner names first. Do not place real learner vaccination records in production until server-side database access controls for learner-level data are finalized.")
+    st.warning("Learner records contain identifiable vaccination information. Use only authorized RHU/NIP accounts. The current deployment still relies on application-level municipality restrictions; database-side per-RHU RLS is not yet enforced.")
 
     template = _template_bytes()
     if template:
@@ -764,7 +981,7 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
 
     uploaded = st.file_uploader(
         "1B. Upload completed line list",
-        type=["xlsx", "xlsm", "csv"],
+        type=["xlsx", "xls", "xlsm", "csv"],
         key="sbi_linelist_upload",
         help="For a revision, upload the complete learner list for each Activity Date + School + Grade group included in the file.",
     )
@@ -870,13 +1087,19 @@ def render_linelist_history(supabase, municipality: str) -> None:
                 key="linelist_history_date",
             )
             day = active[active["activity_date"].eq(chosen_date)].copy()
-            detail = day[[
-                "school_name", "grade_level", "learner_id", "last_name", "first_name", "middle_name",
-                "sex", "mr_given", "td_given", "hpv_dose", "remarks"
-            ]].copy()
+            detail_cols = [
+                "school_name", "grade_level", "section", "learner_id", "last_name", "first_name", "middle_name",
+                "sex", "mr_status", "mr_lot_batch", "td_status", "td_lot_batch", "hpv_dose", "hpv_status",
+                "hpv_lot_batch", "reason_code", "reason_details", "remarks"
+            ]
+            for col in detail_cols:
+                if col not in day.columns:
+                    day[col] = None
+            detail = day[detail_cols].copy()
             detail.columns = [
-                "School", "Grade", "Learner ID / LRN", "Last Name", "First Name", "Middle Name",
-                "Sex", "MR Given", "Td Given", "HPV Dose", "Remarks"
+                "School", "Grade", "Section", "Learner ID / LRN", "Last Name", "First Name", "Middle Name",
+                "Sex", "MR Status", "MR Lot/Batch", "Td Status", "Td Lot/Batch", "HPV Dose", "HPV Status",
+                "HPV Lot/Batch", "Reason Code", "Reason Details", "Remarks"
             ]
             with st.expander(f"Active learner records: {chosen_date.strftime('%b %d, %Y')}", expanded=False):
                 st.dataframe(detail.sort_values(["School", "Grade", "Last Name", "First Name"]), width="stretch", hide_index=True)
@@ -911,9 +1134,33 @@ def _encoding_rows(active: pd.DataFrame, actual_targets: pd.DataFrame, municipal
     work = active.copy()
     work["activity_date"] = pd.to_datetime(work["activity_date"], errors="coerce").dt.date
     work["school_id"] = work["school_id"].map(_clean_school_id)
-    work["MR"] = work["mr_given"].fillna(False).astype(bool)
-    work["TD"] = work["td_given"].fillna(False).astype(bool)
-    work["HPV"] = pd.to_numeric(work["hpv_dose"], errors="coerce")
+
+    def _status(name: str, given_col: str | None = None, hpv: bool = False) -> pd.Series:
+        if name in work.columns:
+            series = work[name].astype("string").fillna("").str.strip()
+            if series.ne("").any():
+                return series
+        if hpv:
+            dose = pd.to_numeric(work.get("hpv_dose"), errors="coerce")
+            return pd.Series(np.where(dose.notna(), "Given", ""), index=work.index, dtype="string")
+        if given_col and given_col in work.columns:
+            return work[given_col].map(lambda v: "Given" if v is True else ("Not Given" if v is False else "")).astype("string")
+        return pd.Series("", index=work.index, dtype="string")
+
+    work["MR Status Norm"] = _status("mr_status", "mr_given")
+    work["Td Status Norm"] = _status("td_status", "td_given")
+    work["HPV Status Norm"] = _status("hpv_status", hpv=True)
+    work["HPV"] = pd.to_numeric(work.get("hpv_dose"), errors="coerce")
+    work["Reason Code Norm"] = work.get("reason_code", pd.Series("", index=work.index)).astype("string").fillna("").str.zfill(2)
+
+    def _reason_counts(grp: pd.DataFrame) -> dict:
+        missed = (
+            grp["MR Status Norm"].isin(["Deferred", "Refused"])
+            | grp["Td Status Norm"].isin(["Deferred", "Refused"])
+            | grp["HPV Status Norm"].isin(["Deferred", "Refused"])
+        )
+        codes = grp.loc[missed, "Reason Code Norm"]
+        return {f"Reason {code}": int(codes.eq(code).sum()) for code in REASON_LABELS}
 
     def _mr_td(grade: str, prefix: str) -> pd.DataFrame:
         sub = work[work["grade_level"].astype(str).eq(grade)].copy()
@@ -924,15 +1171,23 @@ def _encoding_rows(active: pd.DataFrame, actual_targets: pd.DataFrame, municipal
         for key, grp in sub.groupby(keys, dropna=False):
             male = grp["sex"].eq("Male")
             female = grp["sex"].eq("Female")
-            out_rows.append({
+            mr = grp["MR Status Norm"]
+            td = grp["Td Status Norm"]
+            row = {
                 "Report Date": key[0],
                 "School ID": key[1],
                 "School": key[2],
-                f"{prefix}.A MR (Male)": int((male & grp["MR"]).sum()),
-                f"{prefix}.B MR (Female)": int((female & grp["MR"]).sum()),
-                f"{prefix}.C Td (Male)": int((male & grp["TD"]).sum()),
-                f"{prefix}.D Td (Female)": int((female & grp["TD"]).sum()),
-            })
+                f"{prefix}.A MR (Male)": int((male & mr.eq("Given")).sum()),
+                f"{prefix}.B MR (Female)": int((female & mr.eq("Given")).sum()),
+                f"{prefix}.C Td (Male)": int((male & td.eq("Given")).sum()),
+                f"{prefix}.D Td (Female)": int((female & td.eq("Given")).sum()),
+                "MR Deferred": int(mr.eq("Deferred").sum()),
+                "Td Deferred": int(td.eq("Deferred").sum()),
+                "MR Refused": int(mr.eq("Refused").sum()),
+                "Td Refused": int(td.eq("Refused").sum()),
+            }
+            row.update(_reason_counts(grp))
+            out_rows.append(row)
         return pd.DataFrame(out_rows).sort_values(["Report Date", "School"])
 
     g1 = _mr_td("G1", "G1")
@@ -942,14 +1197,22 @@ def _encoding_rows(active: pd.DataFrame, actual_targets: pd.DataFrame, municipal
     g4_rows = []
     if not g4_sub.empty:
         for key, grp in g4_sub.groupby(["activity_date", "school_id", "school_name"], dropna=False):
-            g4_rows.append({
+            hpv = grp["HPV"]
+            status = grp["HPV Status Norm"]
+            row = {
                 "Report Date": key[0],
                 "School ID": key[1],
                 "School": key[2],
                 "G4.A Actual Grade 4 Female": _g4_actual_target(actual_targets, municipality, key[1]),
-                "G4.B HPV First Dose": int(grp["HPV"].eq(1).sum()),
-                "G4.C HPV Second Dose": int(grp["HPV"].eq(2).sum()),
-            })
+                "G4.B HPV First Dose": int((hpv.eq(1) & status.eq("Given")).sum()),
+                "G4.C HPV Second Dose": int((hpv.eq(2) & status.eq("Given")).sum()),
+                "G4.D Deferred First Dose": int((hpv.eq(1) & status.eq("Deferred")).sum()),
+                "G4.E Deferred Second Dose": int((hpv.eq(2) & status.eq("Deferred")).sum()),
+                "G4.F Refused First Dose": int((hpv.eq(1) & status.eq("Refused")).sum()),
+                "G4.G Refused Second Dose": int((hpv.eq(2) & status.eq("Refused")).sum()),
+            }
+            row.update(_reason_counts(grp))
+            g4_rows.append(row)
     g4 = pd.DataFrame(g4_rows)
     if not g4.empty:
         g4 = g4.sort_values(["Report Date", "School"])
@@ -961,7 +1224,7 @@ def render_vacctrack_encoding_summary(supabase, municipality: str, actual_target
         '<h3><i class="fa-solid fa-clipboard-list" style="color:#0033A0;margin-right:8px;"></i>Step 2 — VaccTrack Encoding Summary</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown("These counts are calculated directly from the active learner line list. Copy them into the matching VaccTrack Grade 1, Grade 4, and Grade 7 forms.")
+    st.markdown("These counts are calculated directly from active learner records. Copy the G1/G4/G7 values into VaccTrack. Grade 5 is intentionally excluded because VaccTrack currently has no G5 SBI form.")
     try:
         active = _fetch_records(supabase, municipality, active_only=True)
     except Exception as exc:
@@ -989,7 +1252,30 @@ def render_vacctrack_encoding_summary(supabase, municipality: str, actual_target
             if day.empty:
                 st.write(f"No {label} learner records were uploaded for this date.")
                 continue
-            st.dataframe(day, width="stretch", hide_index=True)
+            if label in {"Grade 1", "Grade 7"}:
+                prefix = "G1" if label == "Grade 1" else "G7"
+                main_cols = [
+                    "Report Date", "School ID", "School",
+                    f"{prefix}.A MR (Male)", f"{prefix}.B MR (Female)",
+                    f"{prefix}.C Td (Male)", f"{prefix}.D Td (Female)",
+                ]
+            else:
+                main_cols = [
+                    "Report Date", "School ID", "School",
+                    "G4.A Actual Grade 4 Female", "G4.B HPV First Dose", "G4.C HPV Second Dose",
+                    "G4.D Deferred First Dose", "G4.E Deferred Second Dose",
+                    "G4.F Refused First Dose", "G4.G Refused Second Dose",
+                ]
+            st.dataframe(day[[c for c in main_cols if c in day.columns]], width="stretch", hide_index=True)
+            with st.expander("View VaccTrack reason counts", expanded=False):
+                reason_cols = [f"Reason {code}" for code in REASON_LABELS if f"Reason {code}" in day.columns]
+                if reason_cols:
+                    reason_totals = day[reason_cols].sum().reset_index()
+                    reason_totals.columns = ["Reason", "Count"]
+                    reason_totals["Code"] = reason_totals["Reason"].str.replace("Reason ", "", regex=False)
+                    reason_totals["Description"] = reason_totals["Code"].map(REASON_LABELS)
+                    reason_totals = reason_totals[["Code", "Description", "Count"]]
+                    st.dataframe(reason_totals, width="stretch", hide_index=True)
             st.download_button(
                 f"Download {label} VaccTrack Summary (CSV)",
                 data=day.to_csv(index=False).encode("utf-8-sig"),
@@ -1002,24 +1288,44 @@ def render_vacctrack_encoding_summary(supabase, municipality: str, actual_target
 
 
 def render_live_linelist_summary(supabase, municipality: str) -> None:
-    """Small operational summary derived from active learner line-list records."""
+    """Small operational summary derived from active learner records."""
     try:
         active = _fetch_records(supabase, municipality, active_only=True)
     except Exception:
         return
     if active.empty:
         return
-    active["mr_given"] = active["mr_given"].fillna(False).astype(bool)
-    active["td_given"] = active["td_given"].fillna(False).astype(bool)
-    hpv = pd.to_numeric(active.get("hpv_dose"), errors="coerce")
-    mr_total = int(active["mr_given"].sum())
-    td_total = int(active["td_given"].sum())
-    hpv1 = int(hpv.eq(1).sum())
-    hpv2 = int(hpv.eq(2).sum())
-    st.markdown("#### Provisional RHU Line-List Totals")
-    a, b, c, d = st.columns(4)
+
+    def _status(frame: pd.DataFrame, status_col: str, given_col: str | None = None, hpv: bool = False) -> pd.Series:
+        if status_col in frame.columns:
+            out = frame[status_col].astype("string").fillna("").str.strip()
+            if out.ne("").any():
+                return out
+        if hpv:
+            dose = pd.to_numeric(frame.get("hpv_dose"), errors="coerce")
+            return pd.Series(np.where(dose.notna(), "Given", ""), index=frame.index, dtype="string")
+        if given_col and given_col in frame.columns:
+            return frame[given_col].map(lambda v: "Given" if v is True else ("Not Given" if v is False else "")).astype("string")
+        return pd.Series("", index=frame.index, dtype="string")
+
+    active["MR Status Norm"] = _status(active, "mr_status", "mr_given")
+    active["Td Status Norm"] = _status(active, "td_status", "td_given")
+    active["HPV Status Norm"] = _status(active, "hpv_status", hpv=True)
+    active["HPV Dose Norm"] = pd.to_numeric(active.get("hpv_dose"), errors="coerce")
+
+    mr_total = int(active["MR Status Norm"].eq("Given").sum())
+    td_total = int(active["Td Status Norm"].eq("Given").sum())
+    g4 = active[active["grade_level"].astype(str).eq("G4")]
+    g5 = active[active["grade_level"].astype(str).eq("G5")]
+    g4_hpv1 = int((g4["HPV Dose Norm"].eq(1) & g4["HPV Status Norm"].eq("Given")).sum())
+    g4_hpv2 = int((g4["HPV Dose Norm"].eq(2) & g4["HPV Status Norm"].eq("Given")).sum())
+    g5_hpv2 = int((g5["HPV Dose Norm"].eq(2) & g5["HPV Status Norm"].eq("Given")).sum())
+
+    st.markdown("#### Provisional RHU Learner-Record Totals")
+    a, b, c, d, e = st.columns(5)
     a.metric("MR", f"{mr_total:,}")
     b.metric("Td", f"{td_total:,}")
-    c.metric("HPV Dose 1", f"{hpv1:,}")
-    d.metric("HPV Dose 2", f"{hpv2:,}")
-    st.caption("Operational/provisional figures only. VaccTrack remains the official final dataset.")
+    c.metric("G4 HPV1", f"{g4_hpv1:,}")
+    d.metric("G4 HPV2", f"{g4_hpv2:,}")
+    e.metric("G5 HPV2", f"{g5_hpv2:,}")
+    st.caption("Operational/provisional figures only. G5 is retained for regional reporting and is not sent to VaccTrack.")
