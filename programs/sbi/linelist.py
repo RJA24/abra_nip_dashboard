@@ -972,12 +972,11 @@ def render_vacctrack_encoding_summary(supabase, municipality: str, actual_target
         return
 
     g1, g4, g7 = _encoding_rows(active, actual_targets, municipality)
-    dates = sorted(pd.to_datetime(active["activity_date"], errors="coerce").dropna().dt.date.unique().tolist(), reverse=True)
-    selected_date = st.selectbox(
+    selected_date = st.date_input(
         "Activity / VaccTrack report date",
-        dates,
-        format_func=lambda d: d.strftime("%b %d, %Y") if hasattr(d, "strftime") else str(d),
+        value=datetime.now(MANILA_TZ).date(),
         key="vacctrack_encoding_date",
+        help="Defaults to today's date. Change it when encoding or reviewing an earlier activity date.",
     )
 
     tabs = st.tabs(["Grade 1", "Grade 4", "Grade 7"])
