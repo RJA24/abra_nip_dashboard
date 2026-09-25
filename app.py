@@ -616,20 +616,28 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
             st.rerun()
 
     st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
-    controls_left, account_col, admin_col, controls_right = st.columns([2.0, 1.25, 1.25, 2.0])
 
-    with account_col:
-        if st.session_state.get("username"):
+    if st.session_state.get("user_role") == "System Admin":
+        controls_left, account_col, admin_col, controls_right = st.columns([2.0, 1.25, 1.25, 2.0])
+
+        with account_col:
             st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
             if st.button("Account Settings", key="open_account_settings", width="stretch"):
                 st.session_state['active_program'] = 'ACCOUNT'
                 st.rerun()
 
-    with admin_col:
-        if st.session_state.get("user_role") == "System Admin":
+        with admin_col:
             st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
             if st.button("Administration", key="open_admin", width="stretch"):
                 st.session_state['active_program'] = 'ADMIN'
+                st.rerun()
+    elif st.session_state.get("username"):
+        controls_left, account_col, controls_right = st.columns([2.625, 1.25, 2.625])
+
+        with account_col:
+            st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
+            if st.button("Account Settings", key="open_account_settings", width="stretch"):
+                st.session_state['active_program'] = 'ACCOUNT'
                 st.rerun()
 
     st.stop()
