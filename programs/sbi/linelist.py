@@ -1,7 +1,7 @@
 """SBI learner line-list upload, revisions, and VaccTrack encoding.
 
 The learner-level records are the RHU operational source used to calculate what should be
-encoded into VaccTrack. VaccTrack remains the official/final SBI dataset. The v5.18 RHU
+encoded into VaccTrack. VaccTrack remains the official/final SBI dataset. The v5.19.1 RHU
 workflow is intentionally limited to Grade 1, Grade 4, and Grade 7 to keep encoding simple.
 """
 
@@ -12,6 +12,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
+from uuid import uuid4
 import json
 import re
 
@@ -29,7 +30,35 @@ RECORD_TABLE = "sbi_linelist_records"
 AUDIT_TABLE = "sbi_linelist_audit"
 AGG_TABLE = "sbi_rhu_accomplishments"
 
-REGIONAL_REQUIRED_COLUMNS = [
+CURRENT_REQUIRED_COLUMNS = [
+    "Activity Date",
+    "School ID",
+    "School Name",
+    "System Learner ID",
+    "Last Name",
+    "First Name",
+    "Middle Name",
+    "Sex",
+    "Grade Level",
+    "MR Status",
+    "Td Status",
+    "HPV Dose",
+    "HPV Status",
+    "Reason Code",
+    "Remarks",
+]
+
+CURRENT_OPTIONAL_COLUMNS = [
+    "Section",
+    "MR Lot/Batch No.",
+    "Td Lot/Batch No.",
+    "HPV Lot/Batch No.",
+    "Reason Details",
+]
+
+# v5.18 status-based template, accepted only as a transition path. The raw
+# Learner ID / LRN value is never saved; it is converted to a legacy system ID.
+LEGACY_STATUS_REQUIRED_COLUMNS = [
     "Activity Date",
     "School ID",
     "School Name",
@@ -47,16 +76,8 @@ REGIONAL_REQUIRED_COLUMNS = [
     "Remarks",
 ]
 
-REGIONAL_OPTIONAL_COLUMNS = [
-    "Section",
-    "MR Lot/Batch No.",
-    "Td Lot/Batch No.",
-    "HPV Lot/Batch No.",
-    "Reason Details",
-]
-
-# Keep the v5.14/v5.15 vaccinated-only template readable during the transition.
-LEGACY_REQUIRED_COLUMNS = [
+# Keep older vaccinated-only templates readable during the transition.
+LEGACY_VACCINATED_REQUIRED_COLUMNS = [
     "Activity Date",
     "School ID",
     "School Name",
@@ -114,7 +135,7 @@ REASON_LABELS = {
 
 def schema_available(supabase) -> tuple[bool, str]:
     try:
-        supabase.table(RECORD_TABLE).select("id,mr_status,reason_code,section").limit(1).execute()
+        supabase.table(RECORD_TABLE).select("id,system_learner_id,mr_status,reason_code,section").limit(1).execute()
         supabase.table(IMPORT_TABLE).select("id").limit(1).execute()
         return True, ""
     except Exception as exc:
@@ -213,23 +234,41 @@ def _canonical_muni(value: object) -> str:
     return canonical_municipality_name(_clean_text(value))
 
 
+def _normalize_system_id(value: object) -> str:
+    return _clean_text(value).upper()
+
+
+def _legacy_system_id(
+    municipality: str,
+    school_id: str,
+    activity_date: date | None,
+    grade: str,
+    legacy_id: str,
+    last_name: str,
+    first_name: str,
+    middle_name: str,
+    sex: str,
+) -> str:
+    # Transition-only deterministic ID. The original Learner ID / LRN is not
+    # persisted. New activities should always use the v5.19 generated template.
+    identity = legacy_id or "|".join([last_name, first_name, middle_name, sex])
+    raw = "|".join([
+        normalize_municipality_key(municipality),
+        _clean_school_id(school_id),
+        str(activity_date or ""),
+        grade,
+        identity.upper(),
+    ])
+    return "LEGACY-" + sha256(raw.encode("utf-8")).hexdigest()[:16].upper()
+
+
 def _row_key(record: dict) -> str:
-    learner_identity = _clean_text(record.get("learner_id"))
-    if not learner_identity:
-        learner_identity = "|".join(
-            [
-                _norm_name(record.get("last_name")),
-                _norm_name(record.get("first_name")),
-                _norm_name(record.get("middle_name")),
-                _clean_text(record.get("sex")),
-            ]
-        )
     raw = "|".join(
         [
             normalize_municipality_key(record.get("municipality")),
             _clean_school_id(record.get("school_id")),
             str(record.get("activity_date")),
-            learner_identity.upper(),
+            _normalize_system_id(record.get("system_learner_id")),
             _clean_text(record.get("grade_level")),
         ]
     )
@@ -245,10 +284,7 @@ def _record_hash(record: dict) -> str:
             "school_name",
             "barangay",
             "activity_date",
-            "learner_id",
-            "last_name",
-            "first_name",
-            "middle_name",
+            "system_learner_id",
             "sex",
             "grade_level",
             "section",
@@ -316,31 +352,46 @@ def _validate_upload(
     municipality: str,
     targets: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-    """Normalize the regional v5.17 template or the older vaccinated-only template."""
+    """Normalize the v5.19 generated-ID template or a supported legacy template."""
     if raw_df is None:
         return pd.DataFrame(), pd.DataFrame(), []
 
     source = raw_df.copy()
     source.columns = [_clean_text(c) for c in source.columns]
-    regional = all(col in source.columns for col in REGIONAL_REQUIRED_COLUMNS)
-    legacy = all(col in source.columns for col in LEGACY_REQUIRED_COLUMNS)
-    if not regional and not legacy:
-        missing = [col for col in REGIONAL_REQUIRED_COLUMNS if col not in source.columns]
+    current = all(col in source.columns for col in CURRENT_REQUIRED_COLUMNS)
+    legacy_status = all(col in source.columns for col in LEGACY_STATUS_REQUIRED_COLUMNS)
+    legacy_vaccinated = all(col in source.columns for col in LEGACY_VACCINATED_REQUIRED_COLUMNS)
+    if not current and not legacy_status and not legacy_vaccinated:
+        missing = [col for col in CURRENT_REQUIRED_COLUMNS if col not in source.columns]
         issues = pd.DataFrame(
             [{"Row": "Header", "Learner": "", "Problem": f"Missing required column: {col}"} for col in missing]
         )
         return pd.DataFrame(), issues, []
 
-    if regional:
-        for col in REGIONAL_OPTIONAL_COLUMNS:
+    status_template = current or legacy_status
+    if status_template:
+        for col in CURRENT_OPTIONAL_COLUMNS:
             if col not in source.columns:
                 source[col] = None
-        selected_columns = REGIONAL_REQUIRED_COLUMNS + REGIONAL_OPTIONAL_COLUMNS
+        selected_columns = (CURRENT_REQUIRED_COLUMNS if current else LEGACY_STATUS_REQUIRED_COLUMNS) + CURRENT_OPTIONAL_COLUMNS
     else:
-        selected_columns = LEGACY_REQUIRED_COLUMNS
+        selected_columns = LEGACY_VACCINATED_REQUIRED_COLUMNS
 
     source = source[selected_columns].copy().dropna(how="all")
-    blank_mask = source.apply(lambda r: all(_clean_text(v) == "" for v in r), axis=1)
+    # Fresh templates pre-fill System Learner ID on every available row. Follow-up
+    # templates may also pre-fill learner identity fields while leaving Activity
+    # Date and vaccine outcomes blank until that learner actually returns. Such
+    # untouched rows are intentionally ignored. If an outcome is entered without
+    # a date, the row is kept and validation will flag the missing Activity Date.
+    if current:
+        outcome_columns = [
+            "Activity Date", "MR Status", "MR Lot/Batch No.", "Td Status", "Td Lot/Batch No.",
+            "HPV Dose", "HPV Status", "HPV Lot/Batch No.", "Reason Code", "Reason Details", "Remarks",
+        ]
+        blank_mask = source[outcome_columns].apply(lambda r: all(_clean_text(v) == "" for v in r), axis=1)
+    else:
+        blank_check_columns = [col for col in selected_columns if col != "System Learner ID"]
+        blank_mask = source[blank_check_columns].apply(lambda r: all(_clean_text(v) == "" for v in r), axis=1)
     source = source.loc[~blank_mask].copy()
 
     roster = _school_roster(targets, municipality)
@@ -349,20 +400,32 @@ def _validate_upload(
     valid_records: list[dict] = []
     issues: list[dict] = []
     warnings: list[str] = []
+    if not current:
+        warnings.append(
+            "Legacy line-list template detected. The old Learner ID / LRN is used only to create a transition ID and is not saved. "
+            "Use the v5.19 template for new activities."
+        )
 
     for i, row in source.iterrows():
         excel_row = int(i) + 2
         school_id = _clean_school_id(row.get("School ID"))
         activity_date = _parse_date(row.get("Activity Date"))
-        learner_id = _clean_text(row.get("Learner ID / LRN"))
         last_name = _norm_name(row.get("Last Name"))
         first_name = _norm_name(row.get("First Name"))
         middle_name = _norm_name(row.get("Middle Name"))
         sex = _norm_sex(row.get("Sex"))
         grade = _norm_grade(row.get("Grade Level"))
-        section = _clean_text(row.get("Section")) if regional else ""
+        section = _clean_text(row.get("Section")) if status_template else ""
         remarks = _clean_text(row.get("Remarks"))
-        learner_label = " ".join(x for x in [first_name, middle_name, last_name] if x).strip() or learner_id or f"Row {excel_row}"
+        legacy_id = _clean_text(row.get("Learner ID / LRN"))
+        if current:
+            system_learner_id = _normalize_system_id(row.get("System Learner ID"))
+        else:
+            system_learner_id = _legacy_system_id(
+                municipality, school_id, activity_date, grade, legacy_id,
+                last_name, first_name, middle_name, sex,
+            )
+        learner_label = " ".join(x for x in [first_name, middle_name, last_name] if x).strip() or system_learner_id or f"Row {excel_row}"
 
         row_problems: list[str] = []
         if activity_date is None:
@@ -371,6 +434,11 @@ def _validate_upload(
             row_problems.append("School ID is blank")
         elif school_id not in roster_map:
             row_problems.append(f"School ID {school_id} is not in the assigned municipality roster")
+        if current:
+            if not system_learner_id:
+                row_problems.append("System Learner ID is blank. Download a fresh template; IDs are generated automatically.")
+            elif not re.fullmatch(r"SBI-[A-Z0-9]{12,32}", system_learner_id):
+                row_problems.append("System Learner ID is invalid or was edited. Download a fresh template and do not change the ID column.")
         if not last_name:
             row_problems.append("Last Name is required")
         if not first_name:
@@ -387,7 +455,7 @@ def _validate_upload(
         td_given: bool | None = None
         hpv_dose = _norm_hpv_dose(row.get("HPV Dose"))
 
-        if regional:
+        if status_template:
             raw_mr_status = _clean_text(row.get("MR Status"))
             raw_td_status = _clean_text(row.get("Td Status"))
             raw_hpv_status = _clean_text(row.get("HPV Status"))
@@ -432,25 +500,25 @@ def _validate_upload(
                 hpv_status = "Given"
 
         if grade in {"G1", "G7"}:
-            if regional and (not mr_status or not td_status):
+            if status_template and (not mr_status or not td_status):
                 row_problems.append("MR Status and Td Status must both be completed for Grade 1/7")
-            if _clean_text(row.get("HPV Dose")) or (regional and _clean_text(row.get("HPV Status"))):
+            if _clean_text(row.get("HPV Dose")) or (status_template and _clean_text(row.get("HPV Status"))):
                 row_problems.append("HPV fields must be blank for Grade 1/7")
                 hpv_dose = None
                 hpv_status = ""
                 hpv_lot = ""
-            if regional and mr_status == "Given" and not mr_lot:
+            if status_template and mr_status == "Given" and not mr_lot:
                 warnings.append(f"Row {excel_row}: MR was marked Given but MR Lot/Batch No. is blank.")
-            if regional and td_status == "Given" and not td_lot:
+            if status_template and td_status == "Given" and not td_lot:
                 warnings.append(f"Row {excel_row}: Td was marked Given but Td Lot/Batch No. is blank.")
         elif grade == "G4":
             if sex and sex != "Female":
                 row_problems.append("Grade 4 HPV learner records must be Female")
             if hpv_dose not in {1, 2}:
                 row_problems.append("HPV Dose must be 1 or 2 for Grade 4")
-            if regional and not hpv_status:
+            if status_template and not hpv_status:
                 row_problems.append("HPV Status is required for Grade 4")
-            if regional and (_clean_text(row.get("MR Status")) or _clean_text(row.get("Td Status"))):
+            if status_template and (_clean_text(row.get("MR Status")) or _clean_text(row.get("Td Status"))):
                 row_problems.append("MR Status and Td Status must be blank for Grade 4")
             mr_given = None
             td_given = None
@@ -482,7 +550,9 @@ def _validate_upload(
             "school_name": canonical_school_name,
             "barangay": _clean_text(roster_row.get("Barangay")),
             "activity_date": activity_date.isoformat(),
-            "learner_id": learner_id or None,
+            "system_learner_id": system_learner_id,
+            # Names are retained only in this in-memory validated frame for the
+            # current upload preview. They are deliberately omitted from DB writes.
             "last_name": last_name,
             "first_name": first_name,
             "middle_name": middle_name or None,
@@ -511,6 +581,40 @@ def _validate_upload(
     valid = pd.DataFrame(valid_records)
     issue_df = pd.DataFrame(issues, columns=["Row", "Learner", "Problem"])
     if not valid.empty:
+        # The same System Learner ID may legitimately appear on multiple activity
+        # dates. This is how a learner who receives MR on one day and Td on a
+        # later day is tracked. Within one upload, however, the ID must still
+        # refer to the same learner identity/school/grade.
+        conflicting_ids: set[str] = set()
+        for system_id, group in valid.groupby("system_learner_id", dropna=False):
+            if len(group) <= 1:
+                continue
+            identity_cols = ["school_id", "grade_level", "sex"]
+            if any(group[col].fillna("").astype(str).nunique(dropna=False) > 1 for col in identity_cols):
+                conflicting_ids.add(str(system_id))
+                conflict_rows = [
+                    {
+                        "Row": rec["_excel_row"],
+                        "Learner": rec["_learner_label"],
+                        "Problem": (
+                            "This System Learner ID is attached to different school/grade/sex details in the same file. "
+                            "Keep the same ID only for the same learner; a follow-up vaccination may use the same ID on a new Activity Date."
+                        ),
+                    }
+                    for _, rec in group.iterrows()
+                ]
+                issue_df = pd.concat([issue_df, pd.DataFrame(conflict_rows)], ignore_index=True)
+            else:
+                name_cols = ["last_name", "first_name", "middle_name"]
+                if any(group[col].fillna("").astype(str).nunique(dropna=False) > 1 for col in name_cols):
+                    warnings.append(
+                        f"System Learner ID {system_id} has different name text across activity rows. "
+                        "This may be a spelling correction; verify that all rows still refer to the same learner."
+                    )
+
+        if conflicting_ids:
+            valid = valid.loc[~valid["system_learner_id"].astype(str).isin(conflicting_ids)].copy()
+
         duplicates = valid[valid.duplicated("row_key", keep=False)]
         if not duplicates.empty:
             duplicate_keys = set(duplicates["row_key"])
@@ -559,6 +663,54 @@ def _scope_tuples(df: pd.DataFrame) -> set[tuple[str, str, str]]:
     return set(zip(df["activity_date"].astype(str), df["school_id"].astype(str), df["grade_level"].astype(str)))
 
 
+def _system_id_conflicts(valid: pd.DataFrame, existing_all: pd.DataFrame) -> pd.DataFrame:
+    """Block accidental reassignment of a System Learner ID, but allow new dates.
+
+    A System Learner ID is stable for one learner. The same ID may therefore
+    exist in several saved rows as long as school, grade, and sex remain the
+    same. Activity Date is intentionally NOT part of the conflict check.
+    """
+    if valid is None or valid.empty or existing_all is None or existing_all.empty:
+        return pd.DataFrame(columns=["Row", "Learner", "Problem"])
+    if "system_learner_id" not in existing_all.columns:
+        return pd.DataFrame(columns=["Row", "Learner", "Problem"])
+
+    existing = existing_all.copy()
+    existing["system_learner_id"] = existing["system_learner_id"].fillna("").astype(str).str.upper().str.strip()
+    issues: list[dict] = []
+    for _, rec in valid.iterrows():
+        system_id = str(rec.get("system_learner_id") or "").upper().strip()
+        if not system_id:
+            continue
+        matches = existing[existing["system_learner_id"].eq(system_id)]
+        if matches.empty:
+            continue
+
+        # The ID may be reused for another Activity Date, but not for another
+        # school/grade/sex identity. Section may legitimately change.
+        rec_school = _clean_school_id(rec.get("school_id"))
+        rec_grade = _clean_text(rec.get("grade_level"))
+        rec_sex = _clean_text(rec.get("sex"))
+        mismatch = matches.apply(
+            lambda r: (
+                _clean_school_id(r.get("school_id")) != rec_school
+                or _clean_text(r.get("grade_level")) != rec_grade
+                or _clean_text(r.get("sex")) != rec_sex
+            ),
+            axis=1,
+        ).any()
+        if mismatch:
+            issues.append({
+                "Row": rec.get("_excel_row", ""),
+                "Learner": rec.get("_learner_label", system_id),
+                "Problem": (
+                    f"System Learner ID {system_id} is already saved for a different school, grade, or sex. "
+                    "Keep an ID with the same learner. Reusing the same ID on a new Activity Date is allowed when it is the same learner."
+                ),
+            })
+    return pd.DataFrame(issues, columns=["Row", "Learner", "Problem"])
+
+
 def _compare_revision(valid: pd.DataFrame, existing_active: pd.DataFrame) -> dict:
     scopes = _scope_tuples(valid)
     if existing_active.empty or not scopes:
@@ -592,7 +744,7 @@ def _compare_revision(valid: pd.DataFrame, existing_active: pd.DataFrame) -> dic
                     "Learner": " ".join(
                         x for x in [str(rec.get("first_name") or ""), str(rec.get("middle_name") or ""), str(rec.get("last_name") or "")] if x
                     ).strip(),
-                    "Learner ID / LRN": str(rec.get("learner_id") or ""),
+                    "System Learner ID": str(rec.get("system_learner_id") or ""),
                 }
             )
         return pd.DataFrame(rows)
@@ -621,8 +773,8 @@ def _jsonable_record(record: dict | pd.Series | None) -> dict | None:
         return None
     src = dict(record)
     keep = [
-        "municipality", "school_id", "school_name", "barangay", "activity_date", "learner_id",
-        "last_name", "first_name", "middle_name", "sex", "grade_level", "section",
+        "municipality", "school_id", "school_name", "barangay", "activity_date", "system_learner_id",
+        "sex", "grade_level", "section",
         "mr_given", "mr_status", "mr_lot_batch", "td_given", "td_status", "td_lot_batch",
         "hpv_dose", "hpv_status", "hpv_lot_batch", "reason_code", "reason_details",
         "remarks", "record_hash", "is_active"
@@ -839,11 +991,14 @@ def _apply_import(
     for _, row in valid.iterrows():
         rec = {k: row.get(k) for k in [
             "row_key", "municipality", "school_id", "school_name", "barangay", "activity_date",
-            "learner_id", "last_name", "first_name", "middle_name", "sex", "grade_level", "section",
+            "system_learner_id", "sex", "grade_level", "section",
             "mr_given", "mr_status", "mr_lot_batch", "td_given", "td_status", "td_lot_batch",
             "hpv_dose", "hpv_status", "hpv_lot_batch", "reason_code", "reason_details",
             "remarks", "record_hash"
         ]}
+        # PII from the uploaded workbook is intentionally not persisted. Setting
+        # the legacy identity columns to NULL also scrubs them if a legacy row is revised.
+        rec.update({"learner_id": None, "last_name": None, "first_name": None, "middle_name": None})
         rec.update(
             {
                 "is_active": True,
@@ -898,11 +1053,207 @@ def _apply_import(
     return batch_id
 
 
-def _template_bytes() -> bytes | None:
-    path = Path(__file__).resolve().parent / "assets" / "SBI_Linelist_Template.xlsx"
-    if path.exists():
-        return path.read_bytes()
-    return None
+def _prepare_followup_rows(raw_df: pd.DataFrame) -> tuple[list[dict], str]:
+    """Create one reusable identity row per System Learner ID from a v5.19 workbook.
+
+    Vaccination/date fields are deliberately cleared. The encoder fills Activity
+    Date and today's outcomes only for learners who actually have a follow-up
+    activity. Prefilled identity-only rows remain safely ignored by validation.
+    """
+    if raw_df is None or raw_df.empty:
+        return [], "The selected workbook has no learner rows."
+
+    source = raw_df.copy()
+    source.columns = [_clean_text(c) for c in source.columns]
+    required = [
+        "School ID", "School Name", "System Learner ID", "Last Name", "First Name",
+        "Middle Name", "Sex", "Grade Level",
+    ]
+    missing = [col for col in required if col not in source.columns]
+    if missing:
+        return [], (
+            "Follow-up generation requires a v5.19 System Learner ID workbook. "
+            "Missing: " + ", ".join(missing)
+        )
+    if "Section" not in source.columns:
+        source["Section"] = ""
+
+    source["System Learner ID"] = source["System Learner ID"].map(_normalize_system_id)
+    source = source[source["System Learner ID"].ne("")].copy()
+    # Ignore untouched pre-generated blank rows from a fresh template.
+    identity_check = ["School ID", "School Name", "Last Name", "First Name", "Sex", "Grade Level"]
+    source = source.loc[
+        ~source[identity_check].apply(lambda r: all(_clean_text(v) == "" for v in r), axis=1)
+    ].copy()
+    if source.empty:
+        return [], "No completed learner identities were found in that workbook."
+
+    # A single System Learner ID must describe one learner identity. Names are
+    # available only inside the workbook, so check them here before building the
+    # reusable follow-up roster.
+    conflicts: list[str] = []
+    identity_cols = ["School ID", "Grade Level", "Sex"]
+    for system_id, group in source.groupby("System Learner ID", dropna=False):
+        if any(group[col].fillna("").astype(str).map(_clean_text).nunique(dropna=False) > 1 for col in identity_cols):
+            conflicts.append(str(system_id))
+    if conflicts:
+        preview = ", ".join(conflicts[:5])
+        more = "..." if len(conflicts) > 5 else ""
+        return [], (
+            "The workbook contains System Learner IDs attached to conflicting school/grade/sex details: "
+            f"{preview}{more}. Correct the source workbook before creating a follow-up copy."
+        )
+
+    # Keep the last occurrence so the most recent section/school display text is
+    # used when the source workbook already contains several activity dates.
+    source = source.drop_duplicates("System Learner ID", keep="last")
+    rows: list[dict] = []
+    for _, row in source.iterrows():
+        rows.append({
+            "Activity Date": "",
+            "School ID": _clean_school_id(row.get("School ID")),
+            "School Name": _clean_text(row.get("School Name")),
+            "Section": _clean_text(row.get("Section")),
+            "System Learner ID": _normalize_system_id(row.get("System Learner ID")),
+            "Last Name": _clean_text(row.get("Last Name")),
+            "First Name": _clean_text(row.get("First Name")),
+            "Middle Name": _clean_text(row.get("Middle Name")),
+            "Sex": _clean_text(row.get("Sex")),
+            "Grade Level": _clean_text(row.get("Grade Level")),
+        })
+    return rows, ""
+
+
+def _template_bytes(row_count: int = 2000, prefilled_rows: list[dict] | None = None) -> bytes | None:
+    """Build a fresh or follow-up workbook with locked System Learner IDs."""
+    try:
+        import xlsxwriter
+    except ImportError:
+        return None
+
+    prefilled_rows = list(prefilled_rows or [])
+    row_count = max(int(row_count), len(prefilled_rows) + 100)
+
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output, {"in_memory": True})
+    blue = "#0033A0"
+    light_blue = "#EAF1FF"
+    border = "#CBD5E1"
+
+    title_fmt = workbook.add_format({"bold": True, "font_size": 16, "font_color": blue})
+    label_fmt = workbook.add_format({"bold": True, "font_color": "#1E293B", "valign": "top"})
+    text_fmt = workbook.add_format({"text_wrap": True, "valign": "top"})
+    header_fmt = workbook.add_format({
+        "bold": True, "font_color": "#FFFFFF", "bg_color": blue,
+        "border": 1, "border_color": border, "align": "center", "valign": "vcenter",
+        "text_wrap": True, "locked": True,
+    })
+    unlocked_text = workbook.add_format({"locked": False, "border": 1, "border_color": "#E2E8F0", "valign": "top"})
+    unlocked_center = workbook.add_format({"locked": False, "border": 1, "border_color": "#E2E8F0", "align": "center", "valign": "top"})
+    unlocked_date = workbook.add_format({"locked": False, "border": 1, "border_color": "#E2E8F0", "num_format": "yyyy-mm-dd", "align": "center"})
+    id_fmt = workbook.add_format({
+        "locked": True, "bg_color": light_blue, "font_color": blue, "bold": True,
+        "border": 1, "border_color": "#BFDBFE", "align": "center",
+    })
+
+    instructions = workbook.add_worksheet("Instructions")
+    instructions.hide_gridlines(2)
+    instructions.set_column("A:A", 24)
+    instructions.set_column("B:B", 95)
+    instructions.merge_range("A1:B1", "Abra NIP Dashboard — SBI Learner Line List v5.19.2", title_fmt)
+    instruction_rows = [
+        ("Purpose", "Use one row per learner per activity date. The dashboard calculates Grade 1, Grade 4 and Grade 7 VaccTrack figures, deferral/refusal counts, and reason totals."),
+        ("Multiple activity dates", "A workbook may contain several activity dates. Every row describes what happened on that row's Activity Date."),
+        ("System Learner ID", "Automatically generated and locked. Keep the same ID for the same learner across follow-up dates and revisions. It is not a DepEd LRN."),
+        ("Follow-up vaccination", "A new vaccination day is a NEW ROW, not a revision. Keep the same System Learner ID and enter the new Activity Date. Use the dashboard's Create Follow-up Line List tool to carry IDs and learner identity safely."),
+        ("Example", "MR yesterday, Td today: yesterday = MR Given / Td Not Given; today = MR Not Given / Td Given. Do not carry yesterday's Given status into today's row."),
+        ("Revision / Correction", "Use this only to fix an already-saved activity on the SAME date. Keep the same System Learner ID and upload the complete Activity Date + School + Grade group. A new date is a follow-up, not a revision."),
+        ("Authorized use", "For authorized RHU/NIP users only. Upload only the correct learner records for your assigned municipality. Do not place names, LRN, or unnecessary identifiers in Remarks or Reason Details."),
+        ("Grade 1 / Grade 7", "Complete both MR Status and Td Status for each activity row. Leave HPV fields blank."),
+        ("Grade 4 Female", "Set HPV Dose to 1 or 2 and complete HPV Status. Leave MR/Td fields blank."),
+        ("Statuses", "Use Given, Deferred, Refused, or Not Given."),
+        ("Deferred / Refused", "Select one Reason Code (01–19). Reason Details is optional and is useful when Code 19 is selected."),
+        ("Lot / Batch", "Enter the corresponding lot/batch number when a vaccine is marked Given. Blank lot/batch values are accepted but flagged for review."),
+        ("Follow-up roster rows", "In a generated follow-up workbook, identity rows with blank Activity Date and blank outcomes are ignored. Enter a date only for learners with a new activity to record."),
+        ("Wrong Activity Date", "Do not simply add the correct date and leave the wrong-date record. Review the correction guide; if a whole batch/date was wrong, ask NIP/System Admin to remove the incorrect import first."),
+        ("Wrong School / Grade", "Do not force the same System Learner ID into a different school/grade. Ask NIP/System Admin to correct the bad assignment first."),
+        ("Before confirming", "Review Added / Modified / Removed / Unchanged. Never confirm a large unexpected number of Removed records."),
+        ("Scope", "This line list covers Grade 1, Grade 4 and Grade 7 SBI reporting for VaccTrack."),
+    ]
+    for r, (label, text) in enumerate(instruction_rows, start=2):
+        instructions.write(r, 0, label, label_fmt)
+        instructions.write(r, 1, text, text_fmt)
+    instructions.set_row(0, 26)
+
+    refs = workbook.add_worksheet("Reference Values")
+    refs.write_column("A1", ["Sex", "Male", "Female"])
+    refs.write_column("B1", ["Grade Level", "Grade 1", "Grade 4", "Grade 7"])
+    refs.write_column("C1", ["Status", "Given", "Deferred", "Refused", "Not Given"])
+    refs.write_column("D1", ["HPV Dose", 1, 2])
+    reason_values = [f"{code} - {label}" for code, label in REASON_LABELS.items()]
+    refs.write_column("E1", ["Reason Code"] + reason_values)
+    refs.hide()
+
+    sheet = workbook.add_worksheet("Line List")
+    sheet.hide_gridlines(2)
+    sheet.freeze_panes(1, 5)
+    headers = [
+        "Activity Date", "School ID", "School Name", "Section", "System Learner ID",
+        "Last Name", "First Name", "Middle Name", "Sex", "Grade Level",
+        "MR Status", "MR Lot/Batch No.", "Td Status", "Td Lot/Batch No.",
+        "HPV Dose", "HPV Status", "HPV Lot/Batch No.", "Reason Code", "Reason Details", "Remarks",
+    ]
+    for c, header in enumerate(headers):
+        sheet.write(0, c, header, header_fmt)
+    sheet.set_row(0, 34)
+    widths = [13, 12, 28, 12, 23, 18, 18, 18, 10, 13, 13, 18, 13, 18, 10, 13, 18, 40, 28, 28]
+    for c, width in enumerate(widths):
+        fmt = id_fmt if c == 4 else (unlocked_date if c == 0 else unlocked_center if c in {1, 8, 9, 10, 12, 14, 15} else unlocked_text)
+        sheet.set_column(c, c, width, fmt)
+
+    # Prefill follow-up identity rows first. Vaccination/date fields are blank by
+    # design. Remaining rows receive new IDs for learners not previously listed.
+    header_index = {header: idx for idx, header in enumerate(headers)}
+    for r in range(1, row_count + 1):
+        if r <= len(prefilled_rows):
+            src = prefilled_rows[r - 1]
+            system_id = _normalize_system_id(src.get("System Learner ID")) or ("SBI-" + uuid4().hex[:16].upper())
+            sheet.write(r, 4, system_id, id_fmt)
+            for field in ["Activity Date", "School ID", "School Name", "Section", "Last Name", "First Name", "Middle Name", "Sex", "Grade Level"]:
+                value = src.get(field, "")
+                if _clean_text(value) == "":
+                    continue
+                c = header_index[field]
+                fmt = unlocked_date if field == "Activity Date" else unlocked_center if field in {"School ID", "Sex", "Grade Level"} else unlocked_text
+                sheet.write(r, c, value, fmt)
+        else:
+            sheet.write(r, 4, "SBI-" + uuid4().hex[:16].upper(), id_fmt)
+
+    last_row = row_count + 1
+    sheet.autofilter(0, 0, last_row - 1, len(headers) - 1)
+    sheet.data_validation(f"I2:I{last_row}", {"validate": "list", "source": "='Reference Values'!$A$2:$A$3"})
+    sheet.data_validation(f"J2:J{last_row}", {"validate": "list", "source": "='Reference Values'!$B$2:$B$4"})
+    for col in ["K", "M", "P"]:
+        sheet.data_validation(f"{col}2:{col}{last_row}", {"validate": "list", "source": "='Reference Values'!$C$2:$C$5"})
+    sheet.data_validation(f"O2:O{last_row}", {"validate": "list", "source": "='Reference Values'!$D$2:$D$3"})
+    sheet.data_validation(f"R2:R{last_row}", {"validate": "list", "source": "='Reference Values'!$E$2:$E$20"})
+    sheet.write_comment("E1", "System Learner IDs are generated automatically. Keep the same ID for follow-up activity rows and revisions.")
+    sheet.write_comment("A1", "A new vaccination day uses a new row/date. Do not overwrite the old activity row when a learner returns later.")
+    sheet.write_comment("F1", "Names are used during upload validation but are not saved in the dashboard database.")
+    sheet.protect("", {"select_locked_cells": False, "select_unlocked_cells": True, "autofilter": True, "sort": True})
+
+    workbook.close()
+    return output.getvalue()
+
+
+def _followup_template_bytes(raw_df: pd.DataFrame) -> tuple[bytes | None, int, str]:
+    rows, error = _prepare_followup_rows(raw_df)
+    if error:
+        return None, 0, error
+    workbook_bytes = _template_bytes(row_count=max(2000, len(rows) + 100), prefilled_rows=rows)
+    if workbook_bytes is None:
+        return None, 0, "Follow-up workbook generation is unavailable. Add xlsxwriter>=3.2.0 and redeploy."
+    return workbook_bytes, len(rows), ""
 
 
 def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnings: list[str], diff: dict | None = None) -> None:
@@ -927,7 +1278,7 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
         return
 
     preview_cols = [
-        "activity_date", "school_id", "school_name", "first_name", "middle_name", "last_name",
+        "activity_date", "school_id", "school_name", "system_learner_id", "first_name", "middle_name", "last_name",
         "sex", "grade_level", "mr_status", "td_status", "hpv_dose", "hpv_status", "reason_code"
     ]
     for col in preview_cols:
@@ -935,7 +1286,7 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
             valid[col] = None
     preview = valid[preview_cols].copy()
     preview.columns = [
-        "Activity Date", "School ID", "School Name", "First Name", "Middle Name", "Last Name",
+        "Activity Date", "School ID", "School Name", "System Learner ID", "First Name", "Middle Name", "Last Name",
         "Sex", "Grade", "MR Status", "Td Status", "HPV Dose", "HPV Status", "Reason Code"
     ]
     st.markdown("#### Validated preview")
@@ -960,17 +1311,59 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
     st.markdown(
         f"Upload SBI learner outcome records for **{municipality}**. The system validates each row, calculates the G1/G4/G7 VaccTrack figures, and updates the RHU tracker automatically."
     )
-    st.warning("Learner records contain identifiable vaccination information. Use only authorized RHU/NIP accounts. The current deployment still relies on application-level municipality restrictions; database-side per-RHU RLS is not yet enforced.")
+    st.markdown(
+        "System Learner IDs are generated automatically and stay with the same learner. A follow-up vaccination on a new date is a **new activity row**, not a revision."
+    )
+    st.warning(
+        "For authorized RHU/NIP users only. Please upload only the correct learner records for your assigned municipality."
+    )
 
     template = _template_bytes()
     if template:
         st.download_button(
-            "1A. Download SBI Line List Template (Excel)",
+            "1A. Download Fresh SBI Line List Template (Excel)",
             data=template,
             file_name="SBI_Linelist_Template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="linelist_template_download",
         )
+    else:
+        st.error("Fresh template generation is unavailable. Add xlsxwriter>=3.2.0 to requirements.txt and redeploy.")
+
+    with st.expander("Create Follow-up Line List", expanded=False):
+        st.markdown(
+            "Use this when learners return on another day. Upload a previous **v5.19+** workbook and the dashboard will create a new follow-up workbook "
+            "with the same System Learner IDs and learner identity fields, but with Activity Date and vaccination outcomes blank. "
+            "Enter the new date/outcomes only for learners who actually have a follow-up activity."
+        )
+        followup_source = st.file_uploader(
+            "Previous System Learner ID workbook",
+            type=["xlsx", "xls", "xlsm", "csv"],
+            key="sbi_followup_source_upload",
+        )
+        if followup_source is not None:
+            followup_df, followup_read_error = _read_upload(followup_source)
+            if followup_read_error:
+                st.error(followup_read_error)
+            else:
+                followup_bytes, learner_count, followup_error = _followup_template_bytes(followup_df)
+                if followup_error:
+                    st.error(followup_error)
+                elif followup_bytes:
+                    st.success(
+                        f"Follow-up roster prepared for {learner_count:,} learner(s). Activity Date and vaccine outcome fields are blank by design."
+                    )
+                    st.download_button(
+                        "Download Follow-up Line List",
+                        data=followup_bytes,
+                        file_name="SBI_Followup_LineList.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="sbi_followup_download",
+                    )
+                    st.markdown(
+                        "**Follow-up example:** if MR was given yesterday and Td is given today, today's row should be **MR = Not Given** and **Td = Given**. "
+                        "Do not carry yesterday's MR = Given into today's activity row."
+                    )
 
     # Rotate the uploader key after a successful import so Streamlit clears the
     # selected file. This prevents the just-imported file from being re-evaluated
@@ -1002,10 +1395,20 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
         return
 
     try:
-        existing_active = _fetch_records(supabase, municipality, active_only=True)
+        existing_all = _fetch_records(supabase, municipality, active_only=False)
     except Exception as exc:
         st.error(f"Unable to compare the upload with existing line-list records: {exc}")
         return
+
+    conflicts = _system_id_conflicts(valid, existing_all)
+    if not conflicts.empty:
+        _render_validation_preview(valid, conflicts, warnings)
+        return
+
+    if existing_all.empty:
+        existing_active = existing_all
+    else:
+        existing_active = existing_all.loc[existing_all["is_active"].eq(True)].copy() if "is_active" in existing_all.columns else existing_all.copy()
 
     diff = _compare_revision(valid, existing_active)
     _render_validation_preview(valid, issues, warnings, diff)
@@ -1098,7 +1501,7 @@ def render_linelist_history(supabase, municipality: str) -> None:
             )
             day = active[active["activity_date"].eq(chosen_date)].copy()
             detail_cols = [
-                "school_name", "grade_level", "section", "learner_id", "last_name", "first_name", "middle_name",
+                "school_name", "grade_level", "section", "system_learner_id",
                 "sex", "mr_status", "mr_lot_batch", "td_status", "td_lot_batch", "hpv_dose", "hpv_status",
                 "hpv_lot_batch", "reason_code", "reason_details", "remarks"
             ]
@@ -1107,12 +1510,12 @@ def render_linelist_history(supabase, municipality: str) -> None:
                     day[col] = None
             detail = day[detail_cols].copy()
             detail.columns = [
-                "School", "Grade", "Section", "Learner ID / LRN", "Last Name", "First Name", "Middle Name",
+                "School", "Grade", "Section", "System Learner ID",
                 "Sex", "MR Status", "MR Lot/Batch", "Td Status", "Td Lot/Batch", "HPV Dose", "HPV Status",
                 "HPV Lot/Batch", "Reason Code", "Reason Details", "Remarks"
             ]
             with st.expander(f"Active learner records: {chosen_date.strftime('%b %d, %Y')}", expanded=False):
-                st.dataframe(detail.sort_values(["School", "Grade", "Last Name", "First Name"]), width="stretch", hide_index=True)
+                st.dataframe(detail.sort_values(["School", "Grade", "System Learner ID"]), width="stretch", hide_index=True)
 
 
 def _g4_actual_target(actual_targets: pd.DataFrame, municipality: str, school_id: str) -> int | None:
