@@ -84,7 +84,12 @@ def _load_accounts(supabase) -> pd.DataFrame:
             df[col] = ""
         df[col] = df[col].fillna("").astype(str).str.strip()
 
-    # Old rows may not have account_status. Authentication treats them as approved.
+    if "must_change_password" not in df.columns:
+        df["must_change_password"] = False
+    df["must_change_password"] = df["must_change_password"].map(
+        lambda value: value is True or str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+    )
+
     df.loc[df["account_status"].eq(""), "account_status"] = "Approved"
     return df
 
@@ -146,7 +151,9 @@ def _load_login_logs(supabase, limit: int = 500) -> pd.DataFrame:
 
 def _rhu_account_schema_available(supabase) -> tuple[bool, str]:
     try:
-        supabase.table("user_accounts").select("username,assigned_muni").limit(1).execute()
+        supabase.table("user_accounts").select(
+            "username,assigned_muni,must_change_password"
+        ).limit(1).execute()
         return True, ""
     except Exception as exc:
         return False, str(exc)
@@ -1104,7 +1111,7 @@ def _render_rhu_accounts(supabase) -> None:
     ready, message = _rhu_account_schema_available(supabase)
     if not ready:
         st.error(
-            f"RHU Encoder setup is not complete ({message}). Run supabase/003_sbi_rhu_accomplishments.sql once, then reload this page."
+            f"RHU Encoder setup is not complete ({message}). Run the required RHU account migrations, including supabase/008_user_password_change.sql, then reload this page."
         )
         return
 
@@ -1116,13 +1123,17 @@ def _render_rhu_accounts(supabase) -> None:
 
     _section_heading("fa-users-gear", "RHU Encoder Accounts")
     if not rhu_df.empty:
-        display = rhu_df[["name", "username", "assigned_muni", "account_status"]].rename(
+        display = rhu_df[["name", "username", "assigned_muni", "account_status", "must_change_password"]].rename(
             columns={
                 "name": "Name",
                 "username": "Username",
                 "assigned_muni": "Municipality",
                 "account_status": "Status",
+                "must_change_password": "Password Change Required",
             }
+        )
+        display["Password Change Required"] = display["Password Change Required"].map(
+            lambda value: "Yes" if bool(value) else "No"
         )
         try:
             login_logs = _load_login_logs(supabase, 1000)
@@ -1174,6 +1185,7 @@ def _render_rhu_accounts(supabase) -> None:
                         "assigned_muni": new_muni,
                         "account_status": "Approved",
                         "failed_attempts": 0,
+                        "must_change_password": True,
                     }
                 ).execute()
                 _audit(supabase, f"RHU Encoder created | username={username} | municipality={new_muni}")
@@ -1204,8 +1216,8 @@ def _render_rhu_accounts(supabase) -> None:
     _section_heading("fa-key", "Reset RHU Password")
     with st.form("rhu_reset_password_form"):
         reset_username = st.selectbox("RHU Account", usernames, key="rhu_reset_username")
-        reset_password = st.text_input("New Password", type="password", key="rhu_reset_password")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="rhu_reset_confirm")
+        reset_password = st.text_input("Temporary Password", type="password", key="rhu_reset_password")
+        confirm_password = st.text_input("Confirm Temporary Password", type="password", key="rhu_reset_confirm")
         reset_submit = st.form_submit_button("Reset Password")
     if reset_submit:
         if len(reset_password) < 8:
@@ -1214,10 +1226,15 @@ def _render_rhu_accounts(supabase) -> None:
             st.error("The passwords do not match.")
         else:
             supabase.table("user_accounts").update(
-                {"password_hash": hash_password(reset_password), "failed_attempts": 0}
+                {
+                    "password_hash": hash_password(reset_password),
+                    "failed_attempts": 0,
+                    "must_change_password": True,
+                }
             ).eq("username", reset_username).execute()
             _audit(supabase, f"RHU password reset | username={reset_username}")
-            st.toast(f"Password reset for {reset_username}.")
+            st.toast(f"Temporary password set for {reset_username}. A password change will be required at the next login.")
+            st.rerun()
 
     st.divider()
     _section_heading("fa-user-lock", "RHU Account Status")

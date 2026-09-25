@@ -140,7 +140,7 @@ def _fetch_sbi_vacctrack_imported_cached():
     return frames, meta
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_sbi_vacctrack_google_cached():
     """Fetch historical Google Sheet VaccTrack tabs as a compatibility fallback."""
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -591,3 +591,4 @@ def fetch_opt_data():
     except Exception:
         logger.exception("Failed to fetch OPT data; failure was not cached")
         return pd.DataFrame()
+

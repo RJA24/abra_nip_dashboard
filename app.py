@@ -6,7 +6,7 @@ from datetime import datetime
 import pytz
 import streamlit as st
 
-from auth_utils import authenticate_user
+from auth_utils import authenticate_user, hash_password, verify_password
 from core.data import init_supabase
 from programs.sbi import render_sbi_dashboard
 from programs.sia import render_sia_dashboard
@@ -164,6 +164,8 @@ if 'assigned_muni' not in st.session_state:
     st.session_state['assigned_muni'] = "None"
 if 'last_active' not in st.session_state:
     st.session_state['last_active'] = time.time()
+if 'must_change_password' not in st.session_state:
+    st.session_state['must_change_password'] = False
 
 if st.session_state['logged_in']:
     current_time = time.time()
@@ -175,6 +177,7 @@ if st.session_state['logged_in']:
         st.session_state['user_name'] = ""
         st.session_state['user_role'] = ""
         st.session_state['assigned_muni'] = "None"
+        st.session_state['must_change_password'] = False
         st.toast("Session expired after 30 minutes of inactivity.")
         time.sleep(1)
         st.rerun()
@@ -184,13 +187,19 @@ if st.session_state['logged_in']:
 # ==========================================
 # 4. THE WELCOME PAGE
 # ==========================================
-def _start_dashboard_session(display_name, role, assigned_muni="Abra Province", username=""):
-    """Initialize the Streamlit session and create a best-effort access log."""
+def _start_dashboard_session(
+    display_name,
+    role,
+    assigned_muni="Abra Province",
+    username="",
+    must_change_password=False,
+):
     st.session_state['logged_in'] = True
     st.session_state['username'] = username
     st.session_state['user_name'] = display_name
     st.session_state['user_role'] = role
     st.session_state['assigned_muni'] = assigned_muni or "Abra Province"
+    st.session_state['must_change_password'] = bool(must_change_password)
     st.session_state['last_active'] = time.time()
 
     try:
@@ -212,8 +221,124 @@ def _start_dashboard_session(display_name, role, assigned_muni="Abra Province", 
 
 
 def _logout_session():
-    """Clear the current application session and return to the login screen."""
     st.session_state.clear()
+    st.rerun()
+
+
+def _is_true(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y"}
+
+
+def _load_current_account():
+    username = str(st.session_state.get("username") or "").strip()
+    if not username:
+        return None
+    response = (
+        supabase.table("user_accounts")
+        .select("*")
+        .eq("username", username)
+        .limit(1)
+        .execute()
+    )
+    return dict(response.data[0]) if response.data else None
+
+
+def _record_account_action(action: str) -> None:
+    try:
+        supabase.table("access_logs").insert(
+            {
+                "timestamp": datetime.now(pytz.timezone("Asia/Manila")).strftime("%Y-%m-%d %I:%M:%S %p"),
+                "name": st.session_state.get("user_name") or st.session_state.get("username") or "Account",
+                "role": st.session_state.get("user_role") or "Registered Account",
+                "action": action,
+            }
+        ).execute()
+    except Exception:
+        logger.exception("Unable to write account activity log")
+
+
+def _change_password(new_password: str) -> None:
+    username = str(st.session_state.get("username") or "").strip()
+    supabase.table("user_accounts").update(
+        {
+            "password_hash": hash_password(new_password),
+            "failed_attempts": 0,
+            "must_change_password": False,
+        }
+    ).eq("username", username).execute()
+    st.session_state["must_change_password"] = False
+    _record_account_action(f"Password changed | username={username}")
+
+
+def _render_password_change(force: bool = False) -> None:
+    if force:
+        st.title("Set Your New Password")
+        st.info(
+            "You are using a temporary password. Create your own password before continuing to the dashboard."
+        )
+    else:
+        st.title("Account Settings")
+        st.caption(f"Signed in as {st.session_state.get('username', '')}")
+
+    with st.form("forced_password_change_form" if force else "account_password_change_form"):
+        current_password = ""
+        if not force:
+            current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        submitted = st.form_submit_button("Change Password", type="primary", width="stretch")
+
+    if not submitted:
+        if force:
+            if st.button("Sign Out", width="stretch", key="forced_password_sign_out"):
+                _logout_session()
+        elif st.button("Back to Main Menu", width="stretch", key="account_back_to_menu"):
+            st.session_state["active_program"] = None
+            st.rerun()
+        return
+
+    if len(new_password) < 8:
+        st.error("Use a password with at least 8 characters.")
+        return
+    if new_password != confirm_password:
+        st.error("The new passwords do not match.")
+        return
+
+    try:
+        account = _load_current_account()
+    except Exception:
+        st.error("Unable to load your account right now. Please try again.")
+        return
+
+    if not account:
+        st.error("Your account could not be found. Please sign in again.")
+        return
+
+    stored_hash = account.get("password_hash")
+    if not force:
+        valid, _ = verify_password(current_password, stored_hash)
+        if not valid:
+            st.error("Current password is incorrect.")
+            return
+
+    same_as_current, _ = verify_password(new_password, stored_hash)
+    if same_as_current:
+        st.error("Choose a new password that is different from your current password.")
+        return
+
+    try:
+        _change_password(new_password)
+    except Exception as exc:
+        logger.exception("Unable to change password")
+        st.error(
+            "Unable to change the password. Make sure the password-change database update has been applied, then try again."
+        )
+        return
+
+    st.session_state["active_program"] = None
+    st.session_state["welcome_notice"] = "Password changed successfully."
     st.rerun()
 
 
@@ -258,7 +383,14 @@ if not st.session_state.get('logged_in', False):
                         display_name = str(user.get('name') or user.get('username') or username_input)
                         role = str(user.get('role') or 'Guest / Viewer')
                         assigned_muni = str(user.get('assigned_muni') or user.get('municipality') or 'Abra Province')
-                        _start_dashboard_session(display_name, role, assigned_muni, username_input)
+                        must_change_password = _is_true(user.get('must_change_password'))
+                        _start_dashboard_session(
+                            display_name,
+                            role,
+                            assigned_muni,
+                            username_input,
+                            must_change_password=must_change_password,
+                        )
                         st.session_state['welcome_notice'] = f"Welcome, {display_name}."
                         st.rerun()
 
@@ -278,6 +410,11 @@ if not st.session_state.get('logged_in', False):
                         st.rerun()
 
     st.stop()
+
+if st.session_state.get("logged_in") and st.session_state.get("must_change_password"):
+    _render_password_change(force=True)
+    st.stop()
+
 
 # ==========================================
 # 4.5. PROGRAM ROUTING MENU
@@ -478,10 +615,18 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
             st.session_state['active_program'] = 'SBI'
             st.rerun()
 
-    if st.session_state.get("user_role") == "System Admin":
-        st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
-        admin_left, admin_col, admin_right = st.columns([2.35, 1.3, 2.35])
-        with admin_col:
+    st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
+    controls_left, account_col, admin_col, controls_right = st.columns([2.0, 1.25, 1.25, 2.0])
+
+    with account_col:
+        if st.session_state.get("username"):
+            st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
+            if st.button("Account Settings", key="open_account_settings", width="stretch"):
+                st.session_state['active_program'] = 'ACCOUNT'
+                st.rerun()
+
+    with admin_col:
+        if st.session_state.get("user_role") == "System Admin":
             st.markdown('<span class="admin-btn-marker"></span>', unsafe_allow_html=True)
             if st.button("Administration", key="open_admin", width="stretch"):
                 st.session_state['active_program'] = 'ADMIN'
@@ -500,6 +645,13 @@ if active_program == "SBI":
 
 if active_program == "SIA":
     render_sia_dashboard(supabase)
+    st.stop()
+
+if active_program == "ACCOUNT":
+    if not st.session_state.get("username"):
+        st.session_state["active_program"] = None
+        st.rerun()
+    _render_password_change(force=False)
     st.stop()
 
 if active_program == "ADMIN":

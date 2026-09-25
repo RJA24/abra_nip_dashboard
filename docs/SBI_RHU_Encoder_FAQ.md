@@ -1,6 +1,16 @@
 # Abra NIP Dashboard — SBI RHU Encoder FAQs
 
-Version: v5.19.2
+Version: v5.19.3
+
+## Password and account access
+
+### Why am I being asked to change my password after logging in?
+
+New RHU accounts and admin-reset passwords are temporary. Create your own password before continuing.
+
+### What if I forget my password?
+
+Ask the NIP/System Admin to reset it. You will receive a temporary password and will be required to change it at your next login.
 
 ## 1. What is the easiest way to know whether I need Follow-up or Revision?
 
