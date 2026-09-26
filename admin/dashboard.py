@@ -30,6 +30,34 @@ from admin.operations import render_operations
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
+ADMIN_ACCESS_ROLES = {"System Admin", "QA Admin"}
+
+
+def _is_qa_admin() -> bool:
+    return st.session_state.get("user_role") == "QA Admin"
+
+
+class _ReadOnlyTableProxy:
+    def __init__(self, table):
+        self._table = table
+
+    def __getattr__(self, name):
+        if name in {"insert", "update", "delete", "upsert"}:
+            def blocked(*args, **kwargs):
+                raise PermissionError("QA Admin is read-only. Production database changes are disabled.")
+            return blocked
+        return getattr(self._table, name)
+
+
+class _ReadOnlySupabaseProxy:
+    def __init__(self, client):
+        self._client = client
+
+    def table(self, name):
+        return _ReadOnlyTableProxy(self._client.table(name))
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
 
 
 def _now_string() -> str:
@@ -42,7 +70,7 @@ def _audit(supabase, action: str) -> None:
             {
                 "timestamp": _now_string(),
                 "name": st.session_state.get("user_name") or st.session_state.get("username") or "System Admin",
-                "role": "System Admin",
+                "role": st.session_state.get("user_role") or "System Admin",
                 "action": f"Admin: {action}",
             }
         ).execute()
@@ -479,14 +507,15 @@ def _sync_sbi_targets(supabase) -> tuple[int, dict]:
 
 
 def _render_sidebar() -> None:
+    role = st.session_state.get("user_role") or "System Admin"
     with st.sidebar:
         st.markdown(
             f"""
             <div style="text-align:center;padding:10px 0 15px 0;">
                 <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png"
                      width="90" style="margin-bottom:15px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
-                <h3 style="margin:0;font-size:1.15rem;font-weight:700;">{st.session_state.get('user_name', 'System Admin')}</h3>
-                <p style="margin:2px 0 12px 0;font-size:0.85rem;opacity:0.8;font-style:italic;">System Admin</p>
+                <h3 style="margin:0;font-size:1.15rem;font-weight:700;">{st.session_state.get('user_name', role)}</h3>
+                <p style="margin:2px 0 12px 0;font-size:0.85rem;opacity:0.8;font-style:italic;">{role}</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -502,6 +531,7 @@ def _render_sidebar() -> None:
 def _render_overview(supabase) -> None:
     accounts = _load_accounts(supabase)
     active_admins = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
+    qa_admins = int(accounts["role"].eq("QA Admin").sum()) if not accounts.empty else 0
 
     try:
         sia_count = _table_row_count(supabase, "targets", "code")
@@ -528,7 +558,7 @@ def _render_overview(supabase) -> None:
 
     c1, c2, c3, c4 = st.columns(4, gap="medium")
     with c1:
-        _render_kpi_card("fa-user-shield", "Active Admins", f"{active_admins:,}")
+        _render_kpi_card("fa-user-shield", "Active Admins", f"{active_admins:,}", f"{qa_admins:,} QA read-only")
     with c2:
         _render_kpi_card("fa-syringe", "MR SIA Target Rows", f"{sia_count:,}")
     with c3:
@@ -623,7 +653,7 @@ def _render_overview(supabase) -> None:
         st.dataframe(recent_logins[recent_cols], width="stretch", hide_index=True)
 
 
-def _render_data_sync(supabase) -> None:
+def _render_data_sync(supabase, read_only: bool = False) -> None:
     _section_heading("fa-syringe", "MR SIA Targets")
     try:
         current_sia = _table_row_count(supabase, "targets", "code")
@@ -631,7 +661,7 @@ def _render_data_sync(supabase) -> None:
         current_sia = 0
     st.metric("Current Database Rows", f"{current_sia:,}")
 
-    if st.button("Sync MR SIA Targets", type="primary", width="stretch", key="admin_sync_sia"):
+    if st.button("Sync MR SIA Targets", type="primary", width="stretch", disabled=read_only, key="admin_sync_sia") and not read_only:
         with st.spinner("Syncing MR SIA targets..."):
             try:
                 rows = _sync_sia_targets(supabase)
@@ -652,7 +682,7 @@ def _render_data_sync(supabase) -> None:
         current_sbi = 0
     st.metric("Current Database Rows", f"{current_sbi:,}")
 
-    if st.button("Sync SBI Targets", type="primary", width="stretch", key="admin_sync_sbi"):
+    if st.button("Sync SBI Targets", type="primary", width="stretch", disabled=read_only, key="admin_sync_sbi") and not read_only:
         with st.spinner("Syncing SBI targets..."):
             try:
                 rows, report = _sync_sbi_targets(supabase)
@@ -671,7 +701,7 @@ def _render_data_sync(supabase) -> None:
                 st.error(f"SBI target sync failed: {exc}")
 
     st.divider()
-    render_vacctrack_importer(supabase, audit_callback=_audit)
+    render_vacctrack_importer(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
 
     st.divider()
     _section_heading("fa-clock-rotate-left", "Sync History")
@@ -889,7 +919,7 @@ def _merge_pending_label_positions(records: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
-def _render_map_label_editor(supabase) -> None:
+def _render_map_label_editor(supabase, read_only: bool = False) -> None:
     _section_heading("fa-map-location-dot", "Municipality Label Editor")
 
     table_ready = map_label_table_available(supabase)
@@ -993,9 +1023,9 @@ def _render_map_label_editor(supabase) -> None:
         if st.button(
             "Reset Selected",
             width="stretch",
-            disabled=not table_ready,
+            disabled=(read_only or not table_ready),
             key="map_label_reset_selected",
-        ):
+        ) and not read_only:
             reset_label_position(supabase, str(selected["municipality_key"]))
             pending = dict(st.session_state.get("_map_label_pending", {}))
             pending.pop(str(selected["municipality_key"]), None)
@@ -1029,9 +1059,9 @@ def _render_map_label_editor(supabase) -> None:
             "Save All Changes",
             type="primary",
             width="stretch",
-            disabled=(not table_ready or not pending),
+            disabled=(read_only or not table_ready or not pending),
             key="map_label_save_all",
-        ):
+        ) and not read_only:
             final_records = _merge_pending_label_positions(base_records)
             changed = final_records[final_records["municipality_key"].isin(pending.keys())].copy()
             save_label_records(
@@ -1061,15 +1091,15 @@ def _render_map_label_editor(supabase) -> None:
         if st.button(
             "Reset All Defaults",
             width="stretch",
-            disabled=not table_ready,
+            disabled=(read_only or not table_ready),
             key="map_label_reset_all",
-        ):
+        ) and not read_only:
             st.session_state["_map_label_confirm_reset_all"] = True
 
     if st.session_state.get("_map_label_confirm_reset_all"):
         confirm1, confirm2 = st.columns(2)
         with confirm1:
-            if st.button("Confirm Reset All", type="primary", width="stretch", key="map_label_confirm_reset"):
+            if st.button("Confirm Reset All", type="primary", width="stretch", disabled=read_only, key="map_label_confirm_reset") and not read_only:
                 reset_all_label_positions(supabase)
                 st.session_state.pop("_map_label_pending", None)
                 st.session_state.pop("_map_label_editor_payload", None)
@@ -1108,7 +1138,7 @@ def _render_map_label_editor(supabase) -> None:
 
 
 
-def _render_rhu_accounts(supabase) -> None:
+def _render_rhu_accounts(supabase, read_only: bool = False) -> None:
     ready, message = _rhu_account_schema_available(supabase)
     if not ready:
         st.error(
@@ -1157,9 +1187,9 @@ def _render_rhu_accounts(supabase) -> None:
         with c2:
             new_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, key="rhu_new_muni")
             new_password = st.text_input("Temporary Password", type="password", key="rhu_new_password")
-        create_rhu = st.form_submit_button("Create RHU Encoder", type="primary")
+        create_rhu = st.form_submit_button("Create RHU Encoder", type="primary", disabled=read_only)
 
-    if create_rhu:
+    if create_rhu and not read_only:
         username = new_username.strip()
         display_name = new_name.strip() or f"{new_muni} RHU"
         if not username or not new_password:
@@ -1206,8 +1236,8 @@ def _render_rhu_accounts(supabase) -> None:
         current_muni = str(current_row.get("assigned_muni") or ABRA_MUNIS[0]).strip()
         current_index = ABRA_MUNIS.index(current_muni) if current_muni in ABRA_MUNIS else 0
         assign_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, index=current_index, key="rhu_assign_muni")
-        assign_submit = st.form_submit_button("Update Assignment")
-    if assign_submit:
+        assign_submit = st.form_submit_button("Update Assignment", disabled=read_only)
+    if assign_submit and not read_only:
         supabase.table("user_accounts").update({"assigned_muni": assign_muni}).eq("username", assign_username).execute()
         _audit(supabase, f"RHU assignment updated | username={assign_username} | municipality={assign_muni}")
         st.toast(f"Updated {assign_username} to {assign_muni}.")
@@ -1219,8 +1249,8 @@ def _render_rhu_accounts(supabase) -> None:
         reset_username = st.selectbox("RHU Account", usernames, key="rhu_reset_username")
         reset_password = st.text_input("Temporary Password", type="password", key="rhu_reset_password")
         confirm_password = st.text_input("Confirm Temporary Password", type="password", key="rhu_reset_confirm")
-        reset_submit = st.form_submit_button("Reset Password")
-    if reset_submit:
+        reset_submit = st.form_submit_button("Reset Password", disabled=read_only)
+    if reset_submit and not read_only:
         if len(reset_password) < 8:
             st.error("Use a password with at least 8 characters.")
         elif reset_password != confirm_password:
@@ -1245,14 +1275,14 @@ def _render_rhu_accounts(supabase) -> None:
     selected_active = selected_status.lower() in {"approved", "active"}
     e1, e2 = st.columns(2)
     with e1:
-        if st.button("Enable Account", width="stretch", disabled=selected_active, key="rhu_enable_account"):
+        if st.button("Enable Account", width="stretch", disabled=(read_only or selected_active), key="rhu_enable_account") and not read_only:
             supabase.table("user_accounts").update(
                 {"account_status": "Approved", "failed_attempts": 0}
             ).eq("username", action_username).execute()
             _audit(supabase, f"RHU account enabled | username={action_username}")
             st.rerun()
     with e2:
-        if st.button("Disable Account", width="stretch", disabled=not selected_active, key="rhu_disable_account"):
+        if st.button("Disable Account", width="stretch", disabled=(read_only or not selected_active), key="rhu_disable_account") and not read_only:
             supabase.table("user_accounts").update(
                 {"account_status": "Disabled"}
             ).eq("username", action_username).execute()
@@ -1261,7 +1291,7 @@ def _render_rhu_accounts(supabase) -> None:
 
     _section_heading("fa-user-xmark", "Delete RHU Account")
     delete_confirm = st.text_input("Type the RHU username to confirm deletion", key="rhu_delete_confirm")
-    if st.button("Delete RHU Account", type="secondary", key="rhu_delete_account"):
+    if st.button("Delete RHU Account", type="secondary", disabled=read_only, key="rhu_delete_account") and not read_only:
         if delete_confirm.strip() != action_username:
             st.error("The confirmation username does not match.")
         else:
@@ -1270,15 +1300,18 @@ def _render_rhu_accounts(supabase) -> None:
             st.toast(f"Deleted {action_username}.")
             st.rerun()
 
-def _render_admin_accounts(supabase) -> None:
+def _render_admin_accounts(supabase, read_only: bool = False) -> None:
     accounts = _load_accounts(supabase)
     current_username = str(st.session_state.get("username") or "").strip()
 
     if accounts.empty:
         admin_df = pd.DataFrame(columns=["name", "username", "account_status"])
+        qa_df = pd.DataFrame(columns=["name", "username", "account_status", "must_change_password"])
     else:
         admin_df = accounts[accounts["role"].eq("System Admin")].copy()
+        qa_df = accounts[accounts["role"].eq("QA Admin")].copy()
 
+    _section_heading("fa-user-shield", "System Admin Accounts")
     if not admin_df.empty:
         admin_df["Current"] = admin_df["username"].eq(current_username)
         display = admin_df[["name", "username", "account_status", "Current"]].rename(
@@ -1300,9 +1333,9 @@ def _render_admin_accounts(supabase) -> None:
             new_name = st.text_input("Display Name")
             new_username = st.text_input("Username")
             new_password = st.text_input("Temporary Password", type="password")
-            create_admin = st.form_submit_button("Create Admin Account", type="primary")
+            create_admin = st.form_submit_button("Create Admin Account", type="primary", disabled=read_only)
 
-    if create_admin:
+    if create_admin and not read_only:
         username = new_username.strip()
         display_name = new_name.strip() or username
         if not username or not new_password:
@@ -1334,73 +1367,209 @@ def _render_admin_accounts(supabase) -> None:
                 st.toast(f"Admin account created: {username}")
                 st.rerun()
 
-    if admin_df.empty:
-        return
+    if not admin_df.empty:
+        usernames = admin_df["username"].tolist()
 
-    usernames = admin_df["username"].tolist()
+        st.divider()
+        _section_heading("fa-key", "Reset System Admin Password")
+        with st.form("admin_reset_password_form"):
+            reset_username = st.selectbox("Admin Account", usernames, key="admin_reset_username")
+            reset_password = st.text_input("New Password", type="password", key="admin_reset_password")
+            confirm_password = st.text_input("Confirm New Password", type="password", key="admin_reset_confirm")
+            reset_submit = st.form_submit_button("Reset Password", disabled=read_only)
+
+        if reset_submit and not read_only:
+            if len(reset_password) < 8:
+                st.error("Use a password with at least 8 characters.")
+            elif reset_password != confirm_password:
+                st.error("The passwords do not match.")
+            else:
+                supabase.table("user_accounts").update(
+                    {"password_hash": hash_password(reset_password), "failed_attempts": 0}
+                ).eq("username", reset_username).execute()
+                _audit(supabase, f"Password reset | username={reset_username}")
+                st.toast(f"Password reset for {reset_username}.")
+
+        st.divider()
+        _section_heading("fa-user-shield", "System Admin Account Status")
+        action_username = st.selectbox("Admin Account", usernames, key="admin_status_username")
+        selected_row = admin_df[admin_df["username"].eq(action_username)].iloc[0]
+        selected_status = str(selected_row.get("account_status") or "Approved").strip()
+        selected_is_active = selected_status.lower() in {"approved", "active"}
+        active_count = int(_active_admin_mask(accounts).sum())
+
+        col_enable, col_disable = st.columns(2)
+        with col_enable:
+            enable_blocked = read_only or selected_is_active or active_count >= 2
+            if st.button("Enable Account", width="stretch", disabled=enable_blocked, key="admin_enable_account") and not read_only:
+                supabase.table("user_accounts").update(
+                    {"account_status": "Approved", "failed_attempts": 0}
+                ).eq("username", action_username).execute()
+                _audit(supabase, f"Admin account enabled | username={action_username}")
+                st.toast(f"Enabled {action_username}.")
+                st.rerun()
+
+        with col_disable:
+            disable_blocked = read_only or action_username == current_username or (selected_is_active and active_count <= 1)
+            if st.button("Disable Account", width="stretch", disabled=disable_blocked, key="admin_disable_account") and not read_only:
+                supabase.table("user_accounts").update(
+                    {"account_status": "Disabled"}
+                ).eq("username", action_username).execute()
+                _audit(supabase, f"Admin account disabled | username={action_username}")
+                st.toast(f"Disabled {action_username}.")
+                st.rerun()
+
+        _section_heading("fa-user-xmark", "Delete System Admin Account")
+        delete_confirm = st.text_input(
+            "Type the username to confirm deletion",
+            key="admin_delete_confirm",
+        )
+        delete_blocked = read_only or action_username == current_username or (selected_is_active and active_count <= 1)
+        if st.button("Delete Admin Account", type="secondary", disabled=delete_blocked, key="admin_delete_account") and not read_only:
+            if delete_confirm.strip() != action_username:
+                st.error("The confirmation username does not match.")
+            else:
+                supabase.table("user_accounts").delete().eq("username", action_username).execute()
+                _audit(supabase, f"Admin account deleted | username={action_username}")
+                st.toast(f"Deleted {action_username}.")
+                st.rerun()
 
     st.divider()
-    _section_heading("fa-key", "Reset Password")
-    with st.form("admin_reset_password_form"):
-        reset_username = st.selectbox("Admin Account", usernames, key="admin_reset_username")
-        reset_password = st.text_input("New Password", type="password", key="admin_reset_password")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="admin_reset_confirm")
-        reset_submit = st.form_submit_button("Reset Password")
+    _section_heading("fa-flask-vial", "QA Admin Accounts")
+    st.caption(
+        "QA Admin accounts can open MR SIA, SBI, and the full Administration area, but production-changing admin actions are disabled."
+    )
 
-    if reset_submit:
-        if len(reset_password) < 8:
+    if not qa_df.empty:
+        qa_display = qa_df[["name", "username", "account_status", "must_change_password"]].rename(
+            columns={
+                "name": "Name",
+                "username": "Username",
+                "account_status": "Status",
+                "must_change_password": "Password Change Required",
+            }
+        )
+        qa_display["Password Change Required"] = qa_display["Password Change Required"].map(
+            lambda value: "Yes" if bool(value) else "No"
+        )
+        st.dataframe(qa_display.sort_values("Username"), width="stretch", hide_index=True)
+    else:
+        st.write("No QA Admin accounts are configured yet.")
+
+    _section_heading("fa-user-plus", "Create QA Admin")
+    with st.form("qa_admin_create_form"):
+        qa_name = st.text_input("Display Name", key="qa_admin_new_name")
+        qa_username = st.text_input("Username", key="qa_admin_new_username")
+        qa_password = st.text_input("Temporary Password", type="password", key="qa_admin_new_password")
+        create_qa = st.form_submit_button("Create QA Admin", type="primary", disabled=read_only)
+
+    if create_qa and not read_only:
+        username = qa_username.strip()
+        display_name = qa_name.strip() or username
+        if not username or not qa_password:
+            st.error("Username and password are required.")
+        elif len(qa_password) < 8:
             st.error("Use a password with at least 8 characters.")
-        elif reset_password != confirm_password:
+        else:
+            existing = (
+                supabase.table("user_accounts")
+                .select("username")
+                .eq("username", username)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                st.error("That username already exists.")
+            else:
+                try:
+                    supabase.table("user_accounts").insert(
+                        {
+                            "username": username,
+                            "password_hash": hash_password(qa_password),
+                            "name": display_name,
+                            "role": "QA Admin",
+                            "assigned_muni": "Abra Province",
+                            "account_status": "Approved",
+                            "failed_attempts": 0,
+                            "must_change_password": True,
+                        }
+                    ).execute()
+                    _audit(supabase, f"QA Admin created | username={username}")
+                    st.toast(f"QA Admin created: {username}")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Unable to create the QA Admin account: {exc}")
+
+    if qa_df.empty:
+        return
+
+    qa_usernames = sorted(qa_df["username"].dropna().astype(str).tolist())
+
+    st.divider()
+    _section_heading("fa-key", "Reset QA Admin Password")
+    with st.form("qa_admin_reset_password_form"):
+        qa_reset_username = st.selectbox("QA Admin Account", qa_usernames, key="qa_admin_reset_username")
+        qa_reset_password = st.text_input("Temporary Password", type="password", key="qa_admin_reset_password")
+        qa_confirm_password = st.text_input("Confirm Temporary Password", type="password", key="qa_admin_reset_confirm")
+        qa_reset_submit = st.form_submit_button("Reset QA Admin Password", disabled=read_only)
+
+    if qa_reset_submit and not read_only:
+        if len(qa_reset_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        elif qa_reset_password != qa_confirm_password:
             st.error("The passwords do not match.")
         else:
             supabase.table("user_accounts").update(
-                {"password_hash": hash_password(reset_password), "failed_attempts": 0}
-            ).eq("username", reset_username).execute()
-            _audit(supabase, f"Password reset | username={reset_username}")
-            st.toast(f"Password reset for {reset_username}.")
+                {
+                    "password_hash": hash_password(qa_reset_password),
+                    "failed_attempts": 0,
+                    "must_change_password": True,
+                }
+            ).eq("username", qa_reset_username).execute()
+            _audit(supabase, f"QA Admin password reset | username={qa_reset_username}")
+            st.toast(f"Temporary password set for {qa_reset_username}.")
+            st.rerun()
 
-    st.divider()
-    _section_heading("fa-user-shield", "Account Status")
-    action_username = st.selectbox("Admin Account", usernames, key="admin_status_username")
-    selected_row = admin_df[admin_df["username"].eq(action_username)].iloc[0]
-    selected_status = str(selected_row.get("account_status") or "Approved").strip()
-    selected_is_active = selected_status.lower() in {"approved", "active"}
-    active_count = int(_active_admin_mask(accounts).sum())
-
-    col_enable, col_disable = st.columns(2)
-    with col_enable:
-        enable_blocked = selected_is_active or active_count >= 2
-        if st.button("Enable Account", width="stretch", disabled=enable_blocked, key="admin_enable_account"):
+    _section_heading("fa-user-lock", "QA Admin Account Status")
+    qa_action_username = st.selectbox("QA Admin Account", qa_usernames, key="qa_admin_status_username")
+    qa_selected = qa_df[qa_df["username"].eq(qa_action_username)].iloc[0]
+    qa_active = str(qa_selected.get("account_status") or "Approved").strip().lower() in {"approved", "active"}
+    qa_enable, qa_disable = st.columns(2)
+    with qa_enable:
+        if st.button(
+            "Enable QA Admin",
+            width="stretch",
+            disabled=(read_only or qa_active),
+            key="qa_admin_enable",
+        ) and not read_only:
             supabase.table("user_accounts").update(
                 {"account_status": "Approved", "failed_attempts": 0}
-            ).eq("username", action_username).execute()
-            _audit(supabase, f"Admin account enabled | username={action_username}")
-            st.toast(f"Enabled {action_username}.")
+            ).eq("username", qa_action_username).execute()
+            _audit(supabase, f"QA Admin enabled | username={qa_action_username}")
             st.rerun()
-
-    with col_disable:
-        disable_blocked = action_username == current_username or (selected_is_active and active_count <= 1)
-        if st.button("Disable Account", width="stretch", disabled=disable_blocked, key="admin_disable_account"):
+    with qa_disable:
+        if st.button(
+            "Disable QA Admin",
+            width="stretch",
+            disabled=(read_only or not qa_active or qa_action_username == current_username),
+            key="qa_admin_disable",
+        ) and not read_only:
             supabase.table("user_accounts").update(
                 {"account_status": "Disabled"}
-            ).eq("username", action_username).execute()
-            _audit(supabase, f"Admin account disabled | username={action_username}")
-            st.toast(f"Disabled {action_username}.")
+            ).eq("username", qa_action_username).execute()
+            _audit(supabase, f"QA Admin disabled | username={qa_action_username}")
             st.rerun()
 
-    _section_heading("fa-user-xmark", "Delete Admin Account")
-    delete_confirm = st.text_input(
-        "Type the username to confirm deletion",
-        key="admin_delete_confirm",
-    )
-    delete_blocked = action_username == current_username or (selected_is_active and active_count <= 1)
-    if st.button("Delete Admin Account", type="secondary", disabled=delete_blocked, key="admin_delete_account"):
-        if delete_confirm.strip() != action_username:
+    _section_heading("fa-user-xmark", "Delete QA Admin Account")
+    qa_delete_confirm = st.text_input("Type the QA username to confirm deletion", key="qa_admin_delete_confirm")
+    qa_delete_blocked = read_only or qa_action_username == current_username
+    if st.button("Delete QA Admin", type="secondary", disabled=qa_delete_blocked, key="qa_admin_delete") and not read_only:
+        if qa_delete_confirm.strip() != qa_action_username:
             st.error("The confirmation username does not match.")
         else:
-            supabase.table("user_accounts").delete().eq("username", action_username).execute()
-            _audit(supabase, f"Admin account deleted | username={action_username}")
-            st.toast(f"Deleted {action_username}.")
+            supabase.table("user_accounts").delete().eq("username", qa_action_username).execute()
+            _audit(supabase, f"QA Admin deleted | username={qa_action_username}")
+            st.toast(f"Deleted {qa_action_username}.")
             st.rerun()
 
 
@@ -1444,11 +1613,18 @@ def _render_audit_log(supabase) -> None:
 
 
 def render_admin_dashboard(supabase) -> None:
-    if st.session_state.get("user_role") != "System Admin":
+    if st.session_state.get("user_role") not in ADMIN_ACCESS_ROLES:
         st.session_state["active_program"] = None
         st.rerun()
 
+    read_only = _is_qa_admin()
+    if read_only:
+        supabase = _ReadOnlySupabaseProxy(supabase)
+
     _render_sidebar()
+
+    if read_only:
+        st.warning("QA ADMIN — READ-ONLY TEST ACCOUNT. You can inspect the full administrative interface, but production changes are disabled.")
 
     st.markdown(
         """
@@ -1557,22 +1733,22 @@ def render_admin_dashboard(supabase) -> None:
         _render_overview(supabase)
 
     with operations_tab:
-        render_operations(supabase, audit_callback=_audit)
+        render_operations(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
 
     with sync_tab:
-        _render_data_sync(supabase)
+        _render_data_sync(supabase, read_only=read_only)
 
     with imports_tab:
-        render_import_management(supabase, audit_callback=_audit)
+        render_import_management(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
 
     with map_tab:
-        _render_map_label_editor(supabase)
+        _render_map_label_editor(supabase, read_only=read_only)
 
     with rhu_accounts_tab:
-        _render_rhu_accounts(supabase)
+        _render_rhu_accounts(supabase, read_only=read_only)
 
     with accounts_tab:
-        _render_admin_accounts(supabase)
+        _render_admin_accounts(supabase, read_only=read_only)
 
     with login_tab:
         _section_heading("fa-right-to-bracket", "Login History")

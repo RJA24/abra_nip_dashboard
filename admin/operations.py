@@ -20,7 +20,7 @@ from core.data import (
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.20.1"
+APP_VERSION = "v5.20.2"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -60,7 +60,7 @@ def _format_datetime(value) -> str:
     return parsed.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
 
 
-def render_system_health(supabase, audit_callback=None) -> None:
+def render_system_health(supabase, audit_callback=None, read_only: bool = False) -> None:
     st.markdown("### System Health")
     st.caption(f"Dashboard version: {APP_VERSION}")
 
@@ -111,8 +111,9 @@ def render_system_health(supabase, audit_callback=None) -> None:
             "Enable Google Sheet fallback when a direct VaccTrack upload is missing",
             value=fallback_enabled,
             key="ops_vacctrack_google_fallback",
+            disabled=read_only,
         )
-        if desired != fallback_enabled:
+        if desired != fallback_enabled and not read_only:
             actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
             supabase.table(SBI_SETTINGS_TABLE).upsert(
                 {
@@ -265,7 +266,7 @@ def render_rollout_status(supabase) -> None:
     )
 
 
-def render_feedback_inbox(supabase, audit_callback=None) -> None:
+def render_feedback_inbox(supabase, audit_callback=None, read_only: bool = False) -> None:
     st.markdown("### RHU Feedback")
     ready, _ = _table_exists(supabase, FEEDBACK_TABLE)
     if not ready:
@@ -315,9 +316,9 @@ def render_feedback_inbox(supabase, audit_callback=None) -> None:
         options = ["Open", "In Review", "Resolved"]
         status = st.selectbox("Status", options, index=options.index(current_status) if current_status in options else 0)
         note = st.text_area("Admin Note", value=str(selected.get("admin_note") or ""), height=100)
-        save = st.form_submit_button("Save Feedback Update", type="primary")
+        save = st.form_submit_button("Save Feedback Update", type="primary", disabled=read_only)
 
-    if save:
+    if save and not read_only:
         update = {"status": status, "admin_note": note.strip() or None}
         if status == "Resolved":
             update["resolved_at"] = datetime.now(MANILA_TZ).isoformat()
@@ -427,15 +428,15 @@ def render_backup(supabase, audit_callback=None) -> None:
         )
 
 
-def render_operations(supabase, audit_callback=None) -> None:
+def render_operations(supabase, audit_callback=None, read_only: bool = False) -> None:
     health_tab, rollout_tab, feedback_tab, backup_tab = st.tabs(
         ["System Health", "RHU Rollout", "Feedback", "Backup"]
     )
     with health_tab:
-        render_system_health(supabase, audit_callback=audit_callback)
+        render_system_health(supabase, audit_callback=audit_callback, read_only=read_only)
     with rollout_tab:
         render_rollout_status(supabase)
     with feedback_tab:
-        render_feedback_inbox(supabase, audit_callback=audit_callback)
+        render_feedback_inbox(supabase, audit_callback=audit_callback, read_only=read_only)
     with backup_tab:
-        render_backup(supabase, audit_callback=audit_callback)
+        render_backup(supabase, audit_callback=audit_callback if not read_only else None)

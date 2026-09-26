@@ -497,6 +497,7 @@ def _current_dashboard_dates() -> dict[str, date | None]:
 def render_vacctrack_importer(
     supabase,
     audit_callback: Callable[[object, str], None] | None = None,
+    read_only: bool = False,
 ) -> None:  # noqa: ANN001
     st.markdown(
         '''<div style="display:flex;align-items:center;gap:0.55rem;margin:1.45rem 0 0.7rem 0;">
@@ -515,6 +516,8 @@ def render_vacctrack_importer(
         "snapshot in Supabase, so you no longer need to copy-paste the export into VaccTrackG1, VaccTrackG4, "
         f"or VaccTrackG7 manually. {fallback_note}"
     )
+    if read_only:
+        st.info("QA Admin mode: you can upload files to test parsing and validation previews, but importing them is disabled.")
 
     ready, message = schema_available(supabase)
     if not ready:
@@ -653,9 +656,9 @@ def render_vacctrack_importer(
             "Import Validated VaccTrack Extracts",
             type="primary",
             width="stretch",
-            disabled=not (can_import and confirm),
+            disabled=(read_only or not (can_import and confirm)),
             key="admin_vacctrack_import_button",
-        ):
+        ) and not read_only:
             imported_by = str(
                 st.session_state.get("username")
                 or st.session_state.get("user_name")

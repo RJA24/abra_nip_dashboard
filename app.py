@@ -15,6 +15,8 @@ from admin import render_admin_dashboard
 logger = logging.getLogger("abra_nip_dashboard")
 logger.setLevel(logging.INFO)
 
+ADMIN_ACCESS_ROLES = {"System Admin", "QA Admin"}
+
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
@@ -659,7 +661,7 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
 
     st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
 
-    if st.session_state.get("user_role") == "System Admin":
+    if st.session_state.get("user_role") in ADMIN_ACCESS_ROLES:
         controls_left, account_col, admin_col, controls_right = st.columns([2.0, 1.25, 1.25, 2.0])
 
         with account_col:
@@ -705,7 +707,7 @@ if active_program == "ACCOUNT":
     st.stop()
 
 if active_program == "ADMIN":
-    if st.session_state.get("user_role") != "System Admin":
+    if st.session_state.get("user_role") not in ADMIN_ACCESS_ROLES:
         st.session_state["active_program"] = None
         st.rerun()
     render_admin_dashboard(supabase)

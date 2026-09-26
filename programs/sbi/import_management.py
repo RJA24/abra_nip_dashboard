@@ -314,7 +314,7 @@ def _rollback_line_batch(supabase, target: dict, imports: pd.DataFrame, username
     }
 
 
-def _render_line_list_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN001
+def _render_line_list_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:  # noqa: ANN001
     st.markdown("#### Learner Line-List Imports")
     imports = _line_imports(supabase)
     if imports.empty:
@@ -390,9 +390,9 @@ def _render_line_list_cleanup(supabase, audit_callback=None) -> None:  # noqa: A
         "Delete Selected Line-List Batch",
         type="primary",
         width="stretch",
-        disabled=not (safe and confirm),
+        disabled=(read_only or not (safe and confirm)),
         key=f"cleanup_line_delete_{int(target['id'])}",
-    ):
+    ) and not read_only:
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or "System Admin")
         try:
             with st.spinner("Rolling back the selected line-list batch..."):
@@ -411,7 +411,7 @@ def _render_line_list_cleanup(supabase, audit_callback=None) -> None:  # noqa: A
             st.error(f"Unable to delete this line-list batch safely: {exc}")
 
 
-def _render_manual_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN001
+def _render_manual_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:  # noqa: ANN001
     st.markdown("#### Manual Fallback Records")
     entries = _manual_entries(supabase)
     if entries.empty:
@@ -462,9 +462,9 @@ def _render_manual_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN0
         "Delete Selected Manual Records",
         type="primary",
         width="stretch",
-        disabled=not (selected_ids and confirm),
+        disabled=(read_only or not (selected_ids and confirm)),
         key="cleanup_manual_delete",
-    ):
+    ) and not read_only:
         try:
             for start in range(0, len(selected_ids), 100):
                 supabase.table(RHU_AGG_TABLE).delete().in_("id", selected_ids[start:start + 100]).eq("source_type", "manual").execute()
@@ -478,7 +478,7 @@ def _render_manual_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN0
 
 
 
-def _render_legacy_regional_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN001
+def _render_legacy_regional_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:  # noqa: ANN001
     sessions = _regional_sessions(supabase)
     if sessions.empty:
         return
@@ -510,9 +510,9 @@ def _render_legacy_regional_cleanup(supabase, audit_callback=None) -> None:  # n
             "Delete Selected Legacy Regional Sessions",
             type="primary",
             width="stretch",
-            disabled=not (ids and confirm),
+            disabled=(read_only or not (ids and confirm)),
             key="cleanup_legacy_regional_delete",
-        ):
+        ) and not read_only:
             try:
                 for start in range(0, len(ids), 100):
                     supabase.table(REGIONAL_SESSION_TABLE).delete().in_("id", ids[start:start + 100]).execute()
@@ -524,7 +524,7 @@ def _render_legacy_regional_cleanup(supabase, audit_callback=None) -> None:  # n
             except Exception as exc:
                 st.error(f"Unable to delete the selected legacy regional session records: {exc}")
 
-def _render_vacctrack_cleanup(supabase, audit_callback=None) -> None:  # noqa: ANN001
+def _render_vacctrack_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:  # noqa: ANN001
     st.markdown("#### VaccTrack Direct-Upload Snapshots")
     imports = _vacctrack_imports(supabase)
     if imports.empty:
@@ -600,9 +600,9 @@ def _render_vacctrack_cleanup(supabase, audit_callback=None) -> None:  # noqa: A
         "Delete Selected VaccTrack Snapshot",
         type="primary",
         width="stretch",
-        disabled=not confirm,
+        disabled=(read_only or not confirm),
         key=f"cleanup_vt_delete_{target_id}",
-    ):
+    ) and not read_only:
         try:
             # sbi_vacctrack_rows uses ON DELETE CASCADE.
             supabase.table(VACCTRACK_IMPORT_TABLE).delete().eq("id", target_id).execute()
@@ -623,6 +623,7 @@ def _render_vacctrack_cleanup(supabase, audit_callback=None) -> None:  # noqa: A
 def render_import_management(
     supabase,
     audit_callback: Callable[[object, str], None] | None = None,
+    read_only: bool = False,
 ) -> None:  # noqa: ANN001
     st.markdown(
         '''<div style="display:flex;align-items:center;gap:0.55rem;margin:0.25rem 0 0.7rem 0;">
@@ -631,10 +632,13 @@ def render_import_management(
         </div>''',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "Use this admin-only area to remove dummy or incorrect SBI imports. Deletions are permanent, "
-        "so select the exact batch/record/snapshot and review the confirmation before deleting."
-    )
+    if read_only:
+        st.info("QA Admin mode: import history and cleanup targets are visible, but all delete actions are disabled.")
+    else:
+        st.markdown(
+            "Use this admin-only area to remove dummy or incorrect SBI imports. Deletions are permanent, "
+            "so select the exact batch/record/snapshot and review the confirmation before deleting."
+        )
 
     notice = st.session_state.pop("cleanup_notice", None)
     if notice:
@@ -646,9 +650,9 @@ def render_import_management(
         "VaccTrack Snapshots",
     ])
     with line_tab:
-        _render_line_list_cleanup(supabase, audit_callback)
+        _render_line_list_cleanup(supabase, audit_callback, read_only=read_only)
     with manual_tab:
-        _render_manual_cleanup(supabase, audit_callback)
-        _render_legacy_regional_cleanup(supabase, audit_callback)
+        _render_manual_cleanup(supabase, audit_callback, read_only=read_only)
+        _render_legacy_regional_cleanup(supabase, audit_callback, read_only=read_only)
     with vt_tab:
-        _render_vacctrack_cleanup(supabase, audit_callback)
+        _render_vacctrack_cleanup(supabase, audit_callback, read_only=read_only)

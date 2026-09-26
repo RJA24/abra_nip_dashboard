@@ -1,6 +1,6 @@
 # Abra NIP Dashboard — SBI RHU Encoder FAQs
 
-Version: v5.20.1
+Version: v5.20.2
 
 ## 1. What is the easiest way to know whether I need Follow-up or Revision?
 
