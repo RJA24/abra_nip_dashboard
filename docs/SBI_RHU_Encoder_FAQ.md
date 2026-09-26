@@ -1,16 +1,6 @@
 # Abra NIP Dashboard — SBI RHU Encoder FAQs
 
-Version: v5.19.3
-
-## Password and account access
-
-### Why am I being asked to change my password after logging in?
-
-New RHU accounts and admin-reset passwords are temporary. Create your own password before continuing.
-
-### What if I forget my password?
-
-Ask the NIP/System Admin to reset it. You will receive a temporary password and will be required to change it at your next login.
+Version: v5.20.1
 
 ## 1. What is the easiest way to know whether I need Follow-up or Revision?
 
@@ -105,3 +95,16 @@ No. If the dashboard says it is already up to date, continue to the next step.
 ## 23. What if the whole activity was encoded under the wrong date?
 
 Ask NIP/System Admin to remove the incorrect import/batch in **Administration → Import Management**, then upload the corrected activity file. Do not keep both dates.
+
+
+## 24. Can I practice without saving real data?
+
+Yes. Open **Training / Practice Mode**. Practice files are validated in your current browser session and are not written to the production SBI tables.
+
+## 25. How do I send feedback while testing?
+
+Open **Send Feedback / Report a Problem**, choose the category/page, and describe the issue. Do not include learner names, LRN, or other identifying information.
+
+## 26. How do I know whether VaccTrack is already updated for my activity date?
+
+Open **3. VaccTrack Check** and look at the G1/G4/G7 source table. Compare your activity date with the **Data Through** date. If the source has not yet reached your activity date, the result may remain pending.

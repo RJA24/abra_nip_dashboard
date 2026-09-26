@@ -10,7 +10,7 @@ from typing import Callable
 import pandas as pd
 import streamlit as st
 
-from core.data import fetch_sbi_vacctrack
+from core.data import fetch_sbi_vacctrack, vacctrack_google_fallback_enabled
 
 
 IMPORT_TABLE = "sbi_vacctrack_imports"
@@ -505,10 +505,15 @@ def render_vacctrack_importer(
         </div>''',
         unsafe_allow_html=True,
     )
+    fallback_note = (
+        "Google Sheets is currently available as fallback for a grade without a direct snapshot."
+        if vacctrack_google_fallback_enabled()
+        else "Google Sheet fallback is currently off, so only direct VaccTrack uploads are used."
+    )
     st.markdown(
         "Upload the files downloaded directly from VaccTrack. The dashboard stores each grade as an official "
         "snapshot in Supabase, so you no longer need to copy-paste the export into VaccTrackG1, VaccTrackG4, "
-        "or VaccTrackG7 manually. Google Sheets remains a fallback only when no direct snapshot has been imported for a grade."
+        f"or VaccTrackG7 manually. {fallback_note}"
     )
 
     ready, message = schema_available(supabase)
@@ -702,7 +707,10 @@ def render_vacctrack_importer(
     st.markdown("#### VaccTrack Import History")
     history = _history_dataframe(supabase, 30)
     if history.empty:
-        st.write("No direct VaccTrack extracts have been imported yet. The dashboard continues using the Google Sheet fallback.")
+        if vacctrack_google_fallback_enabled():
+            st.write("No direct VaccTrack extracts have been imported yet. The dashboard is using the Google Sheet fallback.")
+        else:
+            st.warning("No direct VaccTrack extracts have been imported and Google Sheet fallback is off. Upload a VaccTrack extract before relying on SBI dashboard figures.")
     else:
         display_cols = [
             "Grade",

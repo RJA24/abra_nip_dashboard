@@ -27,6 +27,8 @@ VACCTRACK_IMPORT_TABLE = "sbi_vacctrack_imports"
 VACCTRACK_ROWS_TABLE = "sbi_vacctrack_rows"
 VACCTRACK_GRADES = ("G1", "G4", "G7")
 VACCTRACK_SHEETS = {"G1": "VaccTrackG1", "G4": "VaccTrackG4", "G7": "VaccTrackG7"}
+SBI_SETTINGS_TABLE = "sbi_settings"
+VACCTRACK_GOOGLE_FALLBACK_KEY = "vacctrack_google_fallback_enabled"
 
 
 def _clean_vacctrack_frame(df: pd.DataFrame, grade: str) -> pd.DataFrame:
@@ -120,7 +122,7 @@ def _fetch_latest_imported_grade(supabase, grade: str):
     return _clean_vacctrack_frame(pd.DataFrame(records), grade), meta
 
 
-@st.cache_data(ttl="15m")
+@st.cache_data(ttl="15m", show_spinner=False)
 def _fetch_sbi_vacctrack_imported_cached():
     """Read the latest completed direct-upload snapshot for each SBI grade.
 
@@ -141,22 +143,49 @@ def _fetch_sbi_vacctrack_imported_cached():
 
 
 @st.cache_data(ttl="1h", show_spinner=False)
-def _fetch_sbi_vacctrack_google_cached():
-    """Fetch historical Google Sheet VaccTrack tabs as a compatibility fallback."""
+def _fetch_sbi_vacctrack_google_cached(grades: tuple[str, ...] = VACCTRACK_GRADES):
+    """Fetch only the Google Sheet VaccTrack tabs that are needed as fallback data."""
     conn = st.connection("gsheets", type=GSheetsConnection)
     frames = {}
-    for grade, worksheet in VACCTRACK_SHEETS.items():
+    for grade in grades:
+        worksheet = VACCTRACK_SHEETS.get(grade)
+        if not worksheet:
+            continue
         frame = conn.read(spreadsheet=SBI_SHEET_URL, worksheet=worksheet, ttl="1h")
         frames[grade] = _clean_vacctrack_frame(frame, grade)
     return frames
 
 
+@st.cache_data(ttl="30s", show_spinner=False)
+def _fetch_sbi_setting_cached(setting_key: str, default_value: str) -> str:
+    try:
+        response = (
+            init_supabase()
+            .table(SBI_SETTINGS_TABLE)
+            .select("setting_value")
+            .eq("setting_key", setting_key)
+            .limit(1)
+            .execute()
+        )
+        if response.data:
+            value = response.data[0].get("setting_value")
+            if value is not None:
+                return str(value).strip()
+    except Exception:
+        logger.info("SBI settings table is unavailable; using the default setting", exc_info=True)
+    return default_value
+
+
+def vacctrack_google_fallback_enabled() -> bool:
+    value = _fetch_sbi_setting_cached(VACCTRACK_GOOGLE_FALLBACK_KEY, "true")
+    return value.lower() in {"1", "true", "yes", "on", "enabled"}
+
+
 def fetch_sbi_vacctrack():
     """Return official SBI VaccTrack frames.
 
-    v5.16 prefers the latest completed direct upload stored in Supabase for each
-    grade independently. If a grade has never been directly imported, its existing
-    Google Sheet worksheet remains the fallback source.
+    The latest completed direct upload stored in Supabase is used for each grade.
+    A missing grade uses the Google Sheet source only while the fallback setting is enabled.
     """
     try:
         imported, _meta = _fetch_sbi_vacctrack_imported_cached()
@@ -166,9 +195,9 @@ def fetch_sbi_vacctrack():
 
     missing = [grade for grade in VACCTRACK_GRADES if imported.get(grade, pd.DataFrame()).empty]
     google = {}
-    if missing:
+    if missing and vacctrack_google_fallback_enabled():
         try:
-            google = _fetch_sbi_vacctrack_google_cached()
+            google = _fetch_sbi_vacctrack_google_cached(tuple(missing))
         except Exception:
             logger.exception("Failed to fetch SBI VaccTrack Google Sheet fallback; failure was not cached")
             google = {}
@@ -180,12 +209,14 @@ def fetch_sbi_vacctrack():
     return tuple(frames)
 
 
-@st.cache_data(ttl="5m")
+@st.cache_data(ttl="5m", show_spinner=False)
 def _fetch_sbi_vacctrack_source_info_cached():
+    fallback_enabled = vacctrack_google_fallback_enabled()
+    missing_source = "Google Sheet fallback" if fallback_enabled else "Unavailable - fallback disabled"
     info = {
         grade: {
             "grade": grade,
-            "source": "Google Sheet fallback",
+            "source": missing_source,
             "filename": None,
             "row_count": None,
             "abra_row_count": None,
@@ -210,9 +241,9 @@ def _fetch_sbi_vacctrack_source_info_cached():
             }
 
         missing = [grade for grade in VACCTRACK_GRADES if not meta.get(grade)]
-        if missing:
+        if missing and fallback_enabled:
             try:
-                google = _fetch_sbi_vacctrack_google_cached()
+                google = _fetch_sbi_vacctrack_google_cached(tuple(missing))
                 for grade in missing:
                     frame = google.get(grade, pd.DataFrame())
                     if frame.empty or "Report date" not in frame.columns:
@@ -233,10 +264,11 @@ def fetch_sbi_vacctrack_source_info():
     try:
         return _fetch_sbi_vacctrack_source_info_cached()
     except Exception:
-        return {grade: {"grade": grade, "source": "Google Sheet fallback"} for grade in VACCTRACK_GRADES}
+        source = "Google Sheet fallback" if vacctrack_google_fallback_enabled() else "Unavailable - fallback disabled"
+        return {grade: {"grade": grade, "source": source} for grade in VACCTRACK_GRADES}
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_sbi_targets_cached():
     """Fetch all SBI targets. Only successful results are cached."""
     supabase = init_supabase()
@@ -288,7 +320,7 @@ def fetch_sbi_targets():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl="5m")
+@st.cache_data(ttl="5m", show_spinner=False)
 def _fetch_sbi_actual_targets_cached():
     """Fetch RHU-entered school-level actual targets from the SBI Google Sheet.
 
@@ -378,7 +410,7 @@ def fetch_sbi_actual_targets():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_targets_from_supabase_cached():
     supabase = init_supabase()
     # 🛑 FIX: Added a 3-attempt retry loop to wake up a sleeping Supabase server
@@ -480,7 +512,7 @@ def fetch_targets_from_supabase():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_live_accomplishments_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -544,7 +576,7 @@ def fetch_live_accomplishments():
         return pd.DataFrame(), pd.DataFrame()
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_vacctrack_data_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
@@ -568,7 +600,7 @@ def fetch_vacctrack_data():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl="1h")
+@st.cache_data(ttl="1h", show_spinner=False)
 def _fetch_opt_data_cached():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)

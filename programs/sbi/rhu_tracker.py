@@ -16,14 +16,17 @@ import pytz
 import streamlit as st
 
 from core.config import ABRA_MUNIS
+from core.data import fetch_sbi_vacctrack_source_info, vacctrack_google_fallback_enabled
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.help_content import RHU_FAQ_MD, RHU_FULL_GUIDE_MD
 from programs.sbi.linelist import (
     render_linelist_history,
     render_linelist_upload,
+    render_training_mode,
     render_vacctrack_encoding_summary,
     schema_available as linelist_schema_available,
 )
+from programs.sbi.support import render_feedback_form
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 TABLE_NAME = "sbi_rhu_accomplishments"
@@ -897,11 +900,17 @@ def _render_check(
         '<h3><i class="fa-solid fa-circle-check" style="color:#0033A0;margin-right:8px;"></i>Step 3 — Refresh & VaccTrack Check</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "The comparison uses the latest official VaccTrack data available to the dashboard. "
-        "Direct extracts uploaded by the System Admin are used first; if a grade has not yet been "
-        "directly imported, the existing Google Sheet worksheet remains the fallback."
-    )
+    if vacctrack_google_fallback_enabled():
+        st.markdown(
+            "The comparison uses the latest official VaccTrack data available to the dashboard. "
+            "Direct extracts uploaded by the System Admin are used first; if a grade has not yet been "
+            "directly imported, the Google Sheet worksheet is used as fallback."
+        )
+    else:
+        st.markdown(
+            "The comparison is currently using direct VaccTrack uploads only. "
+            "Google Sheet fallback has been turned off by the System Admin."
+        )
     if st.button(
         "Refresh VaccTrack Data",
         width="stretch",
@@ -911,6 +920,20 @@ def _render_check(
         st.cache_data.clear()
         st.toast("Reloading the latest VaccTrack data...")
         st.rerun()
+
+    source_info = fetch_sbi_vacctrack_source_info()
+    source_rows = []
+    for grade in ("G1", "G4", "G7"):
+        info = source_info.get(grade, {}) or {}
+        report_date = pd.to_datetime(info.get("report_date_max"), errors="coerce")
+        source_rows.append(
+            {
+                "Grade": grade,
+                "Source": info.get("source") or "Unavailable",
+                "Data Through": report_date.strftime("%b %d, %Y") if not pd.isna(report_date) else "Not available",
+            }
+        )
+    st.dataframe(pd.DataFrame(source_rows), width="stretch", hide_index=True)
 
     all_entries = _fetch_entries(supabase, assigned_muni)
     entries = _entries_for_muni_period(all_entries, assigned_muni, start_date, end_date)
@@ -1106,6 +1129,11 @@ def render_rhu_accomplishments(
         canonical = valid[normalize_municipality_key(canonical)]
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
         _render_rhu_encoder_process_guide(canonical)
+
+        with st.expander("Training / Practice Mode — no data is saved", expanded=False):
+            render_training_mode(targets, canonical)
+
+        render_feedback_form(supabase, canonical, username, role=user_role)
 
         upload_tab, encoding_tab, check_tab, history_tab, mine_tab, entry_tab = st.tabs([
             "1. Upload Learner Records",

@@ -1,6 +1,6 @@
 # Abra NIP Dashboard — SBI RHU Encoder Step-by-Step Guide
 
-Version: v5.19.3
+Version: v5.20.1
 
 ## 1. The 3-step RHU workflow
 
@@ -13,6 +13,12 @@ The normal SBI workflow has only three main steps:
 VaccTrack remains the official/final SBI dataset. The dashboard line list is the RHU's operational record used to prepare and verify what should be encoded in VaccTrack.
 
 > **For authorized RHU/NIP users only. Please upload only the correct learner records for your assigned municipality.**
+
+### First login
+
+If you signed in using a temporary/default password, the dashboard will require you to create your own password before you can continue. Use at least 8 characters and do not reuse the temporary password.
+
+If you forget your password later, ask the NIP/System Admin to reset it. The reset password is temporary and you will be required to change it again on your next login.
 
 ## 2. First question: what are you trying to do?
 
@@ -292,3 +298,35 @@ Do not create a new activity row unless there is a new outcome to record. The pr
 ### E. Entire activity was encoded under the wrong date
 
 Do not duplicate the activity under the correct date. Ask NIP/System Admin to remove the incorrect import/batch, then upload the corrected activity file.
+
+
+## 15. Training / Practice Mode
+
+Use **Training / Practice Mode** when you want to try the workflow without saving production data.
+
+- Practice uploads are validated using the same line-list rules.
+- You can set a practice baseline and upload another file to see Added / Modified / Removed / Unchanged results.
+- You can also generate a practice follow-up workbook.
+- Nothing in Training Mode is written to the SBI production tables.
+- The practice baseline lasts only in the current browser session and can be reset at any time.
+
+Use Training Mode for orientation and dry runs. When you are ready to submit real activity data, return to **1. Upload Learner Records**.
+
+## 16. Send Feedback / Report a Problem
+
+During the rollout, use **Send Feedback / Report a Problem** to report confusing instructions, upload problems, follow-up questions, mobile display issues, or suggestions.
+
+Choose the category and page, then describe what happened. The dashboard automatically includes your account, municipality, and dashboard version so the NIP team can trace the issue more easily.
+
+Do not include learner names, LRN, or other identifying information in feedback.
+
+## 17. VaccTrack source and freshness
+
+Inside **3. VaccTrack Check**, the dashboard shows the current source and the latest report date available for Grade 1, Grade 4, and Grade 7.
+
+- **Direct VaccTrack upload** means the latest completed extract uploaded by the NIP/System Admin is being used.
+- **Google Sheet fallback** means no direct snapshot is currently available for that grade and the System Admin has left fallback enabled.
+- If fallback is disabled, the dashboard uses direct VaccTrack uploads only.
+- **Data Through** shows the latest report date found in that source.
+
+Always check the Data Through date before treating a pending result as an encoding problem.
