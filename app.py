@@ -132,6 +132,51 @@ st.markdown("""
     }
 
     [data-testid="stExpander"], div[data-testid="stExpanderDetails"] { overflow: visible !important; }
+
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.7rem !important;
+            padding-right: 0.7rem !important;
+            padding-top: 0.35rem !important;
+        }
+        [data-testid="stMetric"] {
+            height: auto !important;
+            min-height: 108px !important;
+            padding: 10px 8px !important;
+        }
+        [data-testid="stMetricValue"] * {
+            font-size: 30px !important;
+        }
+        [data-testid="stTabs"] > div[data-baseweb="tab-list"],
+        [data-testid="stTabs"] > div[role="tablist"] {
+            justify-content: flex-start !important;
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            padding: 9px 0 !important;
+            margin-bottom: 14px !important;
+        }
+        [data-testid="stTabs"] > div > div[data-baseweb="tab-list"] > div,
+        [data-testid="stTabs"] > div[role="tablist"] > div {
+            justify-content: flex-start !important;
+            width: max-content !important;
+            margin: 0 !important;
+        }
+        button[data-testid="stTab"], button[data-baseweb="tab"] {
+            padding: 10px 14px !important;
+            margin: 0 3px !important;
+            white-space: nowrap !important;
+        }
+        button[data-testid="stTab"] p, button[data-baseweb="tab"] p {
+            font-size: 14px !important;
+        }
+        [data-testid="stDataFrame"], [data-testid="stTable"] {
+            max-width: 100% !important;
+            overflow-x: auto !important;
+        }
+        [data-testid="stFileUploader"] {
+            width: 100% !important;
+        }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -563,11 +608,8 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         .nip-menu-hero { margin-top: 0; }
         .nip-menu-logos img { width: 64px; height: 64px; }
         .program-button-spacer { height: 2rem; }
-        .program-button-spacer {
-        height: clamp(2.5rem, 7vh, 5.25rem);
-    }
 
-    div.element-container:has(.program-btn-marker) + div.element-container button {
+        div.element-container:has(.program-btn-marker) + div.element-container button {
             height: 108px !important;
             border-radius: 999px !important;
         }

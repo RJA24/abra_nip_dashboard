@@ -335,7 +335,24 @@ def _render_line_list_cleanup(supabase, audit_callback=None) -> None:  # noqa: A
         "Batch ID", "Municipality", "From", "Through", "Rows", "Added", "Modified", "Removed",
         "File", "Uploaded By", "Uploaded At",
     ]
+    total_rows = int(pd.to_numeric(display["Rows"], errors="coerce").fillna(0).sum())
+    total_changes = int(
+        pd.to_numeric(display["Added"], errors="coerce").fillna(0).sum()
+        + pd.to_numeric(display["Modified"], errors="coerce").fillna(0).sum()
+        + pd.to_numeric(display["Removed"], errors="coerce").fillna(0).sum()
+    )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Batches", len(display))
+    c2.metric("Rows Processed", f"{total_rows:,}")
+    c3.metric("Changes Applied", f"{total_changes:,}")
     st.dataframe(display, width="stretch", hide_index=True)
+    st.download_button(
+        "Download Line-List Import History (CSV)",
+        data=display.to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_LineList_Import_History.csv",
+        mime="text/csv",
+        key="cleanup_line_history_download",
+    )
 
     choices = []
     by_label: dict[str, dict] = {}

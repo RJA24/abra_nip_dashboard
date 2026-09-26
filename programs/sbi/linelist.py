@@ -1,7 +1,7 @@
 """SBI learner line-list upload, revisions, and VaccTrack encoding.
 
 The learner-level records are the RHU operational source used to calculate what should be
-encoded into VaccTrack. VaccTrack remains the official/final SBI dataset. The v5.19.1 RHU
+encoded into VaccTrack. VaccTrack remains the official/final SBI dataset. The current RHU
 workflow is intentionally limited to Grade 1, Grade 4, and Grade 7 to keep encoding simple.
 """
 
@@ -1303,6 +1303,104 @@ def _render_validation_preview(valid: pd.DataFrame, issues: pd.DataFrame, warnin
             st.dataframe(diff["preview"], width="stretch", hide_index=True)
 
 
+def render_training_mode(targets: pd.DataFrame, municipality: str) -> None:
+    st.info(
+        "Training Mode does not save anything to the database. Files are validated only in your current browser session."
+    )
+    session_key = f"sbi_training_baseline_{normalize_municipality_key(municipality)}"
+
+    template = _template_bytes()
+    if template:
+        st.download_button(
+            "Download Practice Line List",
+            data=template,
+            file_name="SBI_Practice_LineList.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"training_template_{normalize_municipality_key(municipality)}",
+        )
+
+    with st.expander("Practice a follow-up activity", expanded=False):
+        source = st.file_uploader(
+            "Practice source workbook",
+            type=["xlsx", "xls", "xlsm", "csv"],
+            key=f"training_followup_source_{normalize_municipality_key(municipality)}",
+        )
+        if source is not None:
+            source_df, source_error = _read_upload(source)
+            if source_error:
+                st.error(source_error)
+            else:
+                followup_bytes, learner_count, followup_error = _followup_template_bytes(source_df)
+                if followup_error:
+                    st.error(followup_error)
+                elif followup_bytes:
+                    st.success(f"Practice follow-up roster prepared for {learner_count:,} learner(s).")
+                    st.download_button(
+                        "Download Practice Follow-up Line List",
+                        data=followup_bytes,
+                        file_name="SBI_Practice_Followup_LineList.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"training_followup_download_{normalize_municipality_key(municipality)}",
+                    )
+
+    uploaded = st.file_uploader(
+        "Upload a practice line list",
+        type=["xlsx", "xls", "xlsm", "csv"],
+        key=f"training_upload_{normalize_municipality_key(municipality)}",
+    )
+
+    baseline = st.session_state.get(session_key)
+    has_baseline = isinstance(baseline, pd.DataFrame) and not baseline.empty
+    if has_baseline:
+        st.caption("A practice baseline is active. Your next upload will be compared against it like a revision.")
+
+    if uploaded is not None:
+        raw_df, read_error = _read_upload(uploaded)
+        if read_error:
+            st.error(read_error)
+        else:
+            valid, issues, warnings = _validate_upload(raw_df, municipality, targets)
+            if not issues.empty or valid.empty:
+                _render_validation_preview(valid, issues, warnings)
+            else:
+                comparison_base = baseline if has_baseline else pd.DataFrame()
+                diff = _compare_revision(valid, comparison_base)
+                _render_validation_preview(valid, issues, warnings, diff)
+
+                summary = (
+                    valid.groupby(["activity_date", "school_name", "grade_level"], dropna=False)
+                    .size()
+                    .reset_index(name="Learners")
+                    .rename(
+                        columns={
+                            "activity_date": "Activity Date",
+                            "school_name": "School",
+                            "grade_level": "Grade",
+                        }
+                    )
+                )
+                st.dataframe(summary, width="stretch", hide_index=True)
+
+                label = "Apply to Practice Baseline" if has_baseline else "Set as Practice Baseline"
+                if st.button(
+                    label,
+                    type="primary",
+                    width="stretch",
+                    key=f"training_apply_{normalize_municipality_key(municipality)}",
+                ):
+                    st.session_state[session_key] = valid.copy()
+                    st.toast("Practice baseline updated. No production data was saved.")
+                    st.rerun()
+
+    if has_baseline and st.button(
+        "Reset Practice Session",
+        width="stretch",
+        key=f"training_reset_{normalize_municipality_key(municipality)}",
+    ):
+        st.session_state.pop(session_key, None)
+        st.rerun()
+
+
 def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, username: str) -> None:
     st.markdown(
         '<h3><i class="fa-solid fa-file-arrow-up" style="color:#0033A0;margin-right:8px;"></i>Step 1 — Upload Line List</h3>',
@@ -1453,6 +1551,18 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
             st.error(f"Unable to import the line list: {exc}")
 
 
+def _fetch_batch_audit(supabase, batch_id: int) -> pd.DataFrame:
+    response = (
+        supabase.table(AUDIT_TABLE)
+        .select("id,row_key,action,old_values,new_values,changed_by,changed_at")
+        .eq("import_batch_id", int(batch_id))
+        .order("changed_at", desc=False)
+        .limit(1000)
+        .execute()
+    )
+    return pd.DataFrame(response.data or [])
+
+
 def render_linelist_history(supabase, municipality: str) -> None:
     st.markdown(
         '<h3><i class="fa-solid fa-clock-rotate-left" style="color:#0033A0;margin-right:8px;"></i>Corrections / Line List History</h3>',
@@ -1466,6 +1576,14 @@ def render_linelist_history(supabase, municipality: str) -> None:
     if imports.empty:
         st.write("No line-list imports have been saved yet.")
         return
+
+    rows_total = int(pd.to_numeric(imports.get("rows_uploaded"), errors="coerce").fillna(0).sum())
+    latest_raw = pd.to_datetime(imports.get("uploaded_at"), errors="coerce").max()
+    latest_label = latest_raw.strftime("%b %d, %Y %I:%M %p") if not pd.isna(latest_raw) else "Not recorded"
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Import Batches", f"{len(imports):,}")
+    m2.metric("Rows Processed", f"{rows_total:,}")
+    m3.metric("Latest Upload", latest_label)
 
     display = imports.copy()
     rename = {
@@ -1484,6 +1602,44 @@ def render_linelist_history(supabase, municipality: str) -> None:
     cols = [c for c in rename if c in display.columns]
     display = display[cols].rename(columns=rename)
     st.dataframe(display, width="stretch", hide_index=True)
+    st.download_button(
+        "Download Import History (CSV)",
+        data=display.to_csv(index=False).encode("utf-8-sig"),
+        file_name=f"SBI_Import_History_{_canonical_muni(municipality).replace(' ', '_')}.csv",
+        mime="text/csv",
+        key="linelist_history_download",
+    )
+
+    batch_ids = pd.to_numeric(imports.get("id"), errors="coerce").dropna().astype(int).tolist()
+    if batch_ids:
+        selected_batch = st.selectbox(
+            "Review a specific import batch",
+            batch_ids,
+            format_func=lambda value: f"Batch #{value}",
+            key="linelist_history_batch",
+        )
+        try:
+            audit = _fetch_batch_audit(supabase, selected_batch)
+        except Exception:
+            audit = pd.DataFrame()
+        if not audit.empty:
+            action_counts = audit["action"].fillna("Unknown").value_counts().rename_axis("Change").reset_index(name="Rows")
+            st.dataframe(action_counts, width="stretch", hide_index=True)
+            audit_export = audit.copy()
+            for column in ["old_values", "new_values"]:
+                if column in audit_export.columns:
+                    audit_export[column] = audit_export[column].map(
+                        lambda value: json.dumps(value, ensure_ascii=False, default=str) if isinstance(value, (dict, list)) else value
+                    )
+            st.download_button(
+                f"Download Batch #{selected_batch} Change Log",
+                data=audit_export.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"SBI_Batch_{selected_batch}_Change_Log.csv",
+                mime="text/csv",
+                key="linelist_batch_audit_download",
+            )
+        else:
+            st.caption("No row-level change log was returned for this batch.")
 
     try:
         active = _fetch_records(supabase, municipality, active_only=True)
@@ -1514,8 +1670,7 @@ def render_linelist_history(supabase, municipality: str) -> None:
                 "Sex", "MR Status", "MR Lot/Batch", "Td Status", "Td Lot/Batch", "HPV Dose", "HPV Status",
                 "HPV Lot/Batch", "Reason Code", "Reason Details", "Remarks"
             ]
-            with st.expander(f"Active learner records: {chosen_date.strftime('%b %d, %Y')}", expanded=False):
-                st.dataframe(detail.sort_values(["School", "Grade", "System Learner ID"]), width="stretch", hide_index=True)
+            st.dataframe(detail, width="stretch", hide_index=True)
 
 
 def _g4_actual_target(actual_targets: pd.DataFrame, municipality: str, school_id: str) -> int | None:
