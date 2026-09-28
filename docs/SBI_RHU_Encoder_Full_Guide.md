@@ -55,6 +55,8 @@ The same learner must keep the same **System Learner ID** on later activity date
 - replace an existing System Learner ID;
 - copy one learner's ID to another learner.
 
+> **Important template rule:** Every fresh template contains its own set of System Learner IDs. Do not share a downloaded blank template with another RHU, and do not copy or reuse the same blank template for another independent activity roster. For a new first-time roster, download a fresh template from the dashboard. For follow-up vaccination of learners who already have IDs, use **Create Follow-up Line List**. For corrections, use the original workbook so the existing System Learner IDs stay with the correct learners.
+
 ## 4. NEW ACTIVITY — first vaccination activity
 
 Use this when the learners are being recorded for their first activity in this workbook/workflow.

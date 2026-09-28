@@ -108,3 +108,9 @@ Open **Send Feedback / Report a Problem**, choose the category/page, and describ
 ## 26. How do I know whether VaccTrack is already updated for my activity date?
 
 Open **3. VaccTrack Check** and look at the G1/G4/G7 source table. Compare your activity date with the **Data Through** date. If the source has not yet reached your activity date, the result may remain pending.
+
+## 27. Can we share or copy a downloaded blank template to another RHU or another activity?
+
+No. Every fresh template contains its own set of System Learner IDs. Each RHU should download its own fresh template for a new first-time activity roster. Do not share a blank template with another RHU or copy/reuse the same blank template for another independent roster.
+
+For learners returning on another date, use **Create Follow-up Line List** so their existing System Learner IDs are retained. For a correction, use the original workbook so the IDs remain with the correct learners.

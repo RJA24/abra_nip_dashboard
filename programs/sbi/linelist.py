@@ -1425,6 +1425,12 @@ def render_linelist_upload(supabase, targets: pd.DataFrame, municipality: str, u
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="linelist_template_download",
         )
+        st.warning(
+            "Each fresh template has its own set of System Learner IDs. Do not share a downloaded blank template with another RHU "
+            "or copy/reuse the same blank template for another independent activity roster. For a new first-time roster, download a fresh "
+            "template from the dashboard. For follow-up vaccination, use Create Follow-up Line List. For corrections, use the original "
+            "workbook so the existing IDs stay with the correct learners."
+        )
     else:
         st.error("Fresh template generation is unavailable. Add xlsxwriter>=3.2.0 to requirements.txt and redeploy.")
 
