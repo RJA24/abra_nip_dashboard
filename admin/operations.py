@@ -20,7 +20,7 @@ from core.data import (
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.20.2"
+APP_VERSION = "v5.20.2.2"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -62,7 +62,7 @@ def _format_datetime(value) -> str:
 
 def render_system_health(supabase, audit_callback=None, read_only: bool = False) -> None:
     st.markdown("### System Health")
-    st.caption(f"Dashboard version: {APP_VERSION}")
+    st.caption(f"System version: {APP_VERSION}")
 
     checks = [
         ("Accounts", "user_accounts", "username"),
@@ -93,7 +93,7 @@ def render_system_health(supabase, audit_callback=None, read_only: bool = False)
     ready_count = sum(row["Status"] == "Ready" for row in status_rows)
     c1, c2, c3 = st.columns(3)
     c1.metric("Components Ready", f"{ready_count}/{len(status_rows)}")
-    c2.metric("Dashboard Version", APP_VERSION)
+    c2.metric("System Version", APP_VERSION)
     c3.metric("Server Time", datetime.now(MANILA_TZ).strftime("%I:%M %p"))
 
     st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
@@ -385,7 +385,7 @@ def _build_backup(supabase, include_vacctrack_rows: bool) -> tuple[bytes, list[d
         archive.writestr(
             "backup_info.txt",
             (
-                f"Abra NIP Dashboard backup\n"
+                f"Abra NIP Monitoring Information System backup\n"
                 f"Version: {APP_VERSION}\n"
                 f"Created: {datetime.now(MANILA_TZ).isoformat()}\n"
                 f"VaccTrack raw rows included: {'Yes' if include_vacctrack_rows else 'No'}\n"

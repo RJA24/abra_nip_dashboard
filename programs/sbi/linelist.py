@@ -1160,7 +1160,7 @@ def _template_bytes(row_count: int = 2000, prefilled_rows: list[dict] | None = N
     instructions.hide_gridlines(2)
     instructions.set_column("A:A", 24)
     instructions.set_column("B:B", 95)
-    instructions.merge_range("A1:B1", "Abra NIP Dashboard — SBI Learner Line List v5.19.2", title_fmt)
+    instructions.merge_range("A1:B1", "Abra NIP Monitoring Information System — SBI Learner Line List v5.19.2", title_fmt)
     instruction_rows = [
         ("Purpose", "Use one row per learner per activity date. The dashboard calculates Grade 1, Grade 4 and Grade 7 VaccTrack figures, deferral/refusal counts, and reason totals."),
         ("Multiple activity dates", "A workbook may contain several activity dates. Every row describes what happened on that row's Activity Date."),

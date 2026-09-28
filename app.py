@@ -20,7 +20,7 @@ ADMIN_ACCESS_ROLES = {"System Admin", "QA Admin"}
 # # ==========================================
 # 1. PAGE CONFIGURATION & UI/UX STYLING
 # ==========================================
-st.set_page_config(page_title="Abra NIP Dashboard", page_icon="https://github.com/RJA24/abra_nip_dashboard/blob/main/PHO%20logo.png?raw=true?raw=true", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Abra NIP Monitoring Information System", page_icon="https://github.com/RJA24/abra_nip_dashboard/blob/main/PHO%20logo.png?raw=true?raw=true", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -409,8 +409,8 @@ if not st.session_state.get('logged_in', False):
 
     col1, col2, col3 = st.columns([1, 2.5, 1])
     with col2:
-        st.markdown("<h1 style='text-align:center;font-family:Impact,sans-serif;letter-spacing:2px;text-transform:uppercase;'>National Immunization Program</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center;color:#475569;font-size:1.05rem;margin-bottom:1.5rem;'>Abra Provincial Dashboard</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center;font-family:Impact,sans-serif;letter-spacing:1.5px;text-transform:uppercase;line-height:1.08;'>Abra NIP Monitoring Information System</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;color:#475569;font-size:1.05rem;margin-bottom:1.5rem;'>National Immunization Program • Abra Province</p>", unsafe_allow_html=True)
 
         account_tab, guest_tab = st.tabs(["Account Login", "Guest Access"])
 
@@ -506,13 +506,20 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
     .nip-menu-title {
         margin: 0;
         font-family: "Arial Black", Impact, sans-serif;
-        font-size: clamp(2.35rem, 4.1vw, 4rem);
+        font-size: clamp(2rem, 3.2vw, 3.4rem);
         line-height: 1;
         letter-spacing: 0.045em;
         color: #172033;
         text-transform: uppercase;
         text-shadow: 0 2px 8px rgba(255,255,255,0.28);
-        white-space: nowrap;
+        white-space: normal;
+    }
+    .nip-menu-subtitle {
+        margin-top: 0.55rem;
+        color: #64748b;
+        font-size: 0.98rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
     }
 
     .program-button-spacer {
@@ -627,7 +634,8 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
                 <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png" alt="Province of Abra seal">
                 <img src="https://github.com/RJA24/abra_sia_2026/blob/main/PHO%20logo.png?raw=true" alt="Provincial Health Office logo">
             </div>
-            <h1 class="nip-menu-title">National Immunization Program</h1>
+            <h1 class="nip-menu-title">Abra NIP Monitoring Information System</h1>
+            <div class="nip-menu-subtitle">National Immunization Program • Abra Province</div>
         </div>
         """,
         unsafe_allow_html=True,

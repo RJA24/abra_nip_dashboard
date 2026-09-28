@@ -1,6 +1,6 @@
-# Abra NIP Dashboard — SBI RHU Encoder Step-by-Step Guide
+# Abra NIP Monitoring Information System — SBI RHU Encoder Step-by-Step Guide
 
-Version: v5.20.2
+Version: v5.20.2.2
 
 ## 1. The 3-step RHU workflow
 
