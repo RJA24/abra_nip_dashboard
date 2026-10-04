@@ -1,6 +1,6 @@
 # Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.21
+Version: v5.21.1
 
 ## 1. The RHU workflow
 
@@ -143,3 +143,12 @@ If the VaccTrack extract has not yet reached your activity date, the result may 
 ## 11. Send Feedback / Report a Problem
 
 Use **Send Feedback / Report a Problem** for upload issues, confusing instructions, mobile display issues, or suggestions. Do not include learner names or other unnecessary identifying information.
+
+
+## 11. Campaign status and final submission
+
+The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, or **Closed**. Pre-Implementation is for testing and preparation, Live is the implementation period, and Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
+
+When your RHU is completely finished, use **Mark Current Workbook as Final**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
+
+Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.

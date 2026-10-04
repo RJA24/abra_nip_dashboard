@@ -10,10 +10,13 @@ import streamlit as st
 import xlsxwriter
 
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
+from programs.sbi.campaign_control import activity_date_issues, get_campaign_config
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 TABLE_NAME = "sbi_rhu_accomplishments"
+SUBMISSION_TABLE = "sbi_rhu_workbook_submissions"
+WORKBOOK_VERSION = "SBI-AGGREGATE-2026-v1"
 MAX_INPUT_ROWS = 1200
 PROTECTION_PASSWORD = "AbraNIPSBI2026"
 
@@ -89,6 +92,15 @@ def workbook_schema_available(supabase) -> bool:
         supabase.table(TABLE_NAME).select(
             "id,mr_deferred,td_deferred,mr_refused,td_refused,hpv1_deferred,hpv2_deferred,hpv1_refused,hpv2_refused,reason_counts"
         ).limit(1).execute()
+        supabase.table(SUBMISSION_TABLE).select("id,is_current,is_finalized,snapshot").limit(1).execute()
+        return True
+    except Exception:
+        return False
+
+
+def submission_schema_available(supabase) -> bool:
+    try:
+        supabase.table(SUBMISSION_TABLE).select("id").limit(1).execute()
         return True
     except Exception:
         return False
@@ -336,7 +348,9 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     setup.write("D4", "System", setup_label)
     setup.merge_range("E4:F4", "Abra NIP Monitoring Information System", setup_value)
     setup.write("A5", "Workbook Scope", setup_label)
-    setup.merge_range("B5:F5", "One RHU workbook for the entire SBI activity", setup_value)
+    setup.merge_range("B5:C5", "One RHU workbook for the entire SBI activity", setup_value)
+    setup.write("D5", "Workbook Version", setup_label)
+    setup.merge_range("E5:F5", WORKBOOK_VERSION, setup_value)
 
     setup.set_row(3, 24)
     setup.set_row(4, 26)
@@ -633,6 +647,16 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     return output.getvalue()
 
 
+def _read_workbook_identity(raw: bytes) -> tuple[str, str]:
+    try:
+        setup = pd.read_excel(BytesIO(raw), sheet_name="Setup", engine="calamine", header=None, dtype=object)
+    except Exception as exc:
+        raise ValueError(f"Unable to read the Setup sheet: {exc}") from exc
+    municipality = str(setup.iloc[3, 1] if setup.shape[0] > 3 and setup.shape[1] > 1 else "").strip()
+    version = str(setup.iloc[4, 4] if setup.shape[0] > 4 and setup.shape[1] > 4 else "").strip()
+    return municipality, version
+
+
 def _read_accomplishments(raw: bytes) -> pd.DataFrame:
     try:
         return pd.read_excel(BytesIO(raw), sheet_name="Accomplishments", engine="calamine", dtype=object)
@@ -812,6 +836,167 @@ def _current_entries(supabase, municipality: str) -> pd.DataFrame:
     return frame
 
 
+def get_current_submission(supabase, municipality: str) -> dict:
+    try:
+        response = (
+            supabase.table(SUBMISSION_TABLE)
+            .select("*")
+            .eq("municipality", canonical_municipality_name(municipality))
+            .eq("is_current", True)
+            .order("uploaded_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        return rows[0] if rows else {}
+    except Exception:
+        return {}
+
+
+def fetch_submission_history(supabase, municipality: str | None = None) -> pd.DataFrame:
+    rows: list[dict] = []
+    offset = 0
+    limit = 500
+    while True:
+        query = supabase.table(SUBMISSION_TABLE).select("*").order("uploaded_at", desc=True)
+        if municipality:
+            query = query.eq("municipality", canonical_municipality_name(municipality))
+        response = query.range(offset, offset + limit - 1).execute()
+        batch = response.data or []
+        rows.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += limit
+    return pd.DataFrame(rows)
+
+
+def _snapshot_payload(incoming: pd.DataFrame) -> list[dict]:
+    records: list[dict] = []
+    for _, row in incoming.iterrows():
+        record = {
+            "activity_date": row["activity_date"].isoformat(),
+            "school_id": _clean_school_id(row["school_id"]),
+            "school_name": str(row.get("school_name") or ""),
+            "barangay": str(row.get("barangay") or ""),
+            "grade_level": str(row["grade_level"]),
+        }
+        for column in INPUT_COUNT_COLUMNS:
+            record[column] = int(pd.to_numeric(pd.Series([row.get(column)]), errors="coerce").fillna(0).iloc[0])
+        records.append(record)
+    return records
+
+
+def _snapshot_to_frame(snapshot: object) -> pd.DataFrame:
+    if not isinstance(snapshot, list) or not snapshot:
+        return pd.DataFrame()
+    frame = pd.DataFrame(snapshot)
+    if frame.empty:
+        return frame
+    frame["activity_date"] = pd.to_datetime(frame["activity_date"], errors="coerce").dt.date
+    frame["school_id"] = frame["school_id"].map(_clean_school_id)
+    for column in INPUT_COUNT_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = 0
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0).astype(int)
+    return frame
+
+
+def _record_submission(
+    supabase,
+    incoming: pd.DataFrame,
+    municipality: str,
+    username: str,
+    batch_id: str,
+    file_name: str,
+    *,
+    added: int,
+    modified: int,
+    removed: int,
+    unchanged: int,
+    restored_from_submission_id: int | None = None,
+) -> int:
+    canonical = canonical_municipality_name(municipality)
+    supabase.table(SUBMISSION_TABLE).update({"is_current": False}).eq("municipality", canonical).eq("is_current", True).execute()
+    dates = pd.to_datetime(incoming["activity_date"], errors="coerce") if not incoming.empty else pd.Series(dtype="datetime64[ns]")
+    payload = {
+        "municipality": canonical,
+        "batch_id": batch_id,
+        "file_name": file_name,
+        "workbook_version": WORKBOOK_VERSION,
+        "uploaded_by": username,
+        "uploaded_at": datetime.now(MANILA_TZ).isoformat(),
+        "row_count": int(len(incoming)),
+        "activity_date_min": dates.min().date().isoformat() if not dates.empty and dates.notna().any() else None,
+        "activity_date_max": dates.max().date().isoformat() if not dates.empty and dates.notna().any() else None,
+        "added_count": int(added),
+        "modified_count": int(modified),
+        "removed_count": int(removed),
+        "unchanged_count": int(unchanged),
+        "snapshot": _snapshot_payload(incoming),
+        "is_current": True,
+        "is_finalized": False,
+        "restored_from_submission_id": restored_from_submission_id,
+    }
+    response = supabase.table(SUBMISSION_TABLE).insert(payload).execute()
+    rows = response.data or []
+    return int(rows[0].get("id")) if rows and rows[0].get("id") is not None else 0
+
+
+def finalize_current_submission(supabase, municipality: str, username: str) -> bool:
+    current = get_current_submission(supabase, municipality)
+    if not current or current.get("id") is None:
+        return False
+    supabase.table(SUBMISSION_TABLE).update(
+        {
+            "is_finalized": True,
+            "finalized_at": datetime.now(MANILA_TZ).isoformat(),
+            "finalized_by": username,
+        }
+    ).eq("id", int(current["id"])).execute()
+    return True
+
+
+def reopen_current_submission(supabase, municipality: str) -> bool:
+    current = get_current_submission(supabase, municipality)
+    if not current or current.get("id") is None:
+        return False
+    supabase.table(SUBMISSION_TABLE).update(
+        {"is_finalized": False, "finalized_at": None, "finalized_by": None}
+    ).eq("id", int(current["id"])).execute()
+    return True
+
+
+def restore_submission(supabase, submission_id: int, username: str) -> tuple[int, int]:
+    response = supabase.table(SUBMISSION_TABLE).select("*").eq("id", int(submission_id)).limit(1).execute()
+    rows = response.data or []
+    if not rows:
+        raise ValueError("The selected workbook submission could not be found.")
+    source = rows[0]
+    incoming = _snapshot_to_frame(source.get("snapshot"))
+    if incoming.empty:
+        raise ValueError("The selected workbook submission has no restorable snapshot.")
+    municipality = canonical_municipality_name(source.get("municipality") or "")
+    current = _current_entries(supabase, municipality)
+    added, modified, removed, unchanged = _preview_changes(current, incoming)
+    seed = f"restore|{submission_id}|{datetime.now(MANILA_TZ).isoformat()}".encode("utf-8")
+    batch_id = hashlib.sha256(seed).hexdigest()
+    saved, removed_count = _save_snapshot(supabase, incoming, municipality, username, batch_id)
+    _record_submission(
+        supabase,
+        incoming,
+        municipality,
+        username,
+        batch_id,
+        f"RESTORED submission #{submission_id}",
+        added=added,
+        modified=modified,
+        removed=removed,
+        unchanged=unchanged,
+        restored_from_submission_id=int(submission_id),
+    )
+    return saved, removed_count
+
+
 def _preview_changes(current: pd.DataFrame, incoming: pd.DataFrame) -> tuple[int, int, int, int]:
     keys = ["activity_date", "school_id", "grade_level"]
     if current.empty:
@@ -852,6 +1037,14 @@ def _preview_changes(current: pd.DataFrame, incoming: pd.DataFrame) -> tuple[int
                     db_col = field.lower().replace("hpv2", "hpv2").replace(" ", "_")
                 old_value = pd.to_numeric(pd.Series([old.get(db_col)]), errors="coerce").fillna(0).iloc[0]
                 new_value = pd.to_numeric(pd.Series([new.get(field)]), errors="coerce").fillna(0).iloc[0]
+                if int(old_value) != int(new_value):
+                    changed = True
+                    break
+        if not changed:
+            old_reasons = old.get("reason_counts") if isinstance(old.get("reason_counts"), dict) else {}
+            for code in REASON_LABELS:
+                old_value = pd.to_numeric(pd.Series([old_reasons.get(code)]), errors="coerce").fillna(0).iloc[0]
+                new_value = pd.to_numeric(pd.Series([new.get(f"Reason {code}")]), errors="coerce").fillna(0).iloc[0]
                 if int(old_value) != int(new_value):
                     changed = True
                     break
@@ -918,49 +1111,118 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
     if not workbook_schema_available(supabase):
         st.error("Offline workbook upload is temporarily unavailable. Please contact the NIP coordinator.")
         return
+
+    campaign = get_campaign_config(supabase)
+    current = get_current_submission(supabase, municipality)
+    if current:
+        uploaded_at = pd.to_datetime(current.get("uploaded_at"), errors="coerce")
+        uploaded_label = uploaded_at.strftime("%b %d, %Y %I:%M %p") if not pd.isna(uploaded_at) else "Unknown time"
+        status_label = "Finalized" if current.get("is_finalized") else "Current workbook uploaded"
+        st.info(
+            f"{status_label} • {int(current.get('row_count') or 0):,} record(s) • "
+            f"last upload {uploaded_label}."
+        )
+
+    if current and current.get("is_finalized"):
+        st.success("Your RHU submission is finalized. Ask the System Administrator to reopen it if a correction is required.")
+        return
+    if campaign.get("status") == "Closed":
+        st.warning("SBI workbook uploads are closed by the System Administrator. You can still view your existing data and VaccTrack check.")
+        return
+
     uploaded = st.file_uploader(
         "Upload SBI Offline Accomplishment Workbook",
         type=["xlsx"],
         key="sbi_offline_workbook_upload",
         help="Use the workbook downloaded from Step 1. Do not upload VaccTrack exports here.",
     )
-    if uploaded is None:
-        return
-    raw = uploaded.getvalue()
-    incoming, errors = validate_workbook(raw, targets, municipality)
-    if errors:
-        st.error("The workbook needs correction before it can be uploaded.")
-        st.dataframe(pd.DataFrame({"Problem": errors[:100]}), width="stretch", hide_index=True)
-        return
-
-    current = _current_entries(supabase, municipality)
-    added, modified, removed, unchanged = _preview_changes(current, incoming)
-    st.success(f"Workbook validated: {len(incoming):,} Date + School + Grade records.")
-    a, b, c, d = st.columns(4)
-    a.metric("Added", added)
-    b.metric("Modified", modified)
-    c.metric("Removed", removed)
-    d.metric("Unchanged", unchanged)
-
-    preview = incoming[["activity_date", "school_name", "grade_level", "MR Male", "MR Female", "Td Male", "Td Female", "HPV Dose 1", "HPV Dose 2"]].copy()
-    preview.columns = ["Activity Date", "School", "Grade", "MR Male", "MR Female", "Td Male", "Td Female", "HPV Dose 1", "HPV Dose 2"]
-    with st.expander("Review validated records", expanded=False):
-        st.dataframe(preview, width="stretch", hide_index=True)
-
-    if removed:
-        st.warning(f"{removed} existing dashboard record(s) are not present in this workbook and will be removed after confirmation.")
-    confirm = st.checkbox(
-        "I confirm that this workbook contains the complete current SBI accomplishment data for our RHU.",
-        key="sbi_offline_workbook_confirm",
-    )
-    if st.button("Use This Workbook as Current RHU Data", type="primary", disabled=not confirm, width="stretch", key="sbi_offline_workbook_save"):
-        batch_id = hashlib.sha256(raw).hexdigest()
+    if uploaded is not None:
+        raw = uploaded.getvalue()
         try:
-            saved, removed_count = _save_snapshot(supabase, incoming, municipality, username, batch_id)
-        except Exception as exc:
-            st.error(f"The workbook could not be saved: {exc}")
+            workbook_muni, workbook_version = _read_workbook_identity(raw)
+        except ValueError as exc:
+            st.error(str(exc))
             return
-        st.cache_data.clear()
-        st.success(f"Current RHU data updated: {saved:,} record(s) saved and {removed_count:,} old record(s) removed.")
-        st.toast("SBI workbook uploaded successfully.")
-        st.rerun()
+        if normalize_municipality_key(workbook_muni) != normalize_municipality_key(municipality):
+            st.error(f"This workbook belongs to {workbook_muni or 'another RHU'}, not {municipality}.")
+            return
+        if workbook_version != WORKBOOK_VERSION:
+            st.error(
+                f"This workbook uses an unsupported template version ({workbook_version or 'unknown'}). "
+                "Download a fresh SBI Offline Accomplishment Workbook from Step 1, then transfer the current accomplishment rows into it."
+            )
+            return
+
+        incoming, errors = validate_workbook(raw, targets, municipality)
+        errors.extend(activity_date_issues(incoming, campaign))
+        if errors:
+            st.error("The workbook needs correction before it can be uploaded.")
+            st.dataframe(pd.DataFrame({"Problem": errors[:100]}), width="stretch", hide_index=True)
+            return
+
+        current_entries = _current_entries(supabase, municipality)
+        added, modified, removed, unchanged = _preview_changes(current_entries, incoming)
+        st.success(f"Workbook validated: {len(incoming):,} Date + School + Grade records.")
+        a, b, c, d = st.columns(4)
+        a.metric("Added", added)
+        b.metric("Modified", modified)
+        c.metric("Removed", removed)
+        d.metric("Unchanged", unchanged)
+
+        preview = incoming[["activity_date", "school_name", "grade_level", "MR Male", "MR Female", "Td Male", "Td Female", "HPV Dose 1", "HPV Dose 2"]].copy()
+        preview.columns = ["Activity Date", "School", "Grade", "MR Male", "MR Female", "Td Male", "Td Female", "HPV Dose 1", "HPV Dose 2"]
+        with st.expander("Review validated records", expanded=False):
+            st.dataframe(preview, width="stretch", hide_index=True)
+
+        if removed:
+            st.warning(f"{removed} existing dashboard record(s) are not present in this workbook and will be removed after confirmation.")
+        confirm = st.checkbox(
+            "I confirm that this workbook contains the complete current SBI accomplishment data for our RHU.",
+            key="sbi_offline_workbook_confirm",
+        )
+        if st.button("Use This Workbook as Current RHU Data", type="primary", disabled=not confirm, width="stretch", key="sbi_offline_workbook_save"):
+            batch_id = hashlib.sha256(raw).hexdigest()
+            try:
+                saved, removed_count = _save_snapshot(supabase, incoming, municipality, username, batch_id)
+                _record_submission(
+                    supabase,
+                    incoming,
+                    municipality,
+                    username,
+                    batch_id,
+                    uploaded.name,
+                    added=added,
+                    modified=modified,
+                    removed=removed,
+                    unchanged=unchanged,
+                )
+            except Exception as exc:
+                st.error(f"The workbook could not be saved: {exc}")
+                return
+            st.cache_data.clear()
+            st.success(f"Current RHU data updated: {saved:,} record(s) saved and {removed_count:,} old record(s) removed.")
+            st.toast("SBI workbook uploaded successfully.")
+            st.rerun()
+
+    current = get_current_submission(supabase, municipality)
+    if current and not current.get("is_finalized"):
+        st.divider()
+        st.markdown("#### Finalize RHU Submission")
+        st.caption("Finalize only when this RHU's current workbook is complete. After finalization, further uploads are blocked until the System Administrator reopens the submission.")
+        if campaign.get("status") == "Pre-Implementation":
+            st.warning("The SBI campaign is still marked Pre-Implementation. Finalize only if this is intentionally your final production submission.")
+        final_confirm = st.checkbox(
+            "I confirm that our current SBI workbook is complete and final.",
+            key="sbi_finalize_confirm",
+        )
+        if st.button("Mark Current Workbook as Final", disabled=not final_confirm, width="stretch", key="sbi_finalize_button"):
+            try:
+                finalized = finalize_current_submission(supabase, municipality, username)
+            except Exception as exc:
+                st.error(f"The submission could not be finalized: {exc}")
+                return
+            if finalized:
+                st.cache_data.clear()
+                st.success("RHU submission finalized.")
+                st.rerun()
+

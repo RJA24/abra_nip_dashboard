@@ -2,7 +2,7 @@
 
 RHU_FULL_GUIDE_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.21
+Version: v5.21.1
 
 ## 1. The RHU workflow
 
@@ -137,14 +137,26 @@ If the VaccTrack extract has not yet reached your activity date, the result may 
 - Do not upload data belonging to another municipality.
 - VaccTrack remains the official/final national reporting source.
 
-## 11. Send Feedback / Report a Problem
+## 11. Campaign status and final submission
 
-Use **Send Feedback / Report a Problem** for upload issues, confusing instructions, mobile display issues, or suggestions. Do not include learner names or other unnecessary identifying information.
+The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, or **Closed**.
+
+- Pre-Implementation allows testing and preparation.
+- Live is the normal implementation period.
+- Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
+
+When your RHU is completely finished, use **Mark Current Workbook as Final**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
+
+Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.
+
+## 12. Send Feedback / Report a Problem
+
+Use **Send Feedback / Report a Problem** for workbook issues, upload issues, confusing instructions, mobile display issues, or suggestions. Do not include learner names or other unnecessary identifying information.
 """
 
 RHU_FAQ_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.21
+Version: v5.21.1
 
 ## 1. Do I need internet while encoding SBI accomplishments?
 
@@ -212,7 +224,19 @@ The latest official VaccTrack extract available to the monitoring system has not
 
 No. Step 2 accepts the RHU SBI Offline Accomplishment Workbook. Official VaccTrack extracts are uploaded separately by the System Admin.
 
-## 17. Which dataset is official?
+## 17. What does Finalized mean?
+
+Finalize only when your RHU's current workbook is complete. After finalization, Step 2 will no longer accept another workbook unless the System Administrator reopens the RHU submission for correction.
+
+## 18. What if the system says my workbook version is unsupported?
+
+Download a fresh workbook from **1. Offline Workbook**, then transfer your current accomplishment rows into the new workbook. This prevents old test templates from being used during implementation.
+
+## 19. What happens when the campaign status is Closed?
+
+Your existing accomplishment data and VaccTrack Check remain available, but new workbook uploads are blocked until the System Administrator reopens the campaign.
+
+## 20. Which dataset is official?
 
 VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation.
 """

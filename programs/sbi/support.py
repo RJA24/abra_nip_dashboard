@@ -8,7 +8,7 @@ import streamlit as st
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 FEEDBACK_TABLE = "sbi_user_feedback"
-APP_VERSION = "v5.21"
+APP_VERSION = "v5.21.1"
 
 
 def feedback_schema_available(supabase) -> bool:
@@ -31,17 +31,17 @@ def render_feedback_form(
         )
 
         if not feedback_schema_available(supabase):
-            st.info("Feedback collection will be available after the v5.20 database update is applied.")
+            st.info("Feedback is temporarily unavailable. Please inform the NIP coordinator.")
             return
 
         with st.form("sbi_feedback_form", clear_on_submit=True):
             category = st.selectbox(
                 "What is this about?",
                 [
-                    "Upload / Validation",
-                    "Follow-up Activity",
-                    "Correction / Revision",
-                    "VaccTrack Encoding",
+                    "Offline Workbook / Excel",
+                    "Workbook Upload / Validation",
+                    "Correction / Re-upload",
+                    "VaccTrack Workbook Sheets",
                     "VaccTrack Check",
                     "Guide / Instructions",
                     "Login / Account",
@@ -53,11 +53,10 @@ def render_feedback_form(
             page = st.selectbox(
                 "Where did you encounter it?",
                 [
-                    "SBI - Upload Learner Records",
-                    "SBI - VaccTrack Encoding",
+                    "SBI - Offline Workbook",
+                    "SBI - Upload Current Workbook",
                     "SBI - VaccTrack Check",
-                    "SBI - Corrections / History",
-                    "SBI - Training / Practice",
+                    "SBI - My Accomplishments",
                     "Main Menu / Account",
                     "Other",
                 ],
@@ -65,7 +64,7 @@ def render_feedback_form(
             message = st.text_area(
                 "Describe what happened or what you suggest",
                 height=130,
-                placeholder="Example: I uploaded a follow-up file and I was unsure which status to use for MR.",
+                placeholder="Example: I uploaded our workbook and I was unsure why one row was marked for checking.",
             )
             submit = st.form_submit_button("Send Feedback", type="primary", width="stretch")
 

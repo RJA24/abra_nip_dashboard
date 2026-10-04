@@ -1,6 +1,6 @@
 # Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.21
+Version: v5.21.1
 
 ## 1. Do I need internet while encoding SBI accomplishments?
 
@@ -77,3 +77,16 @@ That is intentional. Cells containing formulas, automatic school information, hi
 ## 19. Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
 
 Those details are already known or selected inside VaccTrack. The workbook is only an encoding aid, so the VaccTrack G1/G4/G7 sheets show the selected Report Date, School, the grade-specific fields to encode, and reason codes 01–19.
+
+
+## 18. What does Finalized mean?
+
+Finalize only when your RHU's current workbook is complete. After finalization, another workbook cannot be uploaded unless the System Administrator reopens the RHU submission.
+
+## 19. What if the system says my workbook version is unsupported?
+
+Download a fresh workbook from **1. Offline Workbook**, then transfer your current accomplishment rows into the new workbook.
+
+## 20. What happens when the campaign status is Closed?
+
+Existing data and VaccTrack Check remain available, but new workbook uploads are blocked until the System Administrator reopens the campaign.

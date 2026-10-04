@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 import json
 import re
@@ -17,10 +17,19 @@ from core.data import (
     fetch_sbi_vacctrack_source_info,
     vacctrack_google_fallback_enabled,
 )
+from programs.sbi.aggregate_workbook import (
+    SUBMISSION_TABLE,
+    WORKBOOK_VERSION,
+    fetch_submission_history,
+    get_current_submission,
+    reopen_current_submission,
+    restore_submission,
+)
+from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config, save_campaign_config
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21"
+APP_VERSION = "v5.21.1"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -76,6 +85,7 @@ def render_system_health(supabase, audit_callback=None, read_only: bool = False)
         ("VaccTrack Rows", "sbi_vacctrack_rows", "id"),
         ("RHU Feedback", FEEDBACK_TABLE, "id"),
         ("SBI Settings", SBI_SETTINGS_TABLE, "setting_key"),
+        ("SBI Workbook Submissions", SUBMISSION_TABLE, "id"),
     ]
 
     status_rows = []
@@ -159,7 +169,7 @@ def _login_username(action: object) -> str:
 
 def render_rollout_status(supabase) -> None:
     st.markdown("### RHU Rollout Status")
-    st.caption("Use this during rollout to see who has signed in, changed the temporary password, and started uploading SBI records.")
+    st.caption("Use this during rollout to see who has signed in, changed the temporary password, and started uploading SBI workbooks.")
 
     accounts = pd.DataFrame(
         _fetch_all(
@@ -188,16 +198,9 @@ def render_rollout_status(supabase) -> None:
         logs = pd.DataFrame()
 
     try:
-        imports = pd.DataFrame(
-            _fetch_all(
-                lambda: supabase.table("sbi_linelist_imports")
-                .select("municipality,uploaded_by,uploaded_at,activity_date_min,activity_date_max,rows_uploaded")
-                .order("uploaded_at", desc=True),
-                page_size=500,
-            )
-        )
+        submissions = fetch_submission_history(supabase)
     except Exception:
-        imports = pd.DataFrame()
+        submissions = pd.DataFrame()
 
     last_login: dict[str, object] = {}
     if not logs.empty:
@@ -208,29 +211,31 @@ def render_rollout_status(supabase) -> None:
             logs = logs.sort_values("_parsed", ascending=False)
             last_login = logs.drop_duplicates("_username").set_index("_username")["timestamp"].to_dict()
 
-    import_summary: dict[str, dict] = {}
-    if not imports.empty:
-        imports["uploaded_by"] = imports["uploaded_by"].fillna("").astype(str).str.strip()
-        imports["rows_uploaded"] = pd.to_numeric(imports.get("rows_uploaded"), errors="coerce").fillna(0).astype(int)
-        for username, group in imports[imports["uploaded_by"].ne("")].groupby("uploaded_by"):
+    submission_summary: dict[str, dict] = {}
+    if not submissions.empty:
+        submissions["_muni"] = submissions["municipality"].fillna("").astype(str).str.strip()
+        for municipality, group in submissions[submissions["_muni"].ne("")].groupby("_muni"):
             parsed_upload = pd.to_datetime(group["uploaded_at"], errors="coerce")
-            activity = pd.to_datetime(group["activity_date_max"], errors="coerce")
-            import_summary[username] = {
+            current_rows = group[group["is_current"].fillna(False).astype(bool)] if "is_current" in group.columns else pd.DataFrame()
+            current = current_rows.iloc[0] if not current_rows.empty else group.iloc[parsed_upload.argmax()] if parsed_upload.notna().any() else group.iloc[0]
+            submission_summary[municipality] = {
                 "First Upload": group.loc[parsed_upload.idxmin(), "uploaded_at"] if parsed_upload.notna().any() else "",
-                "Latest Upload": group.loc[parsed_upload.idxmax(), "uploaded_at"] if parsed_upload.notna().any() else "",
-                "Latest Activity": activity.max(),
-                "Batches": int(len(group)),
-                "Rows Uploaded": int(group["rows_uploaded"].sum()),
+                "Latest Upload": current.get("uploaded_at"),
+                "Latest Activity": current.get("activity_date_max"),
+                "Uploads": int(len(group)),
+                "Current Rows": int(current.get("row_count") or 0),
+                "Finalized": bool(current.get("is_finalized")),
             }
 
     rows = []
     for _, account in accounts.iterrows():
         username = str(account.get("username") or "").strip()
-        summary = import_summary.get(username, {})
+        municipality = str(account.get("assigned_muni") or "").strip()
+        summary = submission_summary.get(municipality, {})
         login_value = last_login.get(username)
         rows.append(
             {
-                "Municipality": account.get("assigned_muni") or "",
+                "Municipality": municipality,
                 "Account": username,
                 "Status": account.get("account_status") or "",
                 "Last Login": _format_datetime(login_value) or "Not yet",
@@ -238,17 +243,18 @@ def render_rollout_status(supabase) -> None:
                     account.get("must_change_password") is True
                     or str(account.get("must_change_password") or "").strip().lower() in {"1", "true", "yes", "y"}
                 ) else "Yes",
-                "First Upload": _format_datetime(summary.get("First Upload")) or "Not yet",
+                "First Workbook Upload": _format_datetime(summary.get("First Upload")) or "Not yet",
                 "Latest Activity": _format_date(summary.get("Latest Activity")) or "",
-                "Batches": summary.get("Batches", 0),
-                "Rows Uploaded": summary.get("Rows Uploaded", 0),
+                "Uploads": summary.get("Uploads", 0),
+                "Current Rows": summary.get("Current Rows", 0),
+                "Submission": "Finalized" if summary.get("Finalized") else ("Uploaded" if summary else "No Upload"),
             }
         )
 
     rollout = pd.DataFrame(rows).sort_values(["Municipality", "Account"])
     logged_in = int((rollout["Last Login"] != "Not yet").sum())
     changed = int((rollout["Password Changed"] == "Yes").sum())
-    started = int((rollout["First Upload"] != "Not yet").sum())
+    started = int((rollout["First Workbook Upload"] != "Not yet").sum())
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("RHU Accounts", len(rollout))
@@ -264,6 +270,198 @@ def render_rollout_status(supabase) -> None:
         mime="text/csv",
         key="ops_rollout_download",
     )
+
+
+def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### SBI Campaign Control")
+    st.caption("Set the operational state once here instead of changing code during implementation.")
+
+    settings_ready, _ = _table_exists(supabase, SBI_SETTINGS_TABLE, "setting_key")
+    if not settings_ready:
+        st.info("SBI settings are unavailable. Apply the existing settings migration before using campaign controls.")
+        return
+
+    config = get_campaign_config(supabase)
+    status = str(config.get("status") or "Pre-Implementation")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Campaign Status", status)
+    c2.metric("Workbook Version", WORKBOOK_VERSION)
+    if config.get("start_date") and config.get("end_date"):
+        range_label = f"{config['start_date']:%b %d} – {config['end_date']:%b %d, %Y}"
+    else:
+        range_label = "Not enforced"
+    c3.metric("Activity Date Range", range_label)
+
+    if status == "Pre-Implementation":
+        st.info("Testing and workbook uploads are allowed. Use this status while preparing RHUs and cleaning test data.")
+    elif status == "Live":
+        st.success("SBI is live. RHU workbook uploads and finalization are enabled.")
+    else:
+        st.warning("SBI is closed. RHUs can view their data and reconciliation, but workbook uploads are blocked.")
+
+    with st.form("ops_sbi_campaign_control"):
+        status_index = CAMPAIGN_STATUSES.index(status) if status in CAMPAIGN_STATUSES else 0
+        selected_status = st.selectbox("Campaign Status", list(CAMPAIGN_STATUSES), index=status_index, disabled=read_only)
+        enforce_dates = st.checkbox(
+            "Enforce official SBI activity date range on workbook uploads",
+            value=bool(config.get("start_date") or config.get("end_date")),
+            disabled=read_only,
+        )
+        start_default = config.get("start_date") or datetime.now(MANILA_TZ).date()
+        end_default = config.get("end_date") or start_default
+        d1, d2 = st.columns(2)
+        with d1:
+            start_date = st.date_input("Activity Start Date", value=start_default, disabled=read_only or not enforce_dates)
+        with d2:
+            end_date = st.date_input("Activity End Date", value=end_default, disabled=read_only or not enforce_dates)
+        announcement = st.text_area(
+            "RHU Announcement",
+            value=str(config.get("announcement") or ""),
+            height=100,
+            placeholder="Example: VaccTrack data has been updated through Oct 18.",
+            disabled=read_only,
+        )
+        save = st.form_submit_button("Save SBI Campaign Settings", type="primary", disabled=read_only)
+
+    if save and not read_only:
+        actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
+        try:
+            save_campaign_config(
+                supabase,
+                status=selected_status,
+                start_date=start_date if enforce_dates else None,
+                end_date=end_date if enforce_dates else None,
+                announcement=announcement,
+                actor=str(actor),
+            )
+        except Exception as exc:
+            st.error(f"Campaign settings could not be saved: {exc}")
+            return
+        if audit_callback:
+            audit_callback(
+                supabase,
+                f"SBI campaign settings updated | status={selected_status} | date_range={'on' if enforce_dates else 'off'}",
+            )
+        st.cache_data.clear()
+        st.toast("SBI campaign settings saved.")
+        st.rerun()
+
+
+def render_submission_status(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### RHU Workbook Submissions")
+    ready, _ = _table_exists(supabase, SUBMISSION_TABLE, "id")
+    if not ready:
+        st.info("Run supabase/012_sbi_workbook_submission_control.sql to enable workbook history, finalization, reopen, and restore controls.")
+        return
+
+    try:
+        history = fetch_submission_history(supabase)
+    except Exception as exc:
+        st.error(f"Unable to load RHU workbook submissions: {exc}")
+        return
+
+    current_by_muni: dict[str, dict] = {}
+    if not history.empty:
+        current_rows = history[history["is_current"].fillna(False).astype(bool)].copy()
+        for _, row in current_rows.iterrows():
+            current_by_muni[str(row.get("municipality") or "")] = row.to_dict()
+
+    rows = []
+    for municipality in ABRA_MUNIS:
+        current = current_by_muni.get(municipality, {})
+        if current:
+            state = "Finalized" if current.get("is_finalized") else "Uploaded"
+        else:
+            state = "No Upload"
+        rows.append(
+            {
+                "Municipality": municipality,
+                "Status": state,
+                "Latest Upload": _format_datetime(current.get("uploaded_at")) or "",
+                "Uploaded By": current.get("uploaded_by") or "",
+                "Rows": int(current.get("row_count") or 0),
+                "Activity From": _format_date(current.get("activity_date_min")) or "",
+                "Activity Through": _format_date(current.get("activity_date_max")) or "",
+                "Workbook Version": current.get("workbook_version") or "",
+            }
+        )
+    status = pd.DataFrame(rows)
+    uploaded = int(status["Status"].isin(["Uploaded", "Finalized"]).sum())
+    finalized = int((status["Status"] == "Finalized").sum())
+    c1, c2, c3 = st.columns(3)
+    c1.metric("RHUs With Upload", f"{uploaded}/{len(ABRA_MUNIS)}")
+    c2.metric("Finalized", f"{finalized}/{len(ABRA_MUNIS)}")
+    c3.metric("No Upload", int((status["Status"] == "No Upload").sum()))
+    st.dataframe(status, width="stretch", hide_index=True)
+    st.download_button(
+        "Download RHU Submission Status (CSV)",
+        status.to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_SBI_RHU_Submission_Status.csv",
+        mime="text/csv",
+        key="ops_submission_status_download",
+    )
+
+    st.divider()
+    municipality = st.selectbox("Manage RHU submission", ABRA_MUNIS, key="ops_submission_muni")
+    muni_history = history[history["municipality"].astype(str).eq(municipality)].copy() if not history.empty else pd.DataFrame()
+    if muni_history.empty:
+        st.info(f"{municipality} has no workbook upload history yet.")
+        return
+
+    display = muni_history[[
+        "id", "uploaded_at", "uploaded_by", "file_name", "workbook_version", "row_count",
+        "activity_date_min", "activity_date_max", "added_count", "modified_count", "removed_count",
+        "unchanged_count", "is_current", "is_finalized",
+    ]].copy()
+    display["uploaded_at"] = display["uploaded_at"].map(_format_datetime)
+    display["activity_date_min"] = display["activity_date_min"].map(_format_date)
+    display["activity_date_max"] = display["activity_date_max"].map(_format_date)
+    display.columns = [
+        "ID", "Uploaded", "Uploaded By", "File", "Version", "Rows", "Activity From", "Activity Through",
+        "Added", "Modified", "Removed", "Unchanged", "Current", "Finalized",
+    ]
+    st.dataframe(display, width="stretch", hide_index=True)
+
+    current = get_current_submission(supabase, municipality)
+    if current and current.get("is_finalized"):
+        st.success(f"{municipality}'s current workbook is finalized.")
+        if st.button("Reopen RHU Submission", disabled=read_only, width="stretch", key="ops_reopen_submission"):
+            if reopen_current_submission(supabase, municipality):
+                if audit_callback:
+                    audit_callback(supabase, f"RHU workbook submission reopened | municipality={municipality}")
+                st.toast(f"{municipality} submission reopened.")
+                st.rerun()
+
+    restorable = muni_history[~muni_history["is_current"].fillna(False).astype(bool)].copy()
+    if restorable.empty:
+        return
+    st.markdown("#### Restore a Previous Workbook")
+    st.warning("Restore replaces the RHU's current dashboard accomplishment data with the selected previous workbook snapshot. A new history entry is created; the old history is not deleted.")
+    restore_ids = restorable["id"].astype(int).tolist()
+    restore_id = st.selectbox("Previous submission ID", restore_ids, key="ops_restore_submission_id")
+    confirm_restore = st.checkbox(
+        f"I understand this will replace {municipality}'s current RHU data with submission #{restore_id}.",
+        key="ops_restore_submission_confirm",
+        disabled=read_only,
+    )
+    if st.button(
+        "Restore Selected Submission",
+        type="primary",
+        disabled=read_only or not confirm_restore,
+        width="stretch",
+        key="ops_restore_submission",
+    ):
+        actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
+        try:
+            saved, removed = restore_submission(supabase, int(restore_id), str(actor))
+        except Exception as exc:
+            st.error(f"The previous submission could not be restored: {exc}")
+            return
+        if audit_callback:
+            audit_callback(supabase, f"RHU workbook submission restored | municipality={municipality} | source_submission={restore_id}")
+        st.cache_data.clear()
+        st.success(f"Previous workbook restored: {saved:,} record(s) saved and {removed:,} current record(s) removed.")
+        st.rerun()
 
 
 def render_feedback_inbox(supabase, audit_callback=None, read_only: bool = False) -> None:
@@ -357,6 +555,7 @@ def _build_backup(supabase, include_vacctrack_rows: bool) -> tuple[bytes, list[d
         "sbi_linelist_records",
         "sbi_linelist_audit",
         "sbi_vacctrack_imports",
+        SUBMISSION_TABLE,
         SBI_SETTINGS_TABLE,
         FEEDBACK_TABLE,
     ]
@@ -429,11 +628,15 @@ def render_backup(supabase, audit_callback=None) -> None:
 
 
 def render_operations(supabase, audit_callback=None, read_only: bool = False) -> None:
-    health_tab, rollout_tab, feedback_tab, backup_tab = st.tabs(
-        ["System Health", "RHU Rollout", "Feedback", "Backup"]
+    health_tab, campaign_tab, submissions_tab, rollout_tab, feedback_tab, backup_tab = st.tabs(
+        ["System Health", "SBI Control", "RHU Submissions", "RHU Rollout", "Feedback", "Backup"]
     )
     with health_tab:
         render_system_health(supabase, audit_callback=audit_callback, read_only=read_only)
+    with campaign_tab:
+        render_sbi_control(supabase, audit_callback=audit_callback, read_only=read_only)
+    with submissions_tab:
+        render_submission_status(supabase, audit_callback=audit_callback, read_only=read_only)
     with rollout_tab:
         render_rollout_status(supabase)
     with feedback_tab:

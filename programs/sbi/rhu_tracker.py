@@ -20,6 +20,7 @@ from core.data import fetch_sbi_vacctrack_source_info, vacctrack_google_fallback
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.help_content import RHU_FAQ_MD, RHU_FULL_GUIDE_MD
 from programs.sbi.aggregate_workbook import render_workbook_download, render_workbook_upload
+from programs.sbi.campaign_control import get_campaign_config
 from programs.sbi.support import render_feedback_form
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -1122,6 +1123,17 @@ def render_rhu_accomplishments(
             return
         canonical = valid[normalize_municipality_key(canonical)]
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
+        campaign = get_campaign_config(supabase)
+        status = str(campaign.get("status") or "Pre-Implementation")
+        announcement = str(campaign.get("announcement") or "").strip()
+        if status == "Live":
+            st.success("SBI campaign status: LIVE")
+        elif status == "Closed":
+            st.warning("SBI campaign status: CLOSED — workbook uploads are no longer accepted unless the System Administrator reopens the campaign.")
+        else:
+            st.info("SBI campaign status: PRE-IMPLEMENTATION — testing and preparation are still in progress.")
+        if announcement:
+            st.info(f"NIP Coordinator Announcement: {announcement}")
         _render_rhu_encoder_process_guide(canonical)
 
         render_feedback_form(supabase, canonical, username, role=user_role)
