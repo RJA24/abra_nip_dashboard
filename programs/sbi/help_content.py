@@ -145,7 +145,7 @@ The System Administrator controls the SBI campaign status: **Pre-Implementation*
 - Live is the normal implementation period.
 - Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
 
-When your RHU is completely finished, use **Mark Current Workbook as Final**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
+During the Live campaign, an **End of SBI only — Submit Final RHU Report** section is available. This is not part of the normal upload process. Keep updating and re-uploading the same workbook throughout SBI. Use final submission only when your RHU has finished all SBI reporting for the activity. After final submission, further workbook uploads are locked unless the System Administrator reopens the RHU submission.
 
 Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.
 

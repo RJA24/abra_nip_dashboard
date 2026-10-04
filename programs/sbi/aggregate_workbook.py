@@ -1211,24 +1211,34 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
             st.rerun()
 
     current = get_current_submission(supabase, municipality)
-    if current and not current.get("is_finalized"):
+    if current and not current.get("is_finalized") and campaign.get("status") == "Live":
         st.divider()
-        st.markdown("#### Finalize RHU Submission")
-        st.caption("Finalize only when this RHU's current workbook is complete. After finalization, further uploads are blocked until the System Administrator reopens the submission.")
-        if campaign.get("status") == "Pre-Implementation":
-            st.warning("The SBI campaign is still marked Pre-Implementation. Finalize only if this is intentionally your final production submission.")
-        final_confirm = st.checkbox(
-            "I confirm that our current SBI workbook is complete and final.",
-            key="sbi_finalize_confirm",
-        )
-        if st.button("Mark Current Workbook as Final", disabled=not final_confirm, width="stretch", key="sbi_finalize_button"):
-            try:
-                finalized = finalize_current_submission(supabase, municipality, username)
-            except Exception as exc:
-                st.error(f"The submission could not be finalized: {exc}")
-                return
-            if finalized:
-                st.cache_data.clear()
-                st.success("RHU submission finalized.")
-                st.rerun()
+        with st.expander("End of SBI only — Submit Final RHU Report", expanded=False):
+            st.warning(
+                "This is NOT required after each workbook upload. Keep updating and re-uploading your workbook throughout SBI. "
+                "Use this only when your RHU has finished the activity and no more routine updates are expected."
+            )
+            st.caption(
+                "Submitting the final RHU report locks further workbook uploads. If a correction is needed later, "
+                "the System Administrator must reopen the RHU submission first."
+            )
+            final_confirm = st.checkbox(
+                "I confirm that our RHU has finished SBI reporting for the activity and this is our final workbook.",
+                key="sbi_finalize_confirm",
+            )
+            if st.button(
+                "Submit Final RHU Report & Lock Further Uploads",
+                disabled=not final_confirm,
+                width="stretch",
+                key="sbi_finalize_button",
+            ):
+                try:
+                    finalized = finalize_current_submission(supabase, municipality, username)
+                except Exception as exc:
+                    st.error(f"The final RHU report could not be submitted: {exc}")
+                    return
+                if finalized:
+                    st.cache_data.clear()
+                    st.success("Final RHU report submitted. Further workbook uploads are now locked.")
+                    st.rerun()
 
