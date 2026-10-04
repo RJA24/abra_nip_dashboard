@@ -1,6 +1,6 @@
 # Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.21.1
+Version: v5.21.1.2
 
 ## 1. The RHU workflow
 
@@ -24,18 +24,18 @@ Do not rename the **Accomplishments** sheet or its column headings.
 
 ## 3. Encode accomplishments in Excel
 
-Open the **Accomplishments** sheet and use one row per activity entry. Enter data only in the **light-yellow input cells**. The automatically filled School Name, Barangay, and Row Check cells are locked. The Actual Target is kept in a hidden locked column for internal reference and is not something the RHU needs to encode.
+Open the **Accomplishments** sheet and use one row per activity entry. Enter data only in the **light-yellow input cells**. The automatically filled School ID, Barangay, and Row Check cells are locked. The Actual Target is kept in a hidden locked column for internal reference and is not something the RHU needs to encode.
 
 Enter:
 
 - Activity Date
-- School ID
+- School Name — select from the dropdown
 - Grade Level: G1, G4, or G7
 - applicable vaccination counts
 - deferred/refused counts when applicable
 - reason-code counts when applicable
 
-School Name and Barangay are filled automatically from the RHU school roster. The Actual Target is retained internally in a hidden locked column and does not need to be viewed or encoded by the RHU.
+School ID and Barangay are filled automatically after you select the School Name from the RHU school roster. The Actual Target is retained internally in a hidden locked column and does not need to be viewed or encoded by the RHU.
 
 If the same school and grade have more than one entry on the same date, you may use more than one row. The workbook and dashboard add those rows together automatically.
 

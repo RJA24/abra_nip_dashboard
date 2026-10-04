@@ -29,7 +29,7 @@ from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.1"
+APP_VERSION = "v5.21.1.2"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -283,14 +283,53 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
 
     config = get_campaign_config(supabase)
     status = str(config.get("status") or "Pre-Implementation")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Campaign Status", status)
-    c2.metric("Workbook Version", WORKBOOK_VERSION)
     if config.get("start_date") and config.get("end_date"):
         range_label = f"{config['start_date']:%b %d} – {config['end_date']:%b %d, %Y}"
     else:
         range_label = "Not enforced"
-    c3.metric("Activity Date Range", range_label)
+
+    st.markdown(
+        """
+        <style>
+        .sbi-control-card {
+            min-height: 116px;
+            padding: 16px 18px;
+            border: 1px solid #dbe3ef;
+            border-bottom: 5px solid #0033A0;
+            border-radius: 10px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+        .sbi-control-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 8px;
+        }
+        .sbi-control-value {
+            font-size: clamp(1.15rem, 2vw, 1.75rem);
+            line-height: 1.12;
+            font-weight: 750;
+            color: #0033A0;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3 = st.columns(3)
+    for column, label, value in [
+        (c1, "Campaign Status", status),
+        (c2, "Workbook Version", WORKBOOK_VERSION),
+        (c3, "Activity Date Range", range_label),
+    ]:
+        with column:
+            st.markdown(
+                f'<div class="sbi-control-card"><div class="sbi-control-label">{label}</div>'
+                f'<div class="sbi-control-value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
 
     if status == "Pre-Implementation":
         st.info("Testing and workbook uploads are allowed. Use this status while preparing RHUs and cleaning test data.")

@@ -44,8 +44,8 @@ REASON_LABELS = {
 
 BASE_COLUMNS = [
     "Activity Date",
-    "School ID",
     "School Name",
+    "School ID",
     "Grade Level",
     "Barangay",
     "Actual Target",
@@ -362,7 +362,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         (
             "1",
             "ENCODE OFFLINE",
-            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, School ID, Grade Level and the applicable counts. School Name and Barangay fill automatically; the Actual Target is kept hidden for internal reference.",
+            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, select School Name from the dropdown, choose Grade Level, then enter the applicable counts. School ID and Barangay fill automatically; the Actual Target is kept hidden for internal reference.",
             "A9:C11",
         ),
         (
@@ -471,6 +471,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     reference.hide()
     last_ref_row = max(2, len(roster) + 1)
     workbook.define_name("School_IDs", f"=Reference!$A$2:$A${last_ref_row}")
+    workbook.define_name("School_Names", f"=Reference!$B$2:$B${last_ref_row}")
 
     sheet = workbook.add_worksheet("Accomplishments")
     sheet.freeze_panes(1, 4)
@@ -479,8 +480,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         sheet.write(0, col, header, header_fmt)
     sheet.set_row(0, 42)
     sheet.set_column("A:A", 14)
-    sheet.set_column("B:B", 14)
-    sheet.set_column("C:C", 34)
+    sheet.set_column("B:B", 34)
+    sheet.set_column("C:C", 14)
     sheet.set_column("D:D", 12)
     sheet.set_column("E:E", 22)
     sheet.set_column("F:F", 13, None, {"hidden": True})
@@ -499,12 +500,13 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
     for excel_row in range(2, MAX_INPUT_ROWS + 2):
         row = excel_row - 1
-        school_id_cell = f"$B{excel_row}"
+        school_name_cell = f"${_column_letter(school_name_col)}{excel_row}"
+        school_id_cell = f"${_column_letter(school_id_col)}{excel_row}"
         grade_cell = f"${_column_letter(grade_col)}{excel_row}"
         sheet.write_blank(row, date_col, None, input_date_fmt)
-        sheet.write_blank(row, school_id_col, None, input_fmt)
-        sheet.write_formula(row, school_name_col, f'=IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},2,FALSE),"")', formula_fmt)
-        sheet.write_formula(row, barangay_col, f'=IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},3,FALSE),"")', formula_fmt)
+        sheet.write_blank(row, school_name_col, None, input_fmt)
+        sheet.write_formula(row, school_id_col, f'=IFERROR(INDEX(Reference!$A$2:$A${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
+        sheet.write_formula(row, barangay_col, f'=IFERROR(INDEX(Reference!$C$2:$C${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
         sheet.write_blank(row, grade_col, None, input_fmt)
         sheet.write_formula(
             row,
@@ -526,9 +528,11 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             f'${_column_letter(ALL_COLUMNS.index(name))}{excel_row}'
             for name in ["MR Deferred", "Td Deferred", "MR Refused", "Td Refused", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"]
         ]
+        date_letter = _column_letter(date_col)
+        school_name_letter = _column_letter(school_name_col)
         check_formula = (
-            f'=IF(AND($A{excel_row}="",$B{excel_row}="",${grade_letter}{excel_row}=""),"",'
-            f'IF(OR($A{excel_row}="",$B{excel_row}="",${grade_letter}{excel_row}=""),"CHECK KEY",'
+            f'=IF(AND(${date_letter}{excel_row}="",${school_name_letter}{excel_row}="",${grade_letter}{excel_row}=""),"",'
+            f'IF(OR(${date_letter}{excel_row}="",${school_name_letter}{excel_row}="",${grade_letter}{excel_row}=""),"CHECK KEY",'
             f'IF(AND(${grade_letter}{excel_row}="G4",SUM(${mr_start_letter}{excel_row}:${td_refused_letter}{excel_row})>0),"CHECK G4 FIELDS",'
             f'IF(AND(OR(${grade_letter}{excel_row}="G1",${grade_letter}{excel_row}="G7"),SUM(${hpv_start_letter}{excel_row}:${hpv_refused_letter}{excel_row})>0),"CHECK GRADE FIELDS",'
             f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM({",".join(missed_parts)}),"CHECK REASONS","OK")))))'
@@ -537,7 +541,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
     sheet.data_validation(1, date_col, MAX_INPUT_ROWS, date_col, {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31), "input_title": "Activity Date", "input_message": "Enter the date the school vaccination activity was conducted."})
     if not roster.empty:
-        sheet.data_validation(1, school_id_col, MAX_INPUT_ROWS, school_id_col, {"validate": "list", "source": "=School_IDs", "input_title": "School ID", "input_message": "Select a school assigned to this RHU."})
+        sheet.data_validation(1, school_name_col, MAX_INPUT_ROWS, school_name_col, {"validate": "list", "source": "=School_Names", "input_title": "School Name", "input_message": "Select a school assigned to this RHU. The School ID fills automatically."})
     sheet.data_validation(1, grade_col, MAX_INPUT_ROWS, grade_col, {"validate": "list", "source": ["G1", "G4", "G7"]})
     for col_name in INPUT_COUNT_COLUMNS:
         col = ALL_COLUMNS.index(col_name)
@@ -808,7 +812,9 @@ def _to_db_record(row: pd.Series, municipality: str, username: str, batch_id: st
         "updated_by": username,
         "updated_at": datetime.now(MANILA_TZ).isoformat(),
         "source_type": "workbook",
-        "source_batch_id": batch_id,
+        # source_batch_id is the legacy learner-line-list bigint field.
+        # Workbook hashes are stored in sbi_rhu_workbook_submissions.batch_id instead.
+        "source_batch_id": None,
     }
 
 
