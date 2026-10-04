@@ -311,9 +311,19 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
         end_default = config.get("end_date") or start_default
         d1, d2 = st.columns(2)
         with d1:
-            start_date = st.date_input("Activity Start Date", value=start_default, disabled=read_only or not enforce_dates)
+            start_date = st.date_input(
+                "Activity Start Date",
+                value=start_default,
+                disabled=read_only,
+                help="Used only when official activity date enforcement is enabled.",
+            )
         with d2:
-            end_date = st.date_input("Activity End Date", value=end_default, disabled=read_only or not enforce_dates)
+            end_date = st.date_input(
+                "Activity End Date",
+                value=end_default,
+                disabled=read_only,
+                help="Used only when official activity date enforcement is enabled.",
+            )
         announcement = st.text_area(
             "RHU Announcement",
             value=str(config.get("announcement") or ""),
