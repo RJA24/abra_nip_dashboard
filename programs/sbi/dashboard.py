@@ -2610,3 +2610,4 @@ def render_sbi_dashboard(supabase) -> None:
             )
         else:
             st.info("No deferral or refusal records are available for this selection.")
+            
