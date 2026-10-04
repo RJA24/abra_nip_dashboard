@@ -16,7 +16,7 @@ VaccTrack remains the official/final national SBI dataset.
 
 The downloaded workbook contains:
 
-- `Setup` — municipality, VaccTrack facility name, and short instructions.
+- `Setup` — municipality, visual instructions, and workbook reminders.
 - `Accomplishments` — offline activity encoding by Activity Date + School + Grade.
 - `VaccTrack G1` — daily Grade 1 values arranged using VaccTrack field names.
 - `VaccTrack G4` — daily Grade 4 HPV values arranged using VaccTrack field names.
@@ -26,6 +26,8 @@ The downloaded workbook contains:
 The workbook supports G1/G7 MR/Td counts, G4 HPV counts, deferred/refused totals, and VaccTrack reason codes 01–19.
 
 Each VaccTrack sheet has a Report Date cell. Changing the date recalculates the school-level values for that day using `SUMIFS` formulas.
+
+The RHU-facing VaccTrack sheets intentionally show only the information the encoder needs for manual VaccTrack entry: the selected **Report Date**, **School**, the grade-specific VaccTrack fields, and reason codes 01–19. Region, Province, Municipality, Barangay, Facility Name, and School ID are not shown because they are already known/selected in VaccTrack and only add clutter to the offline encoding aid.
 
 ### Visual Setup guide
 

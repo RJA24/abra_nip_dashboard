@@ -42,8 +42,8 @@ BASE_COLUMNS = [
     "Activity Date",
     "School ID",
     "School Name",
-    "Barangay",
     "Grade Level",
+    "Barangay",
     "Actual Target",
     "MR Male",
     "MR Female",
@@ -331,9 +331,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     setup.merge_range("B4:C4", municipality, setup_value)
     setup.write("D4", "System", setup_label)
     setup.merge_range("E4:F4", "Abra NIP Monitoring Information System", setup_value)
-    setup.write("A5", "VaccTrack Facility Name", setup_label)
-    setup.merge_range("B5:F5", "", setup_input)
-    setup.write_comment("B5", "Enter the facility name exactly as it appears in VaccTrack.", {"author": "Abra NIP"})
+    setup.write("A5", "Workbook Scope", setup_label)
+    setup.merge_range("B5:F5", "One RHU workbook for the entire SBI activity", setup_value)
 
     setup.set_row(3, 24)
     setup.set_row(4, 26)
@@ -406,7 +405,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
     setup.merge_range("A24:F24", "WHAT EACH SHEET IS FOR", guide_header)
     sheet_guide = [
-        ("Setup", "Start here. Enter the VaccTrack Facility Name and review the workflow."),
+        ("Setup", "Start here. Review the workflow and workbook reminders."),
         ("Accomplishments", "Main offline encoding sheet. Keep all SBI activity dates, schools and aggregate counts here."),
         ("VaccTrack G1", "Daily Grade 1 values arranged for VaccTrack."),
         ("VaccTrack G4", "Daily Grade 4 HPV values arranged for VaccTrack."),
@@ -452,7 +451,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     workbook.define_name("School_IDs", f"=Reference!$A$2:$A${last_ref_row}")
 
     sheet = workbook.add_worksheet("Accomplishments")
-    sheet.freeze_panes(1, 6)
+    sheet.freeze_panes(1, 4)
     sheet.autofilter(0, 0, MAX_INPUT_ROWS, len(ALL_COLUMNS) - 1)
     for col, header in enumerate(ALL_COLUMNS):
         sheet.write(0, col, header, header_fmt)
@@ -460,8 +459,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.set_column("A:A", 14)
     sheet.set_column("B:B", 14)
     sheet.set_column("C:C", 34)
-    sheet.set_column("D:D", 22)
-    sheet.set_column("E:E", 12)
+    sheet.set_column("D:D", 12)
+    sheet.set_column("E:E", 22)
     sheet.set_column("F:F", 13)
     sheet.set_column("G:T", 12)
     reason_start_col = BASE_COLUMNS.index("HPV2 Refused") + 1
@@ -496,12 +495,21 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             sheet.write_blank(row, col, None, count_fmt)
         first_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[0]))
         last_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[-1]))
+        grade_letter = _column_letter(grade_col)
+        mr_start_letter = _column_letter(ALL_COLUMNS.index("MR Male"))
+        td_refused_letter = _column_letter(ALL_COLUMNS.index("Td Refused"))
+        hpv_start_letter = _column_letter(ALL_COLUMNS.index("HPV Dose 1"))
+        hpv_refused_letter = _column_letter(ALL_COLUMNS.index("HPV2 Refused"))
+        missed_parts = [
+            f'${_column_letter(ALL_COLUMNS.index(name))}{excel_row}'
+            for name in ["MR Deferred", "Td Deferred", "MR Refused", "Td Refused", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"]
+        ]
         check_formula = (
-            f'=IF(AND($A{excel_row}="",$B{excel_row}="",$E{excel_row}=""),"",'
-            f'IF(OR($A{excel_row}="",$B{excel_row}="",$E{excel_row}=""),"CHECK KEY",'
-            f'IF(AND($E{excel_row}="G4",SUM($G{excel_row}:$N{excel_row})>0),"CHECK G4 FIELDS",'
-            f'IF(AND(OR($E{excel_row}="G1",$E{excel_row}="G7"),SUM($O{excel_row}:$T{excel_row})>0),"CHECK GRADE FIELDS",'
-            f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM($K{excel_row}:$N{excel_row},$Q{excel_row}:$T{excel_row}),"CHECK REASONS","OK")))))'
+            f'=IF(AND($A{excel_row}="",$B{excel_row}="",${grade_letter}{excel_row}=""),"",'
+            f'IF(OR($A{excel_row}="",$B{excel_row}="",${grade_letter}{excel_row}=""),"CHECK KEY",'
+            f'IF(AND(${grade_letter}{excel_row}="G4",SUM(${mr_start_letter}{excel_row}:${td_refused_letter}{excel_row})>0),"CHECK G4 FIELDS",'
+            f'IF(AND(OR(${grade_letter}{excel_row}="G1",${grade_letter}{excel_row}="G7"),SUM(${hpv_start_letter}{excel_row}:${hpv_refused_letter}{excel_row})>0),"CHECK GRADE FIELDS",'
+            f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM({",".join(missed_parts)}),"CHECK REASONS","OK")))))'
         )
         sheet.write_formula(row, row_check_col, check_formula, helper_fmt)
 
@@ -515,8 +523,9 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
     sheet.conditional_format(1, row_check_col, MAX_INPUT_ROWS, row_check_col, {"type": "text", "criteria": "containing", "value": "OK", "format": ok_fmt})
     sheet.conditional_format(1, row_check_col, MAX_INPUT_ROWS, row_check_col, {"type": "text", "criteria": "containing", "value": "CHECK", "format": bad_fmt})
-    sheet.conditional_format(1, ALL_COLUMNS.index("MR Male"), MAX_INPUT_ROWS, ALL_COLUMNS.index("Td Refused"), {"type": "formula", "criteria": "=$E2=\"G4\"", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
-    sheet.conditional_format(1, ALL_COLUMNS.index("HPV Dose 1"), MAX_INPUT_ROWS, ALL_COLUMNS.index("HPV2 Refused"), {"type": "formula", "criteria": "=OR($E2=\"G1\",$E2=\"G7\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
+    grade_letter = _column_letter(grade_col)
+    sheet.conditional_format(1, ALL_COLUMNS.index("MR Male"), MAX_INPUT_ROWS, ALL_COLUMNS.index("Td Refused"), {"type": "formula", "criteria": f"=${grade_letter}2=\"G4\"", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
+    sheet.conditional_format(1, ALL_COLUMNS.index("HPV Dose 1"), MAX_INPUT_ROWS, ALL_COLUMNS.index("HPV2 Refused"), {"type": "formula", "criteria": f"=OR(${grade_letter}2=\"G1\",${grade_letter}2=\"G7\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
 
     reason_comments = {f"Reason {code}": f"{code} {label}" for code, label in REASON_LABELS.items()}
     for header, comment in reason_comments.items():
@@ -524,13 +533,15 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
     def add_vacctrack_sheet(name: str, grade: str) -> None:
         vac = workbook.add_worksheet(name)
+        vac.hide_gridlines(2)
         vac.write("A1", f"{name} — values to encode in VaccTrack", title_fmt)
         vac.write("A2", "Report Date", section_fmt)
         vac.write_datetime("B2", datetime.now(MANILA_TZ).replace(tzinfo=None), date_fmt)
         vac.data_validation("B2", {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31)})
-        vac.write("D2", "Change the Report Date to view that day's totals. Only rows marked YES had an accomplishment entry for that date.", subtitle_fmt)
+        vac.merge_range("D2:J2", "Select the report date, then encode the displayed school values in the matching VaccTrack grade page. Location and facility details are already handled in VaccTrack and are intentionally omitted here.", subtitle_fmt)
+        vac.set_row(1, 42)
 
-        common = ["Activity?", "Region Name", "Province Name", "City/Municipality Name", "Barangay Name", "Facility Name", "Report date", "School id", "School name"]
+        common = ["Activity?", "School"]
         reasons = [f"{code} {label}" for code, label in REASON_LABELS.items()]
         if grade == "G1":
             metrics = [
@@ -539,18 +550,9 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                 "G1.C Number of Students vaccinated with TD (Male)",
                 "G1.D Number of Students vaccinated with TD (Female)",
             ]
-            summary_cols = [
-                "G1.A Actual total number Grade 1 Students",
-                "G1.B Number of Students vaccinated with MR",
-                "G1.C Number of Students vaccinated with TD",
-                "G1.D Number of Students Deferred for the MR Vaccine",
-                "G1.E Number of Students Deferred for the TD Vaccine",
-                "G1.F Number of Students Who Refused the MR Vaccine",
-                "G1.G Number of Students Who Refused the TD Vaccine",
-            ]
         elif grade == "G4":
             metrics = [
-                "G4.A Actual total number Grade 4 (Female) Students",
+                "G4.A Actual total Number of Grade 4 (Female) Students",
                 "G4.B Number of Students Who Received the First Dose of the HPV Vaccine",
                 "G4.C Number of Students Who Received the Second Dose of the HPV Vaccine",
                 "G4.D Number of Students Deferred for the First Dose of the HPV Vaccine",
@@ -558,7 +560,6 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                 "G4.F Number of Students Who Refused the First Dose of the HPV Vaccine",
                 "G4.G Number of Students Who Refused the Second Dose of the HPV Vaccine",
             ]
-            summary_cols = []
         else:
             metrics = [
                 "G7.A Number of Students vaccinated with MR (Male)",
@@ -566,26 +567,17 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                 "G7.C Number of Students vaccinated with TD (Male)",
                 "G7.D Number of Students vaccinated with TD (Female)",
             ]
-            summary_cols = [
-                "G7.A Actual total number Grade 7 Students",
-                "G7.B Number of Students Who Received the MR Vaccine",
-                "G7.C Number of Students Who Received the TD Vaccine",
-                "G7.D Number of Students Deferred for the MR Vaccine",
-                "G7.E Number of Students Deferred for the TD Vaccine",
-                "G7.F Number of Students Who Refused the MR Vaccine",
-                "G7.G Number of Students Who Refused the TD Vaccine",
-            ]
-        headers = common + metrics + reasons + summary_cols
+
+        headers = common + metrics + reasons
         for col, header in enumerate(headers):
             vac.write(3, col, header, header_fmt)
         vac.set_row(3, 72)
-        vac.freeze_panes(4, 9)
+        # Keep only the header rows frozen. The encoder should be able to scroll freely across VaccTrack fields.
+        vac.freeze_panes(4, 0)
         vac.autofilter(3, 0, 3 + len(roster), len(headers) - 1)
         vac.set_column(0, 0, 10)
-        vac.set_column(1, 6, 20)
-        vac.set_column(7, 7, 14)
-        vac.set_column(8, 8, 34)
-        vac.set_column(9, len(headers) - 1, 15)
+        vac.set_column(1, 1, 34)
+        vac.set_column(2, len(headers) - 1, 15)
 
         input_end = MAX_INPUT_ROWS + 1
         acc_grade_col = _column_letter(ALL_COLUMNS.index("Grade Level"))
@@ -595,59 +587,38 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         metric_map = {
             "G1": ["MR Male", "MR Female", "Td Male", "Td Female"],
             "G7": ["MR Male", "MR Female", "Td Male", "Td Female"],
-            "G4": ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
+            "G4": ["Actual Target", "HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
         }
-        if grade == "G4":
-            metric_sources = ["Actual Target"] + metric_map[grade]
-        else:
-            metric_sources = metric_map[grade]
 
         for idx, school in roster.iterrows():
             excel_row = idx + 5
-            school_id = str(school["School ID"])
-            vac.write(idx + 4, 1, "CORDILLERA ADMINISTRATIVE REGION (CAR)")
-            vac.write(idx + 4, 2, "ABRA")
-            vac.write(idx + 4, 3, municipality)
-            vac.write(idx + 4, 4, school.get("Barangay", ""))
-            vac.write_formula(idx + 4, 5, "=Setup!$B$5")
-            vac.write_formula(idx + 4, 6, "=$B$2", date_fmt)
-            vac.write(idx + 4, 7, school_id)
-            vac.write(idx + 4, 8, school.get("School Name", ""))
+            school_id = str(school["School ID"]).replace('"', '""')
+            school_name = str(school.get("School Name", ""))
+            vac.write(idx + 4, 1, school_name)
 
-            count_formula = f'=IF(COUNTIFS(Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},$H{excel_row},Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
+            count_formula = f'=IF(COUNTIFS(Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
             vac.write_formula(idx + 4, 0, count_formula, helper_fmt)
 
             metric_start = len(common)
             if grade == "G4":
                 target = int(float(school.get("G4 Female Target", 0) or 0))
                 vac.write(idx + 4, metric_start, target, count_fmt)
-                metric_inputs = metric_sources[1:]
+                metric_inputs = metric_map[grade][1:]
                 start_offset = 1
             else:
-                metric_inputs = metric_sources
+                metric_inputs = metric_map[grade]
                 start_offset = 0
+
             for offset, source_name in enumerate(metric_inputs, start=start_offset):
                 source_col = _column_letter(ALL_COLUMNS.index(source_name))
-                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},$H{excel_row},Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
                 vac.write_formula(idx + 4, metric_start + offset, formula, count_fmt)
 
             reason_start = metric_start + len(metrics)
             for r_offset, code in enumerate(REASON_LABELS):
                 source_col = _column_letter(ALL_COLUMNS.index(f"Reason {code}"))
-                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},$H{excel_row},Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
                 vac.write_formula(idx + 4, reason_start + r_offset, formula, count_fmt)
-
-            summary_start = reason_start + len(REASON_LABELS)
-            if grade in {"G1", "G7"}:
-                target = int(float(school.get("G1 Target" if grade == "G1" else "G7 Target", 0) or 0))
-                vac.write(idx + 4, summary_start, target, count_fmt)
-                metric_cells = [f"{_column_letter(metric_start + x)}{excel_row}" for x in range(4)]
-                vac.write_formula(idx + 4, summary_start + 1, f"={metric_cells[0]}+{metric_cells[1]}", count_fmt)
-                vac.write_formula(idx + 4, summary_start + 2, f"={metric_cells[2]}+{metric_cells[3]}", count_fmt)
-                for s_offset, source_name in enumerate(["MR Deferred", "Td Deferred", "MR Refused", "Td Refused"], start=3):
-                    source_col = _column_letter(ALL_COLUMNS.index(source_name))
-                    formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},$H{excel_row},Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
-                    vac.write_formula(idx + 4, summary_start + s_offset, formula, count_fmt)
 
         vac.conditional_format(4, 0, 3 + len(roster), 0, {"type": "text", "criteria": "containing", "value": "YES", "format": ok_fmt})
 

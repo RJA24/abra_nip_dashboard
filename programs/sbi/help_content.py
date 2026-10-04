@@ -170,6 +170,8 @@ You may encode two rows. The workbook and dashboard automatically add rows with 
 
 Open **VaccTrack G1**, **VaccTrack G4**, or **VaccTrack G7**, then set the Report Date. The sheet automatically displays that day's school-level values using VaccTrack field names.
 
+The VaccTrack sheets intentionally omit Region, Province, Municipality, Barangay, Facility Name, and School ID because those details are already known/selected in VaccTrack. The encoder sees only the selected date, school, grade-specific values, and reason codes.
+
 ## 7. How do I correct a wrong accomplishment?
 
 Edit the row in the **Accomplishments** sheet, save the workbook, and upload the complete current workbook again.

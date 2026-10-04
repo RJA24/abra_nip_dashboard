@@ -69,3 +69,7 @@ No. Step 2 accepts the RHU SBI Offline Accomplishment Workbook. Official VaccTra
 ## 17. Which dataset is official?
 
 VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation.
+
+## Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
+
+Those details are already known or selected inside VaccTrack. The workbook is only an encoding aid, so the VaccTrack G1/G4/G7 sheets show the selected Report Date, School, the grade-specific fields to encode, and reason codes 01–19.

@@ -71,7 +71,9 @@ The workbook includes Reason 01 to Reason 19. Enter the aggregate count for each
 
 The workbook contains three automatic sheets:
 
-- **VaccTrack G1**
+- The VaccTrack G1/G4/G7 sheets are intentionally simplified: only the selected **Report Date**, **School**, grade-specific VaccTrack fields, and reason codes 01–19 are shown. Location/facility metadata is omitted because it is already handled in VaccTrack.
+
+**VaccTrack G1**
 - **VaccTrack G4**
 - **VaccTrack G7**
 

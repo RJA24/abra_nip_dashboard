@@ -1,0 +1,19 @@
+Abra NIP Monitoring Information System v5.21
+
+RUN ONCE:
+  supabase/011_sbi_offline_aggregate_workbook.sql
+
+ADD:
+  programs/sbi/aggregate_workbook.py
+
+REPLACE:
+  admin/operations.py
+  programs/sbi/rhu_tracker.py
+  programs/sbi/help_content.py
+  programs/sbi/import_management.py
+  programs/sbi/support.py
+  docs/SBI_RHU_Encoder_Full_Guide.md
+  docs/SBI_RHU_Encoder_FAQ.md
+
+DO NOT copy previous SQL migrations from older versions.
+DO NOT remove the old learner-line-list database tables yet; they are left as legacy data/cleanup structures and are no longer part of the normal RHU workflow.
