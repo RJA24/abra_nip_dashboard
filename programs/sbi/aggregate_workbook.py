@@ -552,7 +552,6 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             ]
         elif grade == "G4":
             metrics = [
-                "G4.A Actual total Number of Grade 4 (Female) Students",
                 "G4.B Number of Students Who Received the First Dose of the HPV Vaccine",
                 "G4.C Number of Students Who Received the Second Dose of the HPV Vaccine",
                 "G4.D Number of Students Deferred for the First Dose of the HPV Vaccine",
@@ -587,7 +586,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         metric_map = {
             "G1": ["MR Male", "MR Female", "Td Male", "Td Female"],
             "G7": ["MR Male", "MR Female", "Td Male", "Td Female"],
-            "G4": ["Actual Target", "HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
+            "G4": ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
         }
 
         for idx, school in roster.iterrows():
@@ -600,16 +599,9 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             vac.write_formula(idx + 4, 0, count_formula, helper_fmt)
 
             metric_start = len(common)
-            if grade == "G4":
-                target = int(float(school.get("G4 Female Target", 0) or 0))
-                vac.write(idx + 4, metric_start, target, count_fmt)
-                metric_inputs = metric_map[grade][1:]
-                start_offset = 1
-            else:
-                metric_inputs = metric_map[grade]
-                start_offset = 0
+            metric_inputs = metric_map[grade]
 
-            for offset, source_name in enumerate(metric_inputs, start=start_offset):
+            for offset, source_name in enumerate(metric_inputs):
                 source_col = _column_letter(ALL_COLUMNS.index(source_name))
                 formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
                 vac.write_formula(idx + 4, metric_start + offset, formula, count_fmt)

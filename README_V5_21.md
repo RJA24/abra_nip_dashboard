@@ -19,7 +19,7 @@ The downloaded workbook contains:
 - `Setup` — municipality, visual instructions, and workbook reminders.
 - `Accomplishments` — offline activity encoding by Activity Date + School + Grade.
 - `VaccTrack G1` — daily Grade 1 values arranged using VaccTrack field names.
-- `VaccTrack G4` — daily Grade 4 HPV values arranged using VaccTrack field names.
+- `VaccTrack G4` — daily Grade 4 HPV accomplishment values arranged using VaccTrack field names. G4.A (Actual total Grade 4 Female Students) is intentionally omitted from the RHU workbook view.
 - `VaccTrack G7` — daily Grade 7 values arranged using VaccTrack field names.
 - hidden `Reference` — RHU school roster and actual targets.
 
