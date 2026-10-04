@@ -70,6 +70,10 @@ No. Step 2 accepts the RHU SBI Offline Accomplishment Workbook. Official VaccTra
 
 VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation.
 
-## Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
+## 18. Why can’t I edit some cells in the workbook?
+
+That is intentional. Cells containing formulas, automatic school information, targets, Row Check results, and VaccTrack calculated values are locked to prevent accidental changes. Encode only in the **light-yellow input cells**. On the VaccTrack G1/G4/G7 sheets, only the **Report Date** cell is editable.
+
+## 19. Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
 
 Those details are already known or selected inside VaccTrack. The workbook is only an encoding aid, so the VaccTrack G1/G4/G7 sheets show the selected Report Date, School, the grade-specific fields to encode, and reason codes 01–19.

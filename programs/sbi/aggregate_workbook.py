@@ -15,6 +15,7 @@ from core.map_labels import canonical_municipality_name, normalize_municipality_
 MANILA_TZ = pytz.timezone("Asia/Manila")
 TABLE_NAME = "sbi_rhu_accomplishments"
 MAX_INPUT_ROWS = 1200
+PROTECTION_PASSWORD = "AbraNIPSBI2026"
 
 REASON_LABELS = {
     "01": "Parent/caregiver not home or decision-maker (e.g., spouse) unavailable",
@@ -169,10 +170,13 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     subtitle_fmt = workbook.add_format({"font_size": 10, "font_color": "#475569", "text_wrap": True})
     section_fmt = workbook.add_format({"bold": True, "font_size": 11, "font_color": dark, "bg_color": light_blue, "border": 1, "border_color": "#CBD5E1"})
     header_fmt = workbook.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": blue, "border": 1, "border_color": "#D1D5DB", "text_wrap": True, "valign": "vcenter", "align": "center"})
-    input_fmt = workbook.add_format({"border": 1, "border_color": "#E5E7EB", "bg_color": "#FFFFFF"})
+    input_fmt = workbook.add_format({"border": 1, "border_color": "#F59E0B", "bg_color": "#FFFBEB", "locked": False})
     formula_fmt = workbook.add_format({"border": 1, "border_color": "#E5E7EB", "bg_color": light_gray, "font_color": "#334155"})
     date_fmt = workbook.add_format({"border": 1, "border_color": "#E5E7EB", "num_format": "mmm d, yyyy"})
+    input_date_fmt = workbook.add_format({"border": 1, "border_color": "#F59E0B", "bg_color": "#FFFBEB", "num_format": "mmm d, yyyy", "locked": False})
     count_fmt = workbook.add_format({"border": 1, "border_color": "#E5E7EB", "num_format": "0"})
+    input_count_fmt = workbook.add_format({"border": 1, "border_color": "#F59E0B", "bg_color": "#FFFBEB", "num_format": "0", "locked": False})
+    vac_date_fmt = workbook.add_format({"border": 1, "border_color": "#F59E0B", "bg_color": "#FFFBEB", "num_format": "mmm d, yyyy", "bold": True, "locked": False})
     note_fmt = workbook.add_format({"font_color": "#475569", "text_wrap": True, "valign": "top"})
     warning_fmt = workbook.add_format({"bg_color": amber, "font_color": "#92400E", "text_wrap": True, "border": 1, "border_color": "#F59E0B"})
     ok_fmt = workbook.add_format({"bg_color": green, "font_color": "#166534"})
@@ -388,6 +392,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         "• Keep every activity date and school in Accomplishments.\n"
         "• Save the file after every encoding session.\n"
         "• Check Row Check and correct any row marked CHECK.\n"
+        "• Enter data only in the light-yellow input cells.\n"
         "• Re-upload the complete workbook after corrections.",
         do_text,
     )
@@ -395,6 +400,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         "D18:F22",
         "• Do not rename, delete or rearrange workbook sheets.\n"
         "• Do not change the Accomplishments column headings.\n"
+        "• Do not try to edit gray/calculated cells; they are locked.\n"
         "• Do not upload a VaccTrack export as your RHU workbook.\n"
         "• Do not delete an old row unless that accomplishment should be removed.\n"
         "• Do not create a new workbook just to make a correction.",
@@ -433,6 +439,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     )
     setup.set_row(34, 28)
     setup.set_row(35, 28)
+    setup.protect(PROTECTION_PASSWORD)
 
     reference = workbook.add_worksheet("Reference")
     reference_headers = ["School ID", "School Name", "Barangay", "G1 Target", "G4 Female Target", "G7 Target"]
@@ -446,6 +453,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     reference.set_column("B:B", 36)
     reference.set_column("C:C", 24)
     reference.set_column("D:F", 14)
+    reference.protect(PROTECTION_PASSWORD)
     reference.hide()
     last_ref_row = max(2, len(roster) + 1)
     workbook.define_name("School_IDs", f"=Reference!$A$2:$A${last_ref_row}")
@@ -478,8 +486,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     for excel_row in range(2, MAX_INPUT_ROWS + 2):
         row = excel_row - 1
         school_id_cell = f"$B{excel_row}"
-        grade_cell = f"$E{excel_row}"
-        sheet.write_blank(row, date_col, None, date_fmt)
+        grade_cell = f"${_column_letter(grade_col)}{excel_row}"
+        sheet.write_blank(row, date_col, None, input_date_fmt)
         sheet.write_blank(row, school_id_col, None, input_fmt)
         sheet.write_formula(row, school_name_col, f'=IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},2,FALSE),"")', formula_fmt)
         sheet.write_formula(row, barangay_col, f'=IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},3,FALSE),"")', formula_fmt)
@@ -492,7 +500,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         )
         for col_name in INPUT_COUNT_COLUMNS:
             col = ALL_COLUMNS.index(col_name)
-            sheet.write_blank(row, col, None, count_fmt)
+            sheet.write_blank(row, col, None, input_count_fmt)
         first_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[0]))
         last_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[-1]))
         grade_letter = _column_letter(grade_col)
@@ -530,13 +538,14 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     reason_comments = {f"Reason {code}": f"{code} {label}" for code, label in REASON_LABELS.items()}
     for header, comment in reason_comments.items():
         sheet.write_comment(0, ALL_COLUMNS.index(header), comment, {"author": "Abra NIP"})
+    sheet.protect(PROTECTION_PASSWORD, {"autofilter": True})
 
     def add_vacctrack_sheet(name: str, grade: str) -> None:
         vac = workbook.add_worksheet(name)
         vac.hide_gridlines(2)
         vac.write("A1", f"{name} — values to encode in VaccTrack", title_fmt)
         vac.write("A2", "Report Date", section_fmt)
-        vac.write_datetime("B2", datetime.now(MANILA_TZ).replace(tzinfo=None), date_fmt)
+        vac.write_datetime("B2", datetime.now(MANILA_TZ).replace(tzinfo=None), vac_date_fmt)
         vac.data_validation("B2", {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31)})
         vac.merge_range("D2:J2", "Select the report date, then encode the displayed school values in the matching VaccTrack grade page. Location and facility details are already handled in VaccTrack and are intentionally omitted here.", subtitle_fmt)
         vac.set_row(1, 42)
@@ -613,6 +622,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                 vac.write_formula(idx + 4, reason_start + r_offset, formula, count_fmt)
 
         vac.conditional_format(4, 0, 3 + len(roster), 0, {"type": "text", "criteria": "containing", "value": "YES", "format": ok_fmt})
+        vac.protect(PROTECTION_PASSWORD, {"autofilter": True})
 
     add_vacctrack_sheet("VaccTrack G1", "G1")
     add_vacctrack_sheet("VaccTrack G4", "G4")

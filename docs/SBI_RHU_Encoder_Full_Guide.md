@@ -18,11 +18,13 @@ Download the RHU-specific workbook from **1. Offline Workbook**. Keep using that
 
 The workbook already contains your municipality's school list and targets. You can encode even when there is no internet connection.
 
+The workbook protects cells that RHUs should not change. **Light-yellow cells are the editable input cells.** Gray/calculated cells, headings, formulas, the Setup sheet, and the hidden Reference sheet are locked to prevent accidental changes.
+
 Do not rename the **Accomplishments** sheet or its column headings.
 
 ## 3. Encode accomplishments in Excel
 
-Open the **Accomplishments** sheet and use one row per activity entry.
+Open the **Accomplishments** sheet and use one row per activity entry. Enter data only in the **light-yellow input cells**. The automatically filled School Name, Barangay, Actual Target, and Row Check cells are locked.
 
 Enter:
 
@@ -77,7 +79,7 @@ The workbook contains three automatic sheets:
 - **VaccTrack G4**
 - **VaccTrack G7**
 
-Change the **Report Date** at the top of the sheet. The workbook automatically sums the accomplishment rows for that date and arranges the values using the VaccTrack field names.
+Change the **Report Date** in the light-yellow cell at the top of the sheet. It is the only editable cell on each VaccTrack sheet. The calculated school rows and VaccTrack values are locked so they cannot be accidentally overwritten. The workbook automatically sums the accomplishment rows for that date and arranges the values using the VaccTrack field names.
 
 Rows marked **YES** had an accomplishment entry for the selected date.
 
@@ -129,6 +131,7 @@ If the VaccTrack extract has not yet reached your activity date, the result may 
 ## 10. Important reminders
 
 - Keep one working workbook throughout the SBI activity.
+- Enter data only in light-yellow input cells; calculated/reference cells are intentionally locked.
 - Encode all accomplishments in the workbook, including days when internet is unavailable.
 - Use the workbook's VaccTrack sheets for daily VaccTrack encoding.
 - Upload the complete current workbook, not only the rows you changed.
