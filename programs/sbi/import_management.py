@@ -315,7 +315,7 @@ def _rollback_line_batch(supabase, target: dict, imports: pd.DataFrame, username
 
 
 def _render_line_list_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:  # noqa: ANN001
-    st.markdown("#### Learner Line-List Imports")
+    st.markdown("#### Legacy Learner Line-List Imports")
     imports = _line_imports(supabase)
     if imports.empty:
         st.write("No SBI line-list import batches were found.")
@@ -645,7 +645,7 @@ def render_import_management(
         st.success(notice)
 
     line_tab, manual_tab, vt_tab = st.tabs([
-        "Line-List Batches",
+        "Legacy Line-List Batches",
         "Manual Fallback Records",
         "VaccTrack Snapshots",
     ])

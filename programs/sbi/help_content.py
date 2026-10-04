@@ -1,8 +1,216 @@
-"""In-app RHU help content for the SBI workflow.
+"""In-app RHU help content for the SBI offline workbook workflow."""
 
-Updated for v5.20.2.2.
+RHU_FULL_GUIDE_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder Guide
+
+Version: v5.21
+
+## 1. The RHU workflow
+
+The SBI RHU workflow is now offline-first:
+
+1. **Download and maintain one SBI workbook**
+2. **Use the workbook's VaccTrack sheets, then upload the current workbook**
+3. **Refresh and compare with VaccTrack**
+
+VaccTrack remains the official/final national SBI reporting source. The workbook is the RHU working record used to prepare, consolidate, correct, and upload accomplishment data.
+
+## 2. Keep one workbook for the whole activity
+
+Download the RHU-specific workbook from **1. Offline Workbook**. Keep using that same file throughout the SBI activity.
+
+The workbook already contains your municipality's school list and targets. You can encode even when there is no internet connection.
+
+Do not rename the **Accomplishments** sheet or its column headings.
+
+## 3. Encode accomplishments in Excel
+
+Open the **Accomplishments** sheet and use one row per activity entry.
+
+Enter:
+
+- Activity Date
+- School ID
+- Grade Level: G1, G4, or G7
+- applicable vaccination counts
+- deferred/refused counts when applicable
+- reason-code counts when applicable
+
+School Name, Barangay, and Actual Target are filled automatically from the RHU school roster.
+
+If the same school and grade have more than one entry on the same date, you may use more than one row. The workbook and dashboard add those rows together automatically.
+
+## 4. Grade rules
+
+### Grade 1 and Grade 7
+
+Use the MR/Td fields:
+
+- MR Male
+- MR Female
+- Td Male
+- Td Female
+- MR Deferred / Refused
+- Td Deferred / Refused
+
+Leave HPV fields blank.
+
+### Grade 4
+
+Use the HPV fields:
+
+- HPV Dose 1
+- HPV Dose 2
+- HPV1 Deferred / Refused
+- HPV2 Deferred / Refused
+
+Leave MR/Td fields blank.
+
+### Reason codes
+
+The workbook includes Reason 01 to Reason 19. Enter the aggregate count for each applicable reason. Reason counts should not exceed the total deferred/refused counts for that row.
+
+## 5. Encode in VaccTrack
+
+The workbook contains three automatic sheets:
+
+- **VaccTrack G1**
+- **VaccTrack G4**
+- **VaccTrack G7**
+
+Change the **Report Date** at the top of the sheet. The workbook automatically sums the accomplishment rows for that date and arranges the values using the VaccTrack field names.
+
+Rows marked **YES** had an accomplishment entry for the selected date.
+
+Copy the displayed values into VaccTrack.
+
+## 6. Upload the workbook to the monitoring system
+
+When internet is available:
+
+1. Open **2. Upload Current Workbook**.
+2. Upload the same working workbook.
+3. Review the validation results.
+4. Review Added / Modified / Removed / Unchanged.
+5. Confirm only when the comparison is correct.
+
+The uploaded workbook is treated as your RHU's **complete current dataset**.
+
+## 7. Corrections are done in the workbook
+
+If an accomplishment was wrong:
+
+1. Open your working workbook.
+2. Correct the row in **Accomplishments**.
+3. Save the file.
+4. Upload the complete workbook again.
+5. Review the changes and confirm.
+
+You do not create a separate correction entry in the web system.
+
+If a row is removed from the workbook, the corresponding current dashboard record will be shown as **Removed** during upload and will be removed after confirmation.
+
+## 8. Understanding the upload comparison
+
+- **Added** — a new Date + School + Grade record will be added.
+- **Modified** — an existing record has different counts.
+- **Removed** — an existing dashboard record is no longer present in the complete workbook.
+- **Unchanged** — the workbook matches the current dashboard record.
+
+Do not confirm unexpected removals.
+
+## 9. VaccTrack Check
+
+After the NIP coordinator uploads the latest VaccTrack extract, open **3. VaccTrack Check** and click **Refresh VaccTrack Data**.
+
+The system compares the latest RHU workbook totals with VaccTrack by date, school, grade, and vaccine metric.
+
+If the VaccTrack extract has not yet reached your activity date, the result may remain pending. Check the **Data Through** date before treating a difference as an error.
+
+## 10. Important reminders
+
+- Keep one working workbook throughout the SBI activity.
+- Encode all accomplishments in the workbook, including days when internet is unavailable.
+- Use the workbook's VaccTrack sheets for daily VaccTrack encoding.
+- Upload the complete current workbook, not only the rows you changed.
+- Correct mistakes in Excel and re-upload the workbook.
+- Do not upload a VaccTrack export into the RHU workbook uploader.
+- Do not upload data belonging to another municipality.
+- VaccTrack remains the official/final national reporting source.
+
+## 11. Send Feedback / Report a Problem
+
+Use **Send Feedback / Report a Problem** for upload issues, confusing instructions, mobile display issues, or suggestions. Do not include learner names or other unnecessary identifying information.
 """
 
-RHU_FULL_GUIDE_MD = "# Abra NIP Monitoring Information System — SBI RHU Encoder Step-by-Step Guide\n\nVersion: v5.20.2.2\n\n## 1. The 3-step RHU workflow\n\nThe normal SBI workflow has only three main steps:\n\n1. **Upload Learner Records**\n2. **VaccTrack Encoding**\n3. **Refresh & VaccTrack Check**\n\nVaccTrack remains the official/final SBI dataset. The dashboard line list is the RHU's operational record used to prepare and verify what should be encoded in VaccTrack.\n\n> **For authorized RHU/NIP users only. Please upload only the correct learner records for your assigned municipality.**\n\n### First login\n\nIf you signed in using a temporary/default password, the dashboard will require you to create your own password before you can continue. Use at least 8 characters and do not reuse the temporary password.\n\nIf you forget your password later, ask the NIP/System Admin to reset it. The reset password is temporary and you will be required to change it again on your next login.\n\n## 2. First question: what are you trying to do?\n\n| Situation | Use this workflow |\n|---|---|\n| First vaccination activity for these learners | **New Activity** |\n| Same learners return on another date | **Follow-up Activity** |\n| MR was given yesterday and Td is given today | **Follow-up Activity** |\n| Correct a vaccine status, lot/batch, reason, section, or remarks for an already-saved date | **Revision / Correction** |\n| Activity Date itself was saved incorrectly | **Correction requiring removal of the wrong-date record** — see Section 8 |\n| School or Grade was saved incorrectly | **Correction requiring NIP/Admin assistance** — see Section 8 |\n| The exact same file was already imported correctly | **Do not import again** |\n\n### The easiest rule to remember\n\n- **New vaccination date = New / Follow-up Activity.**\n- **Fixing something on the same saved activity date = Revision / Correction.**\n\nA follow-up is **not** a revision.\n\n## 3. What is the System Learner ID?\n\nThe template contains a dashboard-generated value such as:\n\n`SBI-7F3A9C2D4E1B8A4C`\n\nThis is not a DepEd LRN. The RHU encoder does not create or edit it.\n\nThe same learner must keep the same **System Learner ID** on later activity dates and during corrections. The ID allows the dashboard to recognize the learner without using the LRN as the matching key.\n\n### Do not\n\n- type a new System Learner ID yourself;\n- replace an existing System Learner ID;\n- copy one learner's ID to another learner.\n\n> **Important template rule:** Every fresh template contains its own set of System Learner IDs. Do not share a downloaded blank template with another RHU, and do not copy or reuse the same blank template for another independent activity roster. For a new first-time roster, download a fresh template from the dashboard. For follow-up vaccination of learners who already have IDs, use **Create Follow-up Line List**. For corrections, use the original workbook so the existing System Learner IDs stay with the correct learners.\n\n## 4. NEW ACTIVITY — first vaccination activity\n\nUse this when the learners are being recorded for their first activity in this workbook/workflow.\n\n1. Open **1. Upload Learner Records**.\n2. Click **1A. Download Fresh SBI Line List Template (Excel)**.\n3. Use one row per learner per Activity Date.\n4. Enter the correct School, Grade, Section, Sex, Activity Date, and vaccination outcome fields.\n5. Do not edit the **System Learner ID**.\n6. Save the workbook.\n7. Under **1B. Upload completed line list**, upload the file.\n8. Correct any validation errors shown by the dashboard.\n9. Review the **Added / Modified / Removed / Unchanged** comparison.\n10. Confirm only after the comparison is correct.\n11. Continue to **2. VaccTrack Encoding**.\n\n### Grade 1 and Grade 7\n\nComplete both **MR Status** and **Td Status** for every activity row.\n\nAllowed statuses:\n\n- Given\n- Deferred\n- Refused\n- Not Given\n\nIf only one vaccine was administered that day, mark that vaccine **Given** and the other **Not Given**, unless the other vaccine was specifically Deferred or Refused.\n\n### Grade 4 Female\n\nComplete:\n\n- HPV Dose: 1 or 2\n- HPV Status\n\nLeave MR and Td fields blank.\n\n### Deferred / Refused\n\nIf a vaccine is Deferred or Refused, select the correct Reason Code. Add Reason Details only when useful.\n\n## 5. FOLLOW-UP ACTIVITY — learner returns on another date\n\nA follow-up vaccination is a **new activity record** for the same learner.\n\nDo **not** edit yesterday's Activity Date to today's date and do **not** replace yesterday's result.\n\n### Recommended method: Create Follow-up Line List\n\n1. Open **1. Upload Learner Records**.\n2. Expand **Create Follow-up Line List**.\n3. Upload the previous v5.19+ workbook containing those learners.\n4. Download the generated follow-up workbook.\n5. The dashboard keeps the same System Learner IDs and learner identity rows but clears Activity Date and vaccination outcome fields.\n6. Enter a new Activity Date and outcomes **only for learners who actually have a new follow-up activity**.\n7. Leave learners with no new activity untouched; blank identity-only rows are ignored during upload.\n8. Upload the completed follow-up workbook through **1B**.\n9. Review the comparison and confirm.\n\nThe same follow-up workbook may contain different new Activity Dates for different learners.\n\n### Example — MR yesterday, Td today\n\nFor the same learner:\n\n| Activity | Activity Date | MR Status | Td Status |\n|---|---|---|---|\n| Yesterday | Sep 23 | **Given** | **Not Given** |\n| Today | Sep 24 | **Not Given** | **Given** |\n\nBoth rows use the **same System Learner ID**.\n\nDo not copy yesterday's `MR = Given` into today's row. If you do, the dashboard will count another MR dose today.\n\n## 6. MULTIPLE ACTIVITY DATES\n\nThe same learner can appear on several activity dates. This is normal when vaccination is completed in separate sessions.\n\nThe dashboard treats these as separate activity records because the Activity Dates are different.\n\nAn exact duplicate of:\n\n**Activity Date + School + Grade + System Learner ID**\n\nis not allowed as another separate record.\n\n### Example\n\nA Grade 1 learner may legitimately have:\n\n- Sep 23 — MR Given / Td Not Given\n- Sep 24 — MR Not Given / Td Given\n\nThe Sep 23 record remains unchanged when Sep 24 is uploaded.\n\n## 7. REVISION / CORRECTION — fixing an existing saved activity\n\nUse Revision when the **Activity Date is staying the same** and you are correcting information already saved for that date.\n\nExamples:\n\n- MR/Td/HPV status was encoded incorrectly;\n- lot/batch number was wrong;\n- reason code/details were wrong;\n- section or remarks need correction.\n\n### How to revise safely\n\n1. Open **Corrections / History** to review the affected date and previous import batch.\n2. Open the workbook that contains the affected activity.\n3. Keep the same **System Learner ID**.\n4. Keep the same **Activity Date**.\n5. Correct the field(s).\n6. Make sure the workbook contains the **complete current list for the affected Activity Date + School + Grade group**.\n7. Return to **1. Upload Learner Records** and upload the corrected workbook.\n8. Review **Added / Modified / Removed / Unchanged** carefully.\n9. Confirm only when the comparison is correct.\n\n### Important: do not upload only the one corrected learner\n\nFor every **Activity Date + School + Grade** group included in an upload, the dashboard treats the uploaded rows as the complete current list for that group.\n\nIf a previously saved learner is missing from that group, the dashboard will show that learner as **Removed**.\n\n## 8. WHAT IF THE WRONG FIELD IS ACTIVITY DATE, SCHOOL, OR GRADE?\n\nThese fields need extra care because they help define where the saved record belongs.\n\n### Wrong Activity Date\n\nDo **not** simply add the same learner using the correct date. That can leave both the wrong-date row and the correct-date row saved.\n\nIf the wrong-date group still contains other learners, a corrected complete upload can remove the learner from the old group and add the learner on the correct date. Review the **REMOVE** and **ADD** preview before confirming.\n\nIf the whole batch/date was wrong, or the wrong-date group would become empty, ask the NIP/System Admin to remove the incorrect import in **Administration → Import Management**, then upload the corrected activity file.\n\n### Wrong School or Grade\n\nDo not assign the same System Learner ID to a different School or Grade just to force the correction. The dashboard protects against accidental reassignment and may block it.\n\nAsk the NIP/System Admin to clean up the incorrect imported record/batch first, then re-upload the corrected record using the proper workflow.\n\n### Wrong System Learner ID\n\nDo not manually edit the ID. If an ID was accidentally assigned to the wrong learner, stop and ask the NIP/System Admin before importing more follow-up records with that ID.\n\n## 9. Understanding the upload comparison\n\nBefore an import is saved, the dashboard may show:\n\n- **Added** — a new saved activity record will be created.\n- **Modified** — an existing record in the same activity group will be updated.\n- **Removed** — a previously saved learner in an included Activity Date + School + Grade group is missing from the new complete list and will be made inactive.\n- **Unchanged** — the uploaded record already matches the saved record.\n\n### What should I expect?\n\n- New Activity: mostly **Added**.\n- Follow-up Activity on a new date: mostly **Added**.\n- Simple correction on the same date: usually **Modified**.\n- Correcting a wrong date: may show **Removed** from the old date and **Added** on the correct date.\n- Exact same file uploaded again: no changes / already up to date.\n\nNever confirm a large unexpected number of **Removed** records.\n\n## 10. Step 2 — VaccTrack Encoding\n\nAfter the learner activity is saved:\n\n1. Open **2. VaccTrack Encoding**.\n2. Select the Activity / Report Date to encode.\n3. Review the generated Grade 1, Grade 4, and Grade 7 totals.\n4. Copy the required figures and reason totals into VaccTrack.\n\nFor a follow-up day, encode the figures generated for that follow-up Activity Date only.\n\n## 11. Step 3 — Refresh & VaccTrack Check\n\nAfter the NIP coordinator has uploaded the latest VaccTrack extract:\n\n1. Open **3. VaccTrack Check**.\n2. Refresh the VaccTrack data.\n3. Review the status.\n\n### Status meanings\n\n- **Matched** — RHU learner-record totals and the latest available VaccTrack extract agree.\n- **Pending VaccTrack Verification** — the latest official extract has not yet caught up to that activity date. This is **not automatically an encoding error**.\n- **Check VaccTrack** — RHU learner-derived total is higher than VaccTrack for the metric.\n- **Check RHU Tracker / Line List** — VaccTrack is higher than the RHU learner-derived total.\n\nIf something does not match, first check Activity Date, School, Grade, vaccination status, and whether a previous dose was accidentally carried into a follow-up row.\n\n## 12. Quick decision guide\n\n**Was there a vaccination activity on a NEW DATE?**  \n→ Yes: use **New / Follow-up Activity**. Create a new row using the same System Learner ID.\n\n**Are you fixing a field for an activity that is already saved on the SAME DATE?**  \n→ Yes: use **Revision / Correction** and upload the complete affected group.\n\n**Was the saved Activity Date itself wrong?**  \n→ Do not just add the correct date. Follow the wrong-date correction instructions in Section 8.\n\n**Was the saved School, Grade, or System Learner ID wrong?**  \n→ Ask NIP/System Admin before re-uploading so the incorrect identity assignment can be cleaned safely.\n\n## 13. Common mistakes to avoid\n\n- Do not edit System Learner IDs.\n- Do not create a new System Learner ID just because the learner returned on another date.\n- Do not overwrite yesterday's activity with today's follow-up.\n- Do not carry yesterday's `Given` status into today's row unless that vaccine was actually given again today.\n- Do not use Revision to record a new vaccination date.\n- Do not upload only one learner when revising a group unless that learner is truly the complete group.\n- Do not confirm unexpected removals.\n- Do not upload records belonging to another municipality.\n- Do not place names, LRN, or unnecessary identifying information in Remarks or Reason Details.\n\n## 14. Examples\n\n### A. MR yesterday, Td today\n\nYesterday: MR Given / Td Not Given.  \nToday: MR Not Given / Td Given.  \nSame System Learner ID. Two activity rows.\n\n### B. Yesterday's Td should have been Deferred\n\nKeep yesterday's date and same System Learner ID. Change Td Status to Deferred, add the reason code, and upload the complete affected group. This is a **Revision**.\n\n### C. Grade 4 learner receives HPV Dose 2 later\n\nKeep the same System Learner ID and add a new row for the new Activity Date. Encode HPV Dose 2 and its outcome. This is a **Follow-up Activity**.\n\n### D. Learner did not return today\n\nDo not create a new activity row unless there is a new outcome to record. The previous activity remains saved.\n\n### E. Entire activity was encoded under the wrong date\n\nDo not duplicate the activity under the correct date. Ask NIP/System Admin to remove the incorrect import/batch, then upload the corrected activity file.\n\n\n## 15. Training / Practice Mode\n\nUse **Training / Practice Mode** when you want to try the workflow without saving production data.\n\n- Practice uploads are validated using the same line-list rules.\n- You can set a practice baseline and upload another file to see Added / Modified / Removed / Unchanged results.\n- You can also generate a practice follow-up workbook.\n- Nothing in Training Mode is written to the SBI production tables.\n- The practice baseline lasts only in the current browser session and can be reset at any time.\n\nUse Training Mode for orientation and dry runs. When you are ready to submit real activity data, return to **1. Upload Learner Records**.\n\n## 16. Send Feedback / Report a Problem\n\nDuring the rollout, use **Send Feedback / Report a Problem** to report confusing instructions, upload problems, follow-up questions, mobile display issues, or suggestions.\n\nChoose the category and page, then describe what happened. The dashboard automatically includes your account, municipality, and dashboard version so the NIP team can trace the issue more easily.\n\nDo not include learner names, LRN, or other identifying information in feedback.\n\n## 17. VaccTrack source and freshness\n\nInside **3. VaccTrack Check**, the dashboard shows the current source and the latest report date available for Grade 1, Grade 4, and Grade 7.\n\n- **Direct VaccTrack upload** means the latest completed extract uploaded by the NIP/System Admin is being used.\n- **Google Sheet fallback** means no direct snapshot is currently available for that grade and the System Admin has left fallback enabled.\n- If fallback is disabled, the dashboard uses direct VaccTrack uploads only.\n- **Data Through** shows the latest report date found in that source.\n\nAlways check the Data Through date before treating a pending result as an encoding problem.\n"
+RHU_FAQ_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-RHU_FAQ_MD = "# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs\n\nVersion: v5.20.2.2\n\n## 1. What is the easiest way to know whether I need Follow-up or Revision?\n\nIf the learner was vaccinated on a **new date**, use a **Follow-up Activity**. If you are correcting something already saved for the **same date**, use **Revision / Correction**.\n\n## 2. Is the System Learner ID the same as the DepEd LRN?\n\nNo. It is generated by the Abra NIP Monitoring Information System and is used to match the same learner across activity dates and revisions.\n\n## 3. Do I type the System Learner ID?\n\nNo. Do not create or edit it.\n\n## 4. Student A received MR yesterday and Td today. What do I encode?\n\nYesterday: MR = Given, Td = Not Given.  \nToday: MR = Not Given, Td = Given.  \nUse the same System Learner ID on both dates.\n\n## 5. Why can't I copy yesterday's MR = Given into today's row?\n\nBecause the dashboard would count another MR dose on today's Activity Date.\n\n## 6. How do I prepare a follow-up file?\n\nUse **Create Follow-up Line List** in Step 1. Upload the previous v5.19+ workbook and download the generated follow-up workbook. It keeps the learner IDs and clears the Activity Date/outcome fields.\n\n## 7. What happens to learners who did not return for follow-up?\n\nLeave their generated follow-up row untouched. Blank identity-only rows are ignored.\n\n## 8. Can the same learner appear on several activity dates?\n\nYes. That is expected for follow-up vaccination. The System Learner ID stays the same.\n\n## 9. What is an exact duplicate?\n\nThe same **Activity Date + School + Grade + System Learner ID** cannot be saved as another separate activity record.\n\n## 10. How do I correct a vaccine status or lot/batch number?\n\nKeep the same Activity Date and System Learner ID, correct the field, and upload the **complete Activity Date + School + Grade group** through Step 1.\n\n## 11. Why must I upload the complete group for a revision?\n\nBecause the dashboard treats each included Activity Date + School + Grade group as the complete current list. Missing saved learners in that group are shown as removals.\n\n## 12. What do Added, Modified, Removed, and Unchanged mean?\n\n**Added** creates a new activity record. **Modified** updates an existing record. **Removed** makes a previously saved record inactive because it is missing from the complete revised group. **Unchanged** already matches what is saved.\n\n## 13. What if I see many unexpected Removed records?\n\nDo not confirm the import. Check whether you uploaded only part of an existing Activity Date + School + Grade group.\n\n## 14. What if the Activity Date itself was wrong?\n\nDo not simply add the learner on the correct date because the wrong-date row may remain saved. Follow the wrong-date correction instructions in the Full Guide. If the whole batch/date was wrong, ask the NIP/System Admin to remove the incorrect import first.\n\n## 15. What if School or Grade was wrong?\n\nAsk the NIP/System Admin before re-uploading. The dashboard protects the System Learner ID from being reassigned to a different school or grade.\n\n## 16. What if the same System Learner ID was accidentally used for another learner?\n\nStop using that ID and ask the NIP/System Admin to correct the bad assignment before recording more follow-up activity.\n\n## 17. Do we still need LRN as the matching key?\n\nNo. The workflow uses the System Learner ID as the stable matching identifier.\n\n## 18. Should I put a learner's name or LRN in Remarks or Reason Details?\n\nNo. Do not place unnecessary identifying information in stored free-text fields.\n\n## 19. What does Matched mean?\n\nIt means the RHU learner-record totals and the latest available VaccTrack extract agree.\n\n## 20. What does Pending VaccTrack Verification mean?\n\nThe latest official VaccTrack extract has not yet caught up to the activity date. It is not automatically an encoding error.\n\n## 21. What should I check when VaccTrack does not match?\n\nCheck Activity Date, School, Grade, vaccine status, duplicate/carry-over doses in follow-up rows, and whether the latest VaccTrack extract already includes that activity date.\n\n## 22. I already uploaded the exact same correct file. Should I import it again?\n\nNo. If the dashboard says it is already up to date, continue to the next step.\n\n## 23. What if the whole activity was encoded under the wrong date?\n\nAsk NIP/System Admin to remove the incorrect import/batch in **Administration → Import Management**, then upload the corrected activity file. Do not keep both dates.\n\n\n## 24. Can I practice without saving real data?\n\nYes. Open **Training / Practice Mode**. Practice files are validated in your current browser session and are not written to the production SBI tables.\n\n## 25. How do I send feedback while testing?\n\nOpen **Send Feedback / Report a Problem**, choose the category/page, and describe the issue. Do not include learner names, LRN, or other identifying information.\n\n## 26. How do I know whether VaccTrack is already updated for my activity date?\n\nOpen **3. VaccTrack Check** and look at the G1/G4/G7 source table. Compare your activity date with the **Data Through** date. If the source has not yet reached your activity date, the result may remain pending.\n\n## 27. Can we share or copy a downloaded blank template to another RHU or another activity?\n\nNo. Every fresh template contains its own set of System Learner IDs. Each RHU should download its own fresh template for a new first-time activity roster. Do not share a blank template with another RHU or copy/reuse the same blank template for another independent roster.\n\nFor learners returning on another date, use **Create Follow-up Line List** so their existing System Learner IDs are retained. For a correction, use the original workbook so the IDs remain with the correct learners.\n"
+Version: v5.21
+
+## 1. Do I need internet while encoding SBI accomplishments?
+
+No. The SBI workbook is designed to be used offline. Internet is needed only when you want to upload the current workbook or check the latest VaccTrack comparison.
+
+## 2. Do we still use the learner line list or System Learner ID?
+
+No. The SBI RHU workflow now uses aggregate accomplishment data by Activity Date + School + Grade.
+
+## 3. How many workbooks should our RHU use?
+
+Use one RHU working workbook for the whole SBI activity. Keep adding new activity rows to the **Accomplishments** sheet.
+
+## 4. Can one workbook contain many activity dates and schools?
+
+Yes. That is the intended workflow.
+
+## 5. What if the same school and grade have two sessions on the same date?
+
+You may encode two rows. The workbook and dashboard automatically add rows with the same Activity Date + School + Grade when preparing the current totals.
+
+## 6. How do I know what to encode in VaccTrack?
+
+Open **VaccTrack G1**, **VaccTrack G4**, or **VaccTrack G7**, then set the Report Date. The sheet automatically displays that day's school-level values using VaccTrack field names.
+
+## 7. How do I correct a wrong accomplishment?
+
+Edit the row in the **Accomplishments** sheet, save the workbook, and upload the complete current workbook again.
+
+## 8. Should I upload only the corrected row?
+
+No. Upload the complete working workbook. The dashboard treats it as your RHU's current complete dataset.
+
+## 9. What do Added, Modified, Removed, and Unchanged mean?
+
+**Added** is a new Date + School + Grade record. **Modified** has changed counts. **Removed** existed in the dashboard but is no longer in the workbook. **Unchanged** already matches.
+
+## 10. What if I see unexpected Removed records?
+
+Do not confirm. Check whether you accidentally uploaded an incomplete or older copy of the workbook.
+
+## 11. What if I accidentally use MR/Td fields for Grade 4?
+
+The uploader will reject the row. Grade 4 must use HPV fields.
+
+## 12. What if I accidentally use HPV fields for Grade 1 or Grade 7?
+
+The uploader will reject the row. Grade 1 and Grade 7 must use MR/Td fields.
+
+## 13. Are reason counts required?
+
+Use the reason-code counts when applicable to your VaccTrack reporting. The workbook checks that reason totals do not exceed the total deferred/refused counts entered for the row.
+
+## 14. What if our internet is unavailable for several days?
+
+Continue encoding in the same workbook. When internet becomes available, upload the latest complete workbook. The dashboard will receive all of the activity dates contained in it.
+
+## 15. What does Pending VaccTrack Verification mean?
+
+The latest official VaccTrack extract available to the monitoring system has not yet reached your activity date. It does not automatically mean the RHU encoded something incorrectly.
+
+## 16. Can I upload a VaccTrack export into Step 2?
+
+No. Step 2 accepts the RHU SBI Offline Accomplishment Workbook. Official VaccTrack extracts are uploaded separately by the System Admin.
+
+## 17. Which dataset is official?
+
+VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation.
+"""

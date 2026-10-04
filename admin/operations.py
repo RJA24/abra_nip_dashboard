@@ -20,7 +20,7 @@ from core.data import (
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.20.2.2"
+APP_VERSION = "v5.21"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 

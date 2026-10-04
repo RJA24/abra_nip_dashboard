@@ -19,13 +19,7 @@ from core.config import ABRA_MUNIS
 from core.data import fetch_sbi_vacctrack_source_info, vacctrack_google_fallback_enabled
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.help_content import RHU_FAQ_MD, RHU_FULL_GUIDE_MD
-from programs.sbi.linelist import (
-    render_linelist_history,
-    render_linelist_upload,
-    render_training_mode,
-    render_vacctrack_encoding_summary,
-    schema_available as linelist_schema_available,
-)
+from programs.sbi.aggregate_workbook import render_workbook_download, render_workbook_upload
 from programs.sbi.support import render_feedback_form
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
@@ -338,7 +332,7 @@ def _status(diff: float, tracker_rows: int) -> str:
         return "Matched"
     if diff > 0:
         return "Check VaccTrack"
-    return "Check RHU Tracker"
+    return "Check RHU Workbook"
 
 
 def _summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metrics: Iterable[str] | None = None) -> pd.DataFrame:
@@ -350,7 +344,7 @@ def _summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metri
         rows.append(
             {
                 "Metric": metric,
-                "RHU Tracker": int(round(tracker_value)),
+                "RHU Workbook": int(round(tracker_value)),
                 "VaccTrack": int(round(vacc_value)),
                 "Difference": int(round(diff)),
                 "Status": _status(diff, tracker_rows),
@@ -433,7 +427,7 @@ def _fresh_summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame],
         diff = tracker_value - vacc_value
         rows.append({
             "Metric": metric,
-            "RHU Tracker": int(round(tracker_value)),
+            "RHU Workbook": int(round(tracker_value)),
             "VaccTrack": int(round(vacc_value)),
             "Difference": int(round(diff)),
             "Status": _status(diff, tracker_rows),
@@ -494,7 +488,7 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
                     {
                         "Date": target_date,
                         "Metric": metric,
-                        "RHU Tracker": int(round(tracker_value)),
+                        "RHU Workbook": int(round(tracker_value)),
                         "VaccTrack": pd.NA,
                         "Difference": pd.NA,
                         "Status": "Pending VaccTrack Verification",
@@ -507,7 +501,7 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
                 {
                     "Date": target_date,
                     "Metric": metric,
-                    "RHU Tracker": int(round(tracker_value)),
+                    "RHU Workbook": int(round(tracker_value)),
                     "VaccTrack": int(round(vacc_value)),
                     "Difference": int(round(diff)),
                     "Status": _status(diff, tracker_rows),
@@ -516,7 +510,7 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
 
     return pd.DataFrame(
         rows,
-        columns=["Date", "Metric", "RHU Tracker", "VaccTrack", "Difference", "Status"],
+        columns=["Date", "Metric", "RHU Workbook", "VaccTrack", "Difference", "Status"],
     )
 
 def _daily_difference_matrix(daily: pd.DataFrame) -> pd.DataFrame:
@@ -566,7 +560,7 @@ def _render_daily_discrepancy_tally(
     )
     st.markdown(
         '<div style="color:#64748b;font-size:0.9rem;margin-bottom:0.7rem;">'
-        'Date comparison uses <strong>RHU Tracker Activity Date</strong> versus '
+        'Date comparison uses <strong>RHU Workbook Activity Date</strong> versus '
         '<strong>VaccTrack Report Date</strong>. If cumulative totals match but daily rows do not, '
         'check whether VaccTrack was encoded under a later report date.</div>',
         unsafe_allow_html=True,
@@ -673,10 +667,10 @@ def _render_daily_discrepancy_tally(
 def _tracker_school_metric(entries: pd.DataFrame, metric: str) -> pd.DataFrame:
     config = METRICS[metric]
     if entries.empty:
-        return pd.DataFrame(columns=["School ID", "School Name", "RHU Tracker", "Tracker Rows"])
+        return pd.DataFrame(columns=["School ID", "School Name", "RHU Workbook", "Tracker Rows"])
     subset = entries[entries["grade_level"].astype(str).eq(config["grade"])].copy()
     if subset.empty:
-        return pd.DataFrame(columns=["School ID", "School Name", "RHU Tracker", "Tracker Rows"])
+        return pd.DataFrame(columns=["School ID", "School Name", "RHU Workbook", "Tracker Rows"])
     subset["School ID"] = subset["school_id"].map(_clean_school_id)
     subset["School Name"] = subset.get("school_name", "").fillna("").astype(str)
     subset["_value"] = 0.0
@@ -685,7 +679,7 @@ def _tracker_school_metric(entries: pd.DataFrame, metric: str) -> pd.DataFrame:
     return (
         subset.groupby("School ID", as_index=False)
         .agg({"School Name": "last", "_value": "sum", "school_id": "count"})
-        .rename(columns={"_value": "RHU Tracker", "school_id": "Tracker Rows"})
+        .rename(columns={"_value": "RHU Workbook", "school_id": "Tracker Rows"})
     )
 
 
@@ -713,15 +707,15 @@ def _school_comparison(entries: pd.DataFrame, events: dict[str, pd.DataFrame], m
         if merged.empty:
             continue
         merged["School Name"] = merged.get("School Name").fillna(merged.get("VaccTrack School Name")).fillna("")
-        merged["RHU Tracker"] = pd.to_numeric(merged.get("RHU Tracker"), errors="coerce").fillna(0)
+        merged["RHU Workbook"] = pd.to_numeric(merged.get("RHU Workbook"), errors="coerce").fillna(0)
         merged["VaccTrack"] = pd.to_numeric(merged.get("VaccTrack"), errors="coerce").fillna(0)
         merged["Tracker Rows"] = pd.to_numeric(merged.get("Tracker Rows"), errors="coerce").fillna(0).astype(int)
-        merged["Difference"] = merged["RHU Tracker"] - merged["VaccTrack"]
+        merged["Difference"] = merged["RHU Workbook"] - merged["VaccTrack"]
         merged["Status"] = merged.apply(lambda r: _status(r["Difference"], int(r["Tracker Rows"])), axis=1)
         merged["Metric"] = metric
-        frames.append(merged[["Metric", "School ID", "School Name", "RHU Tracker", "VaccTrack", "Difference", "Status"]])
+        frames.append(merged[["Metric", "School ID", "School Name", "RHU Workbook", "VaccTrack", "Difference", "Status"]])
     if not frames:
-        return pd.DataFrame(columns=["Metric", "School ID", "School Name", "RHU Tracker", "VaccTrack", "Difference", "Status"])
+        return pd.DataFrame(columns=["Metric", "School ID", "School Name", "RHU Workbook", "VaccTrack", "Difference", "Status"])
     return pd.concat(frames, ignore_index=True)
 
 
@@ -949,7 +943,7 @@ def _render_check(
         f"**VaccTrack current extract through:** G1 {_fmt_cutoff(g1_cutoff)} · G4 {_fmt_cutoff(g4_cutoff)} · G7 {_fmt_cutoff(g7_cutoff)}"
     )
     if pd.to_numeric(summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
-        st.info("RHU line-list/accomplishment values newer than the corresponding VaccTrack report date are shown as Pending RHU and are excluded from discrepancy totals until a newer extract is available.")
+        st.info("RHU workbook accomplishment values newer than the corresponding VaccTrack report date are shown as Pending RHU and are excluded from discrepancy totals until a newer extract is available.")
 
     school_cutoff = _safe_school_cutoff(events)
     verified_entries, _ = _verified_entries(entries, school_cutoff)
@@ -983,10 +977,10 @@ def _render_coordinator_view(
     selected_muni: str | None,
 ) -> None:
     st.markdown(
-        '<h3><i class="fa-solid fa-scale-balanced" style="color:#0033A0;margin-right:8px;"></i>RHU Tracker vs VaccTrack</h3>',
+        '<h3><i class="fa-solid fa-scale-balanced" style="color:#0033A0;margin-right:8px;"></i>RHU Workbook vs VaccTrack</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown("VaccTrack remains the official final dataset. This page highlights differences against RHU-entered accomplishment totals.")
+    st.markdown("VaccTrack remains the official final dataset. This page highlights differences against the latest RHU workbook accomplishment totals.")
     try:
         all_entries = _fetch_entries(supabase)
     except Exception as exc:
@@ -1013,7 +1007,7 @@ def _render_coordinator_view(
         row = _fresh_summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
         row["Municipality"] = muni
         muni_rows.append(row)
-    muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Tracker", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
+    muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Workbook", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
     st.markdown("#### Municipality Reconciliation")
     st.dataframe(muni_table, width="stretch", hide_index=True)
 
@@ -1036,7 +1030,7 @@ def _render_coordinator_view(
     st.divider()
     school = _school_comparison(drill_verified, drill_events)
     if school.empty:
-        st.write(f"No RHU Tracker or VaccTrack school data is available for {drill_muni} in this period.")
+        st.write(f"No RHU Workbook or VaccTrack school data is available for {drill_muni} in this period.")
         return
     show_all = st.toggle("Show matched schools too", value=False, key="rhu_coord_show_all")
     if not show_all:
@@ -1063,12 +1057,12 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
           </div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.7rem;">
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Upload Learner Records</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Encode G1/G4/G7 outcomes, reuse the same System Learner ID for follow-up dates, upload the line list, review changes, then confirm.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Maintain One Offline Workbook</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Download your RHU workbook once, then encode every activity date and school in Excel even when internet is unavailable.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">2. Encode in VaccTrack</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Copy the generated G1, G4 and G7 vaccination counts and reason totals into VaccTrack.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">2. Encode in VaccTrack & Upload</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Use the workbook's VaccTrack sheets for daily encoding, then upload the complete current workbook when internet is available.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
               <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Refresh & Check</div>
@@ -1130,42 +1124,23 @@ def render_rhu_accomplishments(
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
         _render_rhu_encoder_process_guide(canonical)
 
-        with st.expander("Training / Practice Mode — no data is saved", expanded=False):
-            render_training_mode(targets, canonical)
-
         render_feedback_form(supabase, canonical, username, role=user_role)
 
-        upload_tab, encoding_tab, check_tab, history_tab, mine_tab, entry_tab = st.tabs([
-            "1. Upload Learner Records",
-            "2. VaccTrack Encoding",
+        download_tab, upload_tab, check_tab, mine_tab = st.tabs([
+            "1. Offline Workbook",
+            "2. Upload Current Workbook",
             "3. VaccTrack Check",
-            "Corrections / History",
             "My Accomplishments",
-            "Manual Fallback",
         ])
-        line_ready, _ = linelist_schema_available(supabase)
+        workbook_targets = actual_targets if actual_targets is not None and not actual_targets.empty else targets
+        with download_tab:
+            render_workbook_download(workbook_targets, canonical)
         with upload_tab:
-            if line_ready:
-                render_linelist_upload(supabase, targets, canonical, username)
-            else:
-                st.error("Learner reporting is not initialized. Run supabase/004_sbi_linelist.sql, supabase/006_sbi_regional_reporting.sql, and supabase/007_sbi_system_learner_id.sql once, then reload the app.")
-        with encoding_tab:
-            if line_ready:
-                render_vacctrack_encoding_summary(supabase, canonical, actual_targets if actual_targets is not None else pd.DataFrame())
-            else:
-                st.write("Run the SBI learner-reporting SQL migrations first.")
+            render_workbook_upload(supabase, workbook_targets, canonical, username)
         with check_tab:
             _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
-        with history_tab:
-            if line_ready:
-                render_linelist_history(supabase, canonical)
-            else:
-                st.write("Run the SBI learner-reporting SQL migrations first.")
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
-        with entry_tab:
-            st.caption("Fallback only. Prefer the learner line-list upload so the system performs the counting automatically.")
-            _render_entry(supabase, targets, canonical, username)
     else:
         _render_coordinator_view(
             supabase,
