@@ -35,7 +35,7 @@ Enter:
 - deferred/refused counts when applicable
 - reason-code counts when applicable
 
-School Name, Barangay, and Actual Target are filled automatically from the RHU school roster.
+School Name and Barangay are filled automatically from the RHU school roster. The Actual Target is retained internally in a hidden locked column and does not need to be viewed or encoded by the RHU.
 
 If the same school and grade have more than one entry on the same date, you may use more than one row. The workbook and dashboard add those rows together automatically.
 

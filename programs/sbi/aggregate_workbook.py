@@ -348,7 +348,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         (
             "1",
             "ENCODE OFFLINE",
-            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, School ID, Grade Level and the applicable counts. School Name, Barangay and Actual Target fill automatically.",
+            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, School ID, Grade Level and the applicable counts. School Name and Barangay fill automatically; the Actual Target is kept hidden for internal reference.",
             "A9:C11",
         ),
         (
@@ -469,7 +469,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.set_column("C:C", 34)
     sheet.set_column("D:D", 12)
     sheet.set_column("E:E", 22)
-    sheet.set_column("F:F", 13)
+    sheet.set_column("F:F", 13, None, {"hidden": True})
     sheet.set_column("G:T", 12)
     reason_start_col = BASE_COLUMNS.index("HPV2 Refused") + 1
     sheet.set_column(reason_start_col, reason_start_col + len(REASON_COLUMNS) - 1, 10)

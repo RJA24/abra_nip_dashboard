@@ -29,7 +29,7 @@ Each VaccTrack sheet has a Report Date cell. Changing the date recalculates the 
 
 ### Workbook protection
 
-The generated workbook now protects non-input cells against accidental edits. In `Accomplishments`, only Activity Date, School ID, Grade Level, vaccine counts, deferred/refused counts, and reason-code cells are editable. On each VaccTrack sheet, only the Report Date cell is editable. Setup, Reference, formulas, auto-filled school fields, targets, Row Check, and VaccTrack calculated values are locked. Editable cells are highlighted light yellow.
+The generated workbook now protects non-input cells against accidental edits. In `Accomplishments`, only Activity Date, School ID, Grade Level, vaccine counts, deferred/refused counts, and reason-code cells are editable. On each VaccTrack sheet, only the Report Date cell is editable. Setup, Reference, formulas, auto-filled school fields, Row Check, and VaccTrack calculated values are locked. The Accomplishments Actual Target column is also locked and hidden from RHU view. Editable cells are highlighted light yellow.
 
 The RHU-facing VaccTrack sheets intentionally show only the information the encoder needs for manual VaccTrack entry: the selected **Report Date**, **School**, the grade-specific VaccTrack fields, and reason codes 01–19. Region, Province, Municipality, Barangay, Facility Name, and School ID are not shown because they are already known/selected in VaccTrack and only add clutter to the offline encoding aid.
 

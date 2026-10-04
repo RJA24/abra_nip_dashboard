@@ -72,7 +72,7 @@ VaccTrack remains the official/final national SBI dataset. The RHU workbook and 
 
 ## 18. Why can’t I edit some cells in the workbook?
 
-That is intentional. Cells containing formulas, automatic school information, targets, Row Check results, and VaccTrack calculated values are locked to prevent accidental changes. Encode only in the **light-yellow input cells**. On the VaccTrack G1/G4/G7 sheets, only the **Report Date** cell is editable.
+That is intentional. Cells containing formulas, automatic school information, hidden target values, Row Check results, and VaccTrack calculated values are locked to prevent accidental changes. Encode only in the **light-yellow input cells**. On the VaccTrack G1/G4/G7 sheets, only the **Report Date** cell is editable.
 
 ## 19. Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
 
