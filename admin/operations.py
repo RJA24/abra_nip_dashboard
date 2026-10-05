@@ -27,10 +27,11 @@ from programs.sbi.aggregate_workbook import (
     restore_submission,
 )
 from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config, save_campaign_config
+from programs.sbi.admin_monitoring import render_data_quality_center, render_reconciliation_monitor
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.1.6"
+APP_VERSION = "v5.21.2"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -847,8 +848,26 @@ def render_backup(supabase, audit_callback=None) -> None:
 
 
 def render_operations(supabase, audit_callback=None, read_only: bool = False) -> None:
-    health_tab, campaign_tab, submissions_tab, rollout_tab, feedback_tab, backup_tab = st.tabs(
-        ["System Health", "SBI Control", "RHU Submissions", "RHU Rollout", "Feedback", "Backup"]
+    (
+        health_tab,
+        campaign_tab,
+        submissions_tab,
+        quality_tab,
+        reconciliation_tab,
+        rollout_tab,
+        feedback_tab,
+        backup_tab,
+    ) = st.tabs(
+        [
+            "System Health",
+            "SBI Control",
+            "RHU Submissions",
+            "Data Quality",
+            "VaccTrack Monitor",
+            "RHU Rollout",
+            "Feedback",
+            "Backup",
+        ]
     )
     with health_tab:
         render_system_health(supabase, audit_callback=audit_callback, read_only=read_only)
@@ -856,6 +875,10 @@ def render_operations(supabase, audit_callback=None, read_only: bool = False) ->
         render_sbi_control(supabase, audit_callback=audit_callback, read_only=read_only)
     with submissions_tab:
         render_submission_status(supabase, audit_callback=audit_callback, read_only=read_only)
+    with quality_tab:
+        render_data_quality_center(supabase)
+    with reconciliation_tab:
+        render_reconciliation_monitor(supabase)
     with rollout_tab:
         render_rollout_status(supabase)
     with feedback_tab:
