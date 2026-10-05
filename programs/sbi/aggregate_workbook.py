@@ -1132,9 +1132,16 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
     if current and current.get("is_finalized"):
         st.success("Your RHU submission is finalized. Ask the System Administrator to reopen it if a correction is required.")
         return
-    if campaign.get("status") == "Closed":
+
+    campaign_status = str(campaign.get("status") or "Pre-Implementation")
+    if campaign_status == "Closed":
         st.warning("SBI workbook uploads are closed by the System Administrator. You can still view your existing data and VaccTrack check.")
         return
+    if campaign_status == "Post-Activity Correction":
+        st.info(
+            "Post-activity correction period: you may still upload corrections or late reports, but every Activity Date must remain within the official SBI activity date range. "
+            "Do not use a later upload date as the Activity Date unless the vaccination activity actually happened on that date."
+        )
 
     uploaded = st.file_uploader(
         "Upload SBI Offline Accomplishment Workbook",
@@ -1211,13 +1218,24 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
             st.rerun()
 
     current = get_current_submission(supabase, municipality)
-    if current and not current.get("is_finalized") and campaign.get("status") == "Live":
+    finalization_status = str(campaign.get("status") or "Pre-Implementation")
+    if current and not current.get("is_finalized") and finalization_status in {"Live", "Post-Activity Correction"}:
         st.divider()
-        with st.expander("End of SBI only — Submit Final RHU Report", expanded=False):
-            st.warning(
-                "This is NOT required after each workbook upload. Keep updating and re-uploading your workbook throughout SBI. "
-                "Use this only when your RHU has finished the activity and no more routine updates are expected."
-            )
+        expander_label = (
+            "When corrections are complete — Submit Final RHU Report"
+            if finalization_status == "Post-Activity Correction"
+            else "End of SBI only — Submit Final RHU Report"
+        )
+        with st.expander(expander_label, expanded=False):
+            if finalization_status == "Post-Activity Correction":
+                st.warning(
+                    "Submit this only after all late corrections are complete. This is NOT required after each corrected workbook upload."
+                )
+            else:
+                st.warning(
+                    "This is NOT required after each workbook upload. Keep updating and re-uploading your workbook throughout SBI. "
+                    "Use this only when your RHU has finished the activity and no more routine updates are expected."
+                )
             st.caption(
                 "Submitting the final RHU report locks further workbook uploads. If a correction is needed later, "
                 "the System Administrator must reopen the RHU submission first."

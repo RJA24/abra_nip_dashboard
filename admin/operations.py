@@ -30,7 +30,7 @@ from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.1.5"
+APP_VERSION = "v5.21.1.6"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -284,8 +284,10 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
 
     config = get_campaign_config(supabase)
     status = str(config.get("status") or "Pre-Implementation")
-    if config.get("start_date") and config.get("end_date"):
-        range_label = f"{config['start_date']:%b %d} – {config['end_date']:%b %d, %Y}"
+    start_config = config.get("start_date")
+    end_config = config.get("end_date")
+    if start_config and end_config:
+        range_label = f"{start_config:%b %d} – {end_config:%b %d, %Y}"
     else:
         range_label = "Not enforced"
 
@@ -332,23 +334,83 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
                 unsafe_allow_html=True,
             )
 
+    today = datetime.now(MANILA_TZ).date()
     if status == "Pre-Implementation":
         st.info("Testing and workbook uploads are allowed. Use this status while preparing RHUs and cleaning test data.")
     elif status == "Live":
-        st.success("SBI is live. RHU workbook uploads and finalization are enabled.")
+        st.success("SBI is live. RHU workbook uploads and final submission are enabled.")
+        if end_config and today > end_config:
+            st.warning(
+                f"The configured SBI activity end date was {end_config:%b %d, %Y}. "
+                "If field activities are finished, change the campaign to Post-Activity Correction so RHUs can submit only corrections or late reports for activity dates within the official range."
+            )
+    elif status == "Post-Activity Correction":
+        st.info(
+            "Field implementation is finished, but RHUs may still upload corrected or late workbooks. "
+            "Activity dates must remain within the configured SBI activity date range. Final submission remains available."
+        )
     else:
         st.warning("SBI is closed. RHUs can view their data and reconciliation, but workbook uploads are blocked.")
+
+    prelaunch_summary = pd.DataFrame()
+    if status == "Pre-Implementation":
+        try:
+            workbook_rows = _fetch_all(
+                lambda: supabase.table(ACCOMPLISHMENT_TABLE)
+                .select("municipality")
+                .eq("source_type", "workbook"),
+                page_size=1000,
+            )
+        except Exception:
+            workbook_rows = []
+        try:
+            submission_rows = _fetch_all(
+                lambda: supabase.table(SUBMISSION_TABLE).select("municipality"),
+                page_size=1000,
+            )
+        except Exception:
+            submission_rows = []
+
+        accomplishment_counts: dict[str, int] = {}
+        for row in workbook_rows:
+            municipality = str(row.get("municipality") or "").strip()
+            if municipality:
+                accomplishment_counts[municipality] = accomplishment_counts.get(municipality, 0) + 1
+
+        history_counts: dict[str, int] = {}
+        for row in submission_rows:
+            municipality = str(row.get("municipality") or "").strip()
+            if municipality:
+                history_counts[municipality] = history_counts.get(municipality, 0) + 1
+
+        municipalities = sorted(set(accomplishment_counts) | set(history_counts))
+        if municipalities:
+            prelaunch_summary = pd.DataFrame(
+                [
+                    {
+                        "Municipality": municipality,
+                        "Workbook Rows": accomplishment_counts.get(municipality, 0),
+                        "Upload History": history_counts.get(municipality, 0),
+                    }
+                    for municipality in municipalities
+                ]
+            )
+            st.warning(
+                f"Pre-launch check: existing workbook data was found for {len(municipalities)} RHU(s). "
+                "Clear test data under RHU Submissions before switching to Live, unless these records are legitimate production data that should be kept."
+            )
+            st.dataframe(prelaunch_summary, width="stretch", hide_index=True)
 
     with st.form("ops_sbi_campaign_control"):
         status_index = CAMPAIGN_STATUSES.index(status) if status in CAMPAIGN_STATUSES else 0
         selected_status = st.selectbox("Campaign Status", list(CAMPAIGN_STATUSES), index=status_index, disabled=read_only)
         enforce_dates = st.checkbox(
             "Enforce official SBI activity date range on workbook uploads",
-            value=bool(config.get("start_date") or config.get("end_date")),
+            value=bool(start_config or end_config),
             disabled=read_only,
         )
-        start_default = config.get("start_date") or datetime.now(MANILA_TZ).date()
-        end_default = config.get("end_date") or start_default
+        start_default = start_config or datetime.now(MANILA_TZ).date()
+        end_default = end_config or start_default
         d1, d2 = st.columns(2)
         with d1:
             start_date = st.date_input(
@@ -371,9 +433,27 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
             placeholder="Example: VaccTrack data has been updated through Oct 18.",
             disabled=read_only,
         )
+
+        keep_prelaunch_data = False
+        if status == "Pre-Implementation" and not prelaunch_summary.empty:
+            keep_prelaunch_data = st.checkbox(
+                "If I switch to Live, I confirm that I reviewed the existing pre-implementation workbook data and it should be kept as legitimate production data.",
+                value=False,
+                disabled=read_only,
+                help="Leave this unchecked if the existing workbook records are only test data. Clear those records first under RHU Submissions.",
+            )
+
         save = st.form_submit_button("Save SBI Campaign Settings", type="primary", disabled=read_only)
 
     if save and not read_only:
+        going_live = status == "Pre-Implementation" and selected_status == "Live"
+        if going_live and not prelaunch_summary.empty and not keep_prelaunch_data:
+            st.error(
+                "Cannot switch to Live while pre-implementation workbook data still exists. "
+                "Clear the test data under RHU Submissions, or explicitly confirm that the existing records are legitimate production data and should be kept."
+            )
+            return
+
         actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
         try:
             save_campaign_config(
@@ -388,9 +468,12 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
             st.error(f"Campaign settings could not be saved: {exc}")
             return
         if audit_callback:
+            prelaunch_note = ""
+            if going_live and not prelaunch_summary.empty and keep_prelaunch_data:
+                prelaunch_note = " | prelaunch_data=reviewed_and_kept"
             audit_callback(
                 supabase,
-                f"SBI campaign settings updated | status={selected_status} | date_range={'on' if enforce_dates else 'off'}",
+                f"SBI campaign settings updated | status={selected_status} | date_range={'on' if enforce_dates else 'off'}{prelaunch_note}",
             )
         st.cache_data.clear()
         st.toast("SBI campaign settings saved.")

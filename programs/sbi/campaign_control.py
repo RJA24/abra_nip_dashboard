@@ -12,7 +12,7 @@ CAMPAIGN_STATUS_KEY = "sbi_campaign_status"
 CAMPAIGN_START_KEY = "sbi_campaign_start_date"
 CAMPAIGN_END_KEY = "sbi_campaign_end_date"
 CAMPAIGN_ANNOUNCEMENT_KEY = "sbi_campaign_announcement"
-CAMPAIGN_STATUSES = ("Pre-Implementation", "Live", "Closed")
+CAMPAIGN_STATUSES = ("Pre-Implementation", "Live", "Post-Activity Correction", "Closed")
 
 
 def _parse_date(value: object) -> date | None:

@@ -147,8 +147,8 @@ Use **Send Feedback / Report a Problem** for upload issues, confusing instructio
 
 ## 11. Campaign status and final submission
 
-The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, or **Closed**. Pre-Implementation is for testing and preparation, Live is the implementation period, and Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
+The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, **Post-Activity Correction**, or **Closed**. Pre-Implementation is for testing and preparation. Live is the field implementation period. Post-Activity Correction allows corrected or late workbook uploads after field activities have ended, but every Activity Date must still be within the official SBI activity date range. Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
 
-When your RHU is completely finished, use **Submit Final RHU Report**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
+When your RHU is completely finished with both routine reporting and any needed corrections, use **Submit Final RHU Report**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
 
 Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.

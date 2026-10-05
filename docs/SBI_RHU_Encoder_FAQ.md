@@ -92,6 +92,10 @@ Finalize only when your RHU's current workbook is complete. After finalization, 
 
 Download a fresh workbook from **1. Offline Workbook**, then transfer your current accomplishment rows into the new workbook.
 
-## 23. What happens when the campaign status is Closed?
+## 23. Can we still correct data after the last SBI activity day?
+
+Yes, while the campaign is in **Post-Activity Correction**. Edit the same workbook and upload the complete corrected version. The Activity Date must still be within the official SBI activity date range.
+
+## 24. What happens when the campaign status is Closed?
 
 Existing data and VaccTrack Check remain available, but new workbook uploads are blocked until the System Administrator reopens the campaign.

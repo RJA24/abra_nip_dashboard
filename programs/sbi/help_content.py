@@ -2,7 +2,7 @@
 
 RHU_FULL_GUIDE_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.21.1.2
+Version: v5.21.1.6
 
 ## 1. The RHU workflow
 
@@ -139,13 +139,14 @@ If the VaccTrack extract has not yet reached your activity date, the result may 
 
 ## 11. Campaign status and final submission
 
-The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, or **Closed**.
+The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, **Post-Activity Correction**, or **Closed**.
 
 - Pre-Implementation allows testing and preparation.
-- Live is the normal implementation period.
+- Live is the normal field implementation period.
+- Post-Activity Correction allows corrected or late workbook uploads after field activities have ended. Activity Dates must still fall within the official SBI activity date range.
 - Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
 
-During the Live campaign, an **End of SBI only — Submit Final RHU Report** section is available. This is not part of the normal upload process. Keep updating and re-uploading the same workbook throughout SBI. Use final submission only when your RHU has finished all SBI reporting for the activity. After final submission, further workbook uploads are locked unless the System Administrator reopens the RHU submission.
+During Live and Post-Activity Correction, a final-submission section is available. This is not part of the normal upload process. Keep updating and re-uploading the same workbook as needed. Submit the final RHU report only when all routine reporting and corrections are complete. After final submission, further workbook uploads are locked unless the System Administrator reopens the RHU submission.
 
 Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.
 
@@ -156,7 +157,7 @@ Use **Send Feedback / Report a Problem** for workbook issues, upload issues, con
 
 RHU_FAQ_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.21.1.2
+Version: v5.21.1.6
 
 ## 1. Do I need internet while encoding SBI accomplishments?
 
@@ -237,10 +238,14 @@ Finalize only when your RHU's current workbook is complete. After finalization, 
 
 Download a fresh workbook from **1. Offline Workbook**, then transfer your current accomplishment rows into the new workbook. This prevents old test templates from being used during implementation.
 
-## 20. What happens when the campaign status is Closed?
+## 20. What happens after the official activity end date?
+
+If the System Administrator places the campaign in **Post-Activity Correction**, you may still edit and re-upload the workbook for corrections or late reporting. The Activity Date inside the workbook must still be within the official SBI activity date range.
+
+## 21. What happens when the campaign status is Closed?
 
 Your existing accomplishment data and VaccTrack Check remain available, but new workbook uploads are blocked until the System Administrator reopens the campaign.
 
-## 21. Which dataset is official?
+## 22. Which dataset is official?
 
 VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation."""
