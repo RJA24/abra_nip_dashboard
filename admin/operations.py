@@ -19,6 +19,7 @@ from core.data import (
 )
 from programs.sbi.aggregate_workbook import (
     SUBMISSION_TABLE,
+    TABLE_NAME as ACCOMPLISHMENT_TABLE,
     WORKBOOK_VERSION,
     fetch_submission_history,
     get_current_submission,
@@ -29,7 +30,7 @@ from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.1.2"
+APP_VERSION = "v5.21.1.5"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -453,6 +454,92 @@ def render_submission_status(supabase, audit_callback=None, read_only: bool = Fa
     st.divider()
     municipality = st.selectbox("Manage RHU submission", ABRA_MUNIS, key="ops_submission_muni")
     muni_history = history[history["municipality"].astype(str).eq(municipality)].copy() if not history.empty else pd.DataFrame()
+
+    campaign_status = str(get_campaign_config(supabase).get("status") or "Pre-Implementation")
+    try:
+        workbook_rows = _fetch_all(
+            lambda: supabase.table(ACCOMPLISHMENT_TABLE)
+            .select("id")
+            .eq("municipality", municipality)
+            .eq("source_type", "workbook"),
+            page_size=1000,
+        )
+    except Exception:
+        workbook_rows = []
+
+    with st.expander("Pre-Implementation Cleanup — Clear RHU Test Data", expanded=False):
+        st.caption(
+            "Use this only for test or dummy workbook uploads before SBI implementation. "
+            "It deletes this RHU's workbook-derived accomplishment rows and workbook submission history."
+        )
+        st.info(
+            "The RHU account, SBI targets, VaccTrack snapshots, and data from other municipalities are not deleted."
+        )
+        x1, x2 = st.columns(2)
+        x1.metric("Workbook Accomplishment Rows", len(workbook_rows))
+        x2.metric("Workbook History Entries", len(muni_history))
+
+        if campaign_status != "Pre-Implementation":
+            st.warning(
+                f"Test-data cleanup is locked while the campaign status is {campaign_status}. "
+                "Return the campaign to Pre-Implementation only if cleanup is genuinely required."
+            )
+        elif not workbook_rows and muni_history.empty:
+            st.success(f"{municipality} has no workbook test data to clear.")
+        else:
+            confirm_clear = st.checkbox(
+                f"I understand that clearing {municipality} will permanently remove its workbook test data and upload history.",
+                key="ops_clear_test_data_confirm",
+                disabled=read_only,
+            )
+            typed_muni = st.text_input(
+                f"Type {municipality} to confirm",
+                key="ops_clear_test_data_typed",
+                disabled=read_only,
+            )
+            can_clear = (
+                not read_only
+                and confirm_clear
+                and typed_muni.strip().casefold() == municipality.casefold()
+            )
+            if st.button(
+                f"Clear {municipality} Test Workbook Data",
+                type="primary",
+                disabled=not can_clear,
+                width="stretch",
+                key="ops_clear_test_data",
+            ):
+                try:
+                    (
+                        supabase.table(SUBMISSION_TABLE)
+                        .delete()
+                        .eq("municipality", municipality)
+                        .execute()
+                    )
+                    (
+                        supabase.table(ACCOMPLISHMENT_TABLE)
+                        .delete()
+                        .eq("municipality", municipality)
+                        .eq("source_type", "workbook")
+                        .execute()
+                    )
+                except Exception as exc:
+                    st.error(f"Test data could not be cleared: {exc}")
+                    return
+
+                if audit_callback:
+                    audit_callback(
+                        supabase,
+                        f"SBI RHU workbook test data cleared | municipality={municipality} "
+                        f"| accomplishment_rows={len(workbook_rows)} | submission_history={len(muni_history)}",
+                    )
+                st.cache_data.clear()
+                st.success(
+                    f"{municipality} test workbook data cleared: "
+                    f"{len(workbook_rows):,} accomplishment row(s) and {len(muni_history):,} history record(s) removed."
+                )
+                st.rerun()
+
     if muni_history.empty:
         st.info(f"{municipality} has no workbook upload history yet.")
         return
