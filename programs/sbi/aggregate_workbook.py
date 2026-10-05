@@ -1143,10 +1143,19 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
             "Do not use a later upload date as the Activity Date unless the vaccination activity actually happened on that date."
         )
 
+    # Rotate the uploader key after a successful save so the selected workbook is
+    # cleared on the next rerun. This makes a completed upload visually obvious
+    # and reduces accidental repeat uploads of the same file.
+    upload_reset = int(st.session_state.get("sbi_offline_workbook_upload_reset", 0))
+
+    success_notice = st.session_state.pop("sbi_offline_workbook_success_notice", None)
+    if success_notice:
+        st.success(success_notice)
+
     uploaded = st.file_uploader(
         "Upload SBI Offline Accomplishment Workbook",
         type=["xlsx"],
-        key="sbi_offline_workbook_upload",
+        key=f"sbi_offline_workbook_upload_{upload_reset}",
         help="Use the workbook downloaded from Step 1. Do not upload VaccTrack exports here.",
     )
     if uploaded is not None:
@@ -1191,9 +1200,15 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
             st.warning(f"{removed} existing dashboard record(s) are not present in this workbook and will be removed after confirmation.")
         confirm = st.checkbox(
             "I confirm that this workbook contains the complete current SBI accomplishment data for our RHU.",
-            key="sbi_offline_workbook_confirm",
+            key=f"sbi_offline_workbook_confirm_{upload_reset}",
         )
-        if st.button("Use This Workbook as Current RHU Data", type="primary", disabled=not confirm, width="stretch", key="sbi_offline_workbook_save"):
+        if st.button(
+            "Use This Workbook as Current RHU Data",
+            type="primary",
+            disabled=not confirm,
+            width="stretch",
+            key=f"sbi_offline_workbook_save_{upload_reset}",
+        ):
             batch_id = hashlib.sha256(raw).hexdigest()
             try:
                 saved, removed_count = _save_snapshot(supabase, incoming, municipality, username, batch_id)
@@ -1213,7 +1228,11 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
                 st.error(f"The workbook could not be saved: {exc}")
                 return
             st.cache_data.clear()
-            st.success(f"Current RHU data updated: {saved:,} record(s) saved and {removed_count:,} old record(s) removed.")
+            st.session_state["sbi_offline_workbook_success_notice"] = (
+                f"Workbook uploaded successfully. Current RHU data now contains {saved:,} record(s); "
+                f"{removed_count:,} old record(s) were removed. The upload field has been cleared."
+            )
+            st.session_state["sbi_offline_workbook_upload_reset"] = upload_reset + 1
             st.toast("SBI workbook uploaded successfully.")
             st.rerun()
 
