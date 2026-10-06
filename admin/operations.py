@@ -28,10 +28,11 @@ from programs.sbi.aggregate_workbook import (
 )
 from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config, save_campaign_config
 from programs.sbi.admin_monitoring import render_data_quality_center, render_reconciliation_monitor
+from programs.sbi.production_readiness import render_all_rhu_workbook_package, render_production_readiness
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.2"
+APP_VERSION = "v5.21.3"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -469,12 +470,24 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
             st.error(f"Campaign settings could not be saved: {exc}")
             return
         if audit_callback:
-            prelaunch_note = ""
+            old_start = start_config.isoformat() if start_config else "off"
+            old_end = end_config.isoformat() if end_config else "off"
+            new_start_value = start_date if enforce_dates else None
+            new_end_value = end_date if enforce_dates else None
+            new_start = new_start_value.isoformat() if new_start_value else "off"
+            new_end = new_end_value.isoformat() if new_end_value else "off"
+            changes = []
+            if selected_status != status:
+                changes.append(f"status={status}->{selected_status}")
+            if old_start != new_start or old_end != new_end:
+                changes.append(f"activity_dates={old_start}..{old_end}->{new_start}..{new_end}")
+            if str(announcement or "").strip() != str(config.get("announcement") or "").strip():
+                changes.append("announcement=updated")
             if going_live and not prelaunch_summary.empty and keep_prelaunch_data:
-                prelaunch_note = " | prelaunch_data=reviewed_and_kept"
+                changes.append("prelaunch_data=reviewed_and_kept")
             audit_callback(
                 supabase,
-                f"SBI campaign settings updated | status={selected_status} | date_range={'on' if enforce_dates else 'off'}{prelaunch_note}",
+                "SBI campaign settings updated" + (" | " + " | ".join(changes) if changes else " | no_material_change"),
             )
         st.cache_data.clear()
         st.toast("SBI campaign settings saved.")
@@ -854,6 +867,8 @@ def render_operations(supabase, audit_callback=None, read_only: bool = False) ->
         submissions_tab,
         quality_tab,
         reconciliation_tab,
+        workbook_package_tab,
+        readiness_tab,
         rollout_tab,
         feedback_tab,
         backup_tab,
@@ -864,6 +879,8 @@ def render_operations(supabase, audit_callback=None, read_only: bool = False) ->
             "RHU Submissions",
             "Data Quality",
             "VaccTrack Monitor",
+            "RHU Workbooks",
+            "Production Readiness",
             "RHU Rollout",
             "Feedback",
             "Backup",
@@ -879,6 +896,10 @@ def render_operations(supabase, audit_callback=None, read_only: bool = False) ->
         render_data_quality_center(supabase)
     with reconciliation_tab:
         render_reconciliation_monitor(supabase)
+    with workbook_package_tab:
+        render_all_rhu_workbook_package(read_only=read_only)
+    with readiness_tab:
+        render_production_readiness(supabase, read_only=read_only)
     with rollout_tab:
         render_rollout_status(supabase)
     with feedback_tab:
