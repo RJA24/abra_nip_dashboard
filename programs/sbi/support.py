@@ -8,7 +8,7 @@ import streamlit as st
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 FEEDBACK_TABLE = "sbi_user_feedback"
-APP_VERSION = "v5.21.1.2"
+APP_VERSION = "v5.22.0"
 
 
 def feedback_schema_available(supabase) -> bool:
@@ -27,7 +27,7 @@ def render_feedback_form(
 ) -> None:
     with st.expander("Send Feedback / Report a Problem", expanded=False):
         st.caption(
-            "Use this while testing the system. Please do not include learner names, LRN, or other identifying information."
+            "Use this for workbook, upload, reconciliation, or usability concerns. Do not include names or other identifying personal or health information."
         )
 
         if not feedback_schema_available(supabase):

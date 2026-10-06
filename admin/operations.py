@@ -32,7 +32,7 @@ from programs.sbi.production_readiness import render_all_rhu_workbook_package, r
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.21.3"
+APP_VERSION = "v5.22.0"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -76,23 +76,26 @@ def render_system_health(supabase, audit_callback=None, read_only: bool = False)
     st.markdown("### System Health")
     st.caption(f"System version: {APP_VERSION}")
 
-    checks = [
+    operational_checks = [
         ("Accounts", "user_accounts", "username"),
         ("Access Logs", "access_logs", "id"),
         ("SBI Targets", "sbi_targets", "school_id"),
         ("RHU Accomplishments", "sbi_rhu_accomplishments", "id"),
-        ("Learner Records", "sbi_linelist_records", "id"),
-        ("Line-List Imports", "sbi_linelist_imports", "id"),
-        ("Line-List Audit", "sbi_linelist_audit", "id"),
         ("VaccTrack Imports", "sbi_vacctrack_imports", "id"),
         ("VaccTrack Rows", "sbi_vacctrack_rows", "id"),
         ("RHU Feedback", FEEDBACK_TABLE, "id"),
         ("SBI Settings", SBI_SETTINGS_TABLE, "setting_key"),
         ("SBI Workbook Submissions", SUBMISSION_TABLE, "id"),
     ]
+    legacy_checks = [
+        ("Legacy Learner Records", "sbi_linelist_records", "id"),
+        ("Legacy Line-List Imports", "sbi_linelist_imports", "id"),
+        ("Legacy Line-List Audit", "sbi_linelist_audit", "id"),
+        ("Legacy Regional Sessions", "sbi_regional_sessions", "id"),
+    ]
 
     status_rows = []
-    for label, table, column in checks:
+    for label, table, column in operational_checks:
         ready, detail = _table_exists(supabase, table, column)
         status_rows.append(
             {
@@ -105,11 +108,28 @@ def render_system_health(supabase, audit_callback=None, read_only: bool = False)
 
     ready_count = sum(row["Status"] == "Ready" for row in status_rows)
     c1, c2, c3 = st.columns(3)
-    c1.metric("Components Ready", f"{ready_count}/{len(status_rows)}")
+    c1.metric("Operational Components", f"{ready_count}/{len(status_rows)}")
     c2.metric("System Version", APP_VERSION)
     c3.metric("Server Time", datetime.now(MANILA_TZ).strftime("%I:%M %p"))
 
     st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
+
+    with st.expander("Legacy / archival SBI tables", expanded=False):
+        st.caption(
+            "These tables belong to retired learner-level and regional test workflows. They are kept only for historical cleanup or audit and do not affect current aggregate-workbook production readiness."
+        )
+        legacy_rows = []
+        for label, table, column in legacy_checks:
+            ready, detail = _table_exists(supabase, table, column)
+            legacy_rows.append(
+                {
+                    "Component": label,
+                    "Table": table,
+                    "Status": "Available" if ready else "Not installed / unavailable",
+                    "Detail": "Legacy data retained" if ready else detail,
+                }
+            )
+        st.dataframe(pd.DataFrame(legacy_rows), width="stretch", hide_index=True)
 
     st.markdown("#### VaccTrack Data Sources")
     fallback_enabled = vacctrack_google_fallback_enabled()

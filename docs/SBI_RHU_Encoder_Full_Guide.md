@@ -1,45 +1,46 @@
 # Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.21.1.2
+Version: v5.22.0
 
-## 1. The RHU workflow
+## 1. Reporting workflow
 
-The SBI RHU workflow is now offline-first:
+The SBI RHU reporting workflow is offline-first:
 
-1. **Download and maintain one SBI workbook**
-2. **Use the workbook's VaccTrack sheets, then upload the current workbook**
-3. **Refresh and compare with VaccTrack**
+1. Download your municipality-specific SBI workbook.
+2. Encode accomplishments in the same workbook throughout the activity.
+3. Use its VaccTrack G1/G4/G7 sheets as your encoding aid.
+4. Upload the complete current workbook when internet is available.
+5. Review the comparison before confirming.
+6. Refresh VaccTrack Check after the latest official extract is available.
 
-VaccTrack remains the official/final national SBI reporting source. The workbook is the RHU working record used to prepare, consolidate, correct, and upload accomplishment data.
+VaccTrack remains the official/final national SBI reporting source. The Abra NIP Monitoring Information System is used for local operational monitoring, validation, and reconciliation.
 
-## 2. Keep one workbook for the whole activity
+## 2. Use one working workbook
 
-Download the RHU-specific workbook from **1. Offline Workbook**. Keep using that same file throughout the SBI activity.
+Download the workbook from **1. Offline Workbook**. Keep that file as your RHU's working copy for the activity.
 
-The workbook already contains your municipality's school list and targets. You can encode even when there is no internet connection.
+Do not rename the **Accomplishments** sheet or its column headings. If the system says your workbook version is unsupported, download a fresh workbook from the system and transfer your current accomplishment rows to it.
 
-The workbook protects cells that RHUs should not change. **Light-yellow cells are the editable input cells.** Gray/calculated cells, headings, formulas, the Setup sheet, and the hidden Reference sheet are locked to prevent accidental changes.
+## 3. Accomplishments sheet
 
-Do not rename the **Accomplishments** sheet or its column headings.
+Encode only in the **light-yellow input cells**.
 
-## 3. Encode accomplishments in Excel
-
-Open the **Accomplishments** sheet and use one row per activity entry. Enter data only in the **light-yellow input cells**. The automatically filled School ID, Barangay, and Row Check cells are locked. The Actual Target is kept in a hidden locked column for internal reference and is not something the RHU needs to encode.
-
-Enter:
+For every activity entry, provide:
 
 - Activity Date
-- School Name — select from the dropdown
-- Grade Level: G1, G4, or G7
+- School Name — choose from the dropdown
+- Grade Level — G1, G4, or G7
 - applicable vaccination counts
 - deferred/refused counts when applicable
-- reason-code counts when applicable
+- Reason 01–19 counts when applicable
 
-School ID and Barangay are filled automatically after you select the School Name from the RHU school roster. The Actual Target is retained internally in a hidden locked column and does not need to be viewed or encoded by the RHU.
+After selecting School Name, **School ID and Barangay fill automatically**. You do not need to memorize or type the School ID.
 
-If the same school and grade have more than one entry on the same date, you may use more than one row. The workbook and dashboard add those rows together automatically.
+Formula/reference cells are locked. The Actual Target is retained internally and is not an RHU input field.
 
-## 4. Grade rules
+If the same school and grade have more than one session on the same date, you may use more than one row. The workbook/dashboard consolidate those rows for reporting.
+
+## 4. Grade-specific fields
 
 ### Grade 1 and Grade 7
 
@@ -67,88 +68,96 @@ Leave MR/Td fields blank.
 
 ### Reason codes
 
-The workbook includes Reason 01 to Reason 19. Enter the aggregate count for each applicable reason. Reason counts should not exceed the total deferred/refused counts for that row.
+Use Reason 01–19 when applicable. Reason counts must remain consistent with the deferred/refused totals for the row.
 
-## 5. Encode in VaccTrack
+## 5. VaccTrack sheets
 
-The workbook contains three automatic sheets:
+The workbook contains:
 
-- The VaccTrack G1/G4/G7 sheets are intentionally simplified: only the selected **Report Date**, **School**, grade-specific VaccTrack fields, and reason codes 01–19 are shown. Location/facility metadata is omitted because it is already handled in VaccTrack.
-
-**VaccTrack G1**
+- **VaccTrack G1**
 - **VaccTrack G4**
 - **VaccTrack G7**
 
-Change the **Report Date** in the light-yellow cell at the top of the sheet. It is the only editable cell on each VaccTrack sheet. The calculated school rows and VaccTrack values are locked so they cannot be accidentally overwritten. The workbook automatically sums the accomplishment rows for that date and arranges the values using the VaccTrack field names.
+Set the **Report Date** in the editable light-yellow cell. The workbook automatically summarizes that date by school and shows the grade-specific VaccTrack values and Reason 01–19 counts.
 
-Rows marked **YES** had an accomplishment entry for the selected date.
+The calculated rows are locked. Region, Province, Municipality, Barangay, Facility Name, and School ID are not shown because the sheets are only an encoding aid for the values you enter into VaccTrack.
 
-Copy the displayed values into VaccTrack.
+For Grade 4, the RHU-facing workbook does not show G4.A Actual Total Female Students; the target remains internal to the workbook/system.
 
-## 6. Upload the workbook to the monitoring system
+## 6. Upload Current Workbook
 
 When internet is available:
 
 1. Open **2. Upload Current Workbook**.
-2. Upload the same working workbook.
-3. Review the validation results.
-4. Review Added / Modified / Removed / Unchanged.
-5. Confirm only when the comparison is correct.
+2. Select your complete working workbook.
+3. Review validation results.
+4. Review **Added / Modified / Removed / Unchanged**.
+5. Confirm only if the comparison is correct.
+6. Click **Use This Workbook as Current RHU Data**.
 
-The uploaded workbook is treated as your RHU's **complete current dataset**.
+After a successful save, the file uploader clears automatically. This prevents the previously submitted file from looking like a new pending upload. Select a workbook again only when you intentionally want to submit another update.
 
-## 7. Corrections are done in the workbook
+The confirmed workbook becomes your RHU's complete current operational dataset in the Abra system.
 
-If an accomplishment was wrong:
+## 7. Corrections and follow-up activities
 
-1. Open your working workbook.
-2. Correct the row in **Accomplishments**.
-3. Save the file.
-4. Upload the complete workbook again.
-5. Review the changes and confirm.
+Do not create a separate correction record in the web system.
 
-You do not create a separate correction entry in the web system.
+If something changes:
 
-If a row is removed from the workbook, the corresponding current dashboard record will be shown as **Removed** during upload and will be removed after confirmation.
+1. Open the same working workbook.
+2. Add, correct, or remove the appropriate row.
+3. Save the workbook.
+4. Upload the complete current workbook again.
+5. Review the comparison carefully.
+6. Confirm the update.
 
-## 8. Understanding the upload comparison
+A row that existed in the dashboard but is missing from the newly uploaded complete workbook appears as **Removed**. Do not confirm unexpected removals.
 
-- **Added** — a new Date + School + Grade record will be added.
-- **Modified** — an existing record has different counts.
-- **Removed** — an existing dashboard record is no longer present in the complete workbook.
-- **Unchanged** — the workbook matches the current dashboard record.
+## 8. Understanding the comparison
 
-Do not confirm unexpected removals.
+- **Added** — new Date + School + Grade record.
+- **Modified** — saved record exists, but one or more counts changed.
+- **Removed** — saved record is no longer present in the complete workbook.
+- **Unchanged** — workbook record already matches the saved data.
 
 ## 9. VaccTrack Check
 
-After the NIP coordinator uploads the latest VaccTrack extract, open **3. VaccTrack Check** and click **Refresh VaccTrack Data**.
+Open **3. VaccTrack Check** after the NIP coordinator has uploaded/refreshed the latest official VaccTrack extract.
 
-The system compares the latest RHU workbook totals with VaccTrack by date, school, grade, and vaccine metric.
+The system compares the RHU workbook with VaccTrack by date, school, grade, and vaccine metric.
 
-If the VaccTrack extract has not yet reached your activity date, the result may remain pending. Check the **Data Through** date before treating a difference as an error.
+If RHU activity is newer than the latest VaccTrack **Data Through** date, the system may show **Pending VaccTrack Verification**. This means the official extract has not reached that activity date yet; it is not automatically an RHU error.
 
-## 10. Important reminders
+## 10. Campaign status
 
-- Keep one working workbook throughout the SBI activity.
-- Enter data only in light-yellow input cells; calculated/reference cells are intentionally locked.
-- Encode all accomplishments in the workbook, including days when internet is unavailable.
-- Use the workbook's VaccTrack sheets for daily VaccTrack encoding.
-- Upload the complete current workbook, not only the rows you changed.
-- Correct mistakes in Excel and re-upload the workbook.
+The System Administrator controls the campaign status:
+
+- **Pre-Implementation** — testing/preparation.
+- **Live** — field implementation and routine uploads.
+- **Post-Activity Correction** — field activities have ended, but corrections/late uploads are still allowed for Activity Dates inside the official campaign period.
+- **Closed** — new workbook uploads are blocked.
+
+Example: if Oct 31 is the last official activity date, an RHU may still correct an Oct 28 record on Nov 1 while the campaign is in Post-Activity Correction. A new Nov 1 Activity Date would not be accepted if it is outside the official activity period.
+
+## 11. Final RHU report
+
+Final submission is **not an after-upload step**.
+
+During Live/Post-Activity Correction, the final-report section is intentionally separate. Continue updating and re-uploading the workbook as needed. Submit the final RHU report only when routine reporting and corrections are complete.
+
+After finalization, further uploads are locked until the System Administrator reopens the RHU submission.
+
+## 12. Important reminders
+
+- Keep one working workbook for the activity.
+- Upload the complete current workbook, not only changed rows.
+- Select School Name from the dropdown; School ID is automatic.
+- Do not enter data for another municipality.
 - Do not upload a VaccTrack export into the RHU workbook uploader.
-- Do not upload data belonging to another municipality.
-- VaccTrack remains the official/final national reporting source.
+- Do not put learner names, LRN, or other individual identifiers in the aggregate workbook.
+- VaccTrack remains the official/final national SBI dataset.
 
-## 11. Send Feedback / Report a Problem
+## 13. Feedback
 
-Use **Send Feedback / Report a Problem** for upload issues, confusing instructions, mobile display issues, or suggestions. Do not include learner names or other unnecessary identifying information.
-
-
-## 11. Campaign status and final submission
-
-The System Administrator controls the SBI campaign status: **Pre-Implementation**, **Live**, **Post-Activity Correction**, or **Closed**. Pre-Implementation is for testing and preparation. Live is the field implementation period. Post-Activity Correction allows corrected or late workbook uploads after field activities have ended, but every Activity Date must still be within the official SBI activity date range. Closed blocks new RHU workbook uploads while keeping existing data and VaccTrack checks available.
-
-When your RHU is completely finished with both routine reporting and any needed corrections, use **Submit Final RHU Report**. After finalization, the workbook cannot be replaced unless the System Administrator reopens the RHU submission.
-
-Always use the workbook downloaded from the current system. The uploader checks the workbook version and municipality before accepting it.
+Use **Send Feedback / Report a Problem** for workbook, upload, reconciliation, instruction, mobile-display, or usability concerns. Do not include names or other identifying personal/health information in the feedback message.

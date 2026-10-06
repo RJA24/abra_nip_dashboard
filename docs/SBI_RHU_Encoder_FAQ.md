@@ -1,101 +1,91 @@
 # Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.21.1.2
+Version: v5.22.0
 
-## 1. Do I need internet while encoding SBI accomplishments?
+## 1. Do I need internet while encoding accomplishments?
 
-No. The SBI workbook is designed to be used offline. Internet is needed only when you want to upload the current workbook or check the latest VaccTrack comparison.
+No. Encode in the workbook offline. Internet is needed when you upload the current workbook or refresh/check online data.
 
-## 2. Do we still use the learner line list or System Learner ID?
+## 2. What data goes into the workbook?
 
-No. The SBI RHU workflow now uses aggregate accomplishment data by Activity Date + School + Grade.
+Aggregate counts by **Activity Date + School + Grade**. Do not place learner names, LRN, or other individual identifiers in the workbook.
 
 ## 3. How many workbooks should our RHU use?
 
-Use one RHU working workbook for the whole SBI activity. Keep adding new activity rows to the **Accomplishments** sheet.
+One working workbook for the activity. Keep adding/correcting rows in that file.
 
-## 4. Can one workbook contain many activity dates and schools?
+## 4. Do I need to know the School ID?
+
+No. Select **School Name** from the dropdown. School ID and Barangay fill automatically.
+
+## 5. Can one workbook contain many dates and schools?
 
 Yes. That is the intended workflow.
 
-## 5. What if the same school and grade have two sessions on the same date?
+## 6. What if one school/grade has two sessions on the same date?
 
-You may encode two rows. The workbook and dashboard automatically add rows with the same Activity Date + School + Grade when preparing the current totals.
+You may use more than one row. The workbook/dashboard consolidate the rows for reporting.
 
+## 7. Which cells can I edit?
 
-## 6. Do I need to know or type the School ID?
+Use the **light-yellow input cells**. Formula/reference cells are protected. On VaccTrack G1/G4/G7, the Report Date is the RHU input used to change the displayed daily summary.
 
-No. Select the **School Name** from the dropdown in the Accomplishments sheet. The workbook fills the School ID and Barangay automatically.
+## 8. Why is Actual Target not visible in Accomplishments?
 
-## 7. How do I know what to encode in VaccTrack?
+It is kept internally for validation/reference and is not something the RHU needs to encode.
 
-Open **VaccTrack G1**, **VaccTrack G4**, or **VaccTrack G7**, then set the Report Date. The sheet automatically displays that day's school-level values using VaccTrack field names.
+## 9. Why is G4.A not shown in the VaccTrack G4 sheet?
 
-## 8. How do I correct a wrong accomplishment?
+The workbook keeps target information internally. The RHU-facing VaccTrack G4 sheet focuses on the accomplishment/deferral/refusal values needed for encoding.
 
-Edit the row in the **Accomplishments** sheet, save the workbook, and upload the complete current workbook again.
+## 10. How do I correct a wrong accomplishment?
 
-## 9. Should I upload only the corrected row?
+Edit the same workbook, save it, and upload the complete current workbook again.
 
-No. Upload the complete working workbook. The dashboard treats it as your RHU's current complete dataset.
+## 11. Should I upload only the corrected row?
 
-## 10. What do Added, Modified, Removed, and Unchanged mean?
+No. Always upload the complete working workbook. The system treats it as your RHU's current complete dataset.
 
-**Added** is a new Date + School + Grade record. **Modified** has changed counts. **Removed** existed in the dashboard but is no longer in the workbook. **Unchanged** already matches.
+## 12. What do Added, Modified, Removed, and Unchanged mean?
 
-## 11. What if I see unexpected Removed records?
+**Added** is new, **Modified** changed, **Removed** no longer appears in the complete workbook, and **Unchanged** already matches the saved data.
 
-Do not confirm. Check whether you accidentally uploaded an incomplete or older copy of the workbook.
+## 13. What if I see unexpected Removed records?
 
-## 12. What if I accidentally use MR/Td fields for Grade 4?
+Do not confirm. Make sure you did not select an older/incomplete copy of the workbook.
 
-The uploader will reject the row. Grade 4 must use HPV fields.
+## 14. Why did the selected upload file disappear after I successfully saved it?
 
-## 13. What if I accidentally use HPV fields for Grade 1 or Grade 7?
-
-The uploader will reject the row. Grade 1 and Grade 7 must use MR/Td fields.
-
-## 14. Are reason counts required?
-
-Use the reason-code counts when applicable to your VaccTrack reporting. The workbook checks that reason totals do not exceed the total deferred/refused counts entered for the row.
+That is intentional. The uploader clears after success so the same file is not mistaken for a new pending upload. Select the workbook again only when you intentionally have another update to submit.
 
 ## 15. What if our internet is unavailable for several days?
 
-Continue encoding in the same workbook. When internet becomes available, upload the latest complete workbook. The dashboard will receive all of the activity dates contained in it.
+Continue using the same workbook. Upload its latest complete version when internet becomes available.
 
-## 16. What does Pending VaccTrack Verification mean?
+## 16. What is Pending VaccTrack Verification?
 
-The latest official VaccTrack extract available to the monitoring system has not yet reached your activity date. It does not automatically mean the RHU encoded something incorrectly.
+The latest official VaccTrack extract has not yet reached that RHU activity date. Wait for a newer extract before treating it as a discrepancy.
 
-## 17. Can I upload a VaccTrack export into Step 2?
+## 17. Can I upload a VaccTrack export into Upload Current Workbook?
 
-No. Step 2 accepts the RHU SBI Offline Accomplishment Workbook. Official VaccTrack extracts are uploaded separately by the System Admin.
+No. That uploader accepts the municipality-specific SBI Accomplishment Workbook. Official VaccTrack extracts are handled separately by the System Admin.
 
 ## 18. Which dataset is official?
 
-VaccTrack remains the official/final national SBI dataset. The RHU workbook and Abra NIP Monitoring Information System are used for offline working records, provincial monitoring, and reconciliation.
+VaccTrack is the official/final national SBI dataset. The Abra workbook/system supports offline work, provincial monitoring, validation, and reconciliation.
 
-## 19. Why can’t I edit some cells in the workbook?
+## 19. Can we still correct data after the last activity day?
 
-That is intentional. Cells containing formulas, automatic school information, hidden target values, Row Check results, and VaccTrack calculated values are locked to prevent accidental changes. Encode only in the **light-yellow input cells**. On the VaccTrack G1/G4/G7 sheets, only the **Report Date** cell is editable.
+Yes, while the campaign is in **Post-Activity Correction**. The Activity Date inside the workbook must still fall within the official activity date range.
 
-## 20. Why don't the VaccTrack sheets show Region, Province, Municipality, Barangay, Facility Name, or School ID?
+## 20. What does Finalized mean?
 
-Those details are already known or selected inside VaccTrack. The workbook is only an encoding aid, so the VaccTrack G1/G4/G7 sheets show the selected Report Date, School, the grade-specific fields to encode, and reason codes 01–19.
+It means the RHU has declared its current report complete/final. Finalization is not required after routine uploads. Once finalized, new uploads require the System Administrator to reopen the RHU submission.
 
+## 21. What happens when the campaign is Closed?
 
-## 21. What does Finalized mean?
+Existing reports/checks remain visible, but new RHU workbook uploads are blocked.
 
-Finalize only when your RHU's current workbook is complete. After finalization, another workbook cannot be uploaded unless the System Administrator reopens the RHU submission.
+## 22. What if the workbook version is unsupported?
 
-## 22. What if the system says my workbook version is unsupported?
-
-Download a fresh workbook from **1. Offline Workbook**, then transfer your current accomplishment rows into the new workbook.
-
-## 23. Can we still correct data after the last SBI activity day?
-
-Yes, while the campaign is in **Post-Activity Correction**. Edit the same workbook and upload the complete corrected version. The Activity Date must still be within the official SBI activity date range.
-
-## 24. What happens when the campaign status is Closed?
-
-Existing data and VaccTrack Check remain available, but new workbook uploads are blocked until the System Administrator reopens the campaign.
+Download a fresh workbook from the system and transfer your current Accomplishments rows into the new workbook.

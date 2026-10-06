@@ -1127,7 +1127,11 @@ def render_rhu_accomplishments(
         status = str(campaign.get("status") or "Pre-Implementation")
         announcement = str(campaign.get("announcement") or "").strip()
         if status == "Live":
-            st.success("SBI campaign status: LIVE")
+            st.success("SBI campaign status: LIVE — field implementation and workbook uploads are active.")
+        elif status == "Post-Activity Correction":
+            st.warning(
+                "SBI campaign status: POST-ACTIVITY CORRECTION — field implementation has ended, but corrected or late workbook uploads are still allowed for Activity Dates inside the official campaign period."
+            )
         elif status == "Closed":
             st.warning("SBI campaign status: CLOSED — workbook uploads are no longer accepted unless the System Administrator reopens the campaign.")
         else:
