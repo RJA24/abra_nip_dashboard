@@ -22,6 +22,7 @@ from programs.sbi.help_content import RHU_FAQ_MD, RHU_FULL_GUIDE_MD
 from programs.sbi.aggregate_workbook import render_workbook_download, render_workbook_upload
 from programs.sbi.campaign_control import get_campaign_config
 from programs.sbi.support import render_feedback_form
+from programs.sbi.workbook_dashboard import prepare_workbook_entries, render_workbook_dashboard
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 TABLE_NAME = "sbi_rhu_accomplishments"
@@ -976,17 +977,19 @@ def _render_coordinator_view(
     start_date: date | None,
     end_date: date | None,
     selected_muni: str | None,
+    all_entries: pd.DataFrame | None = None,
 ) -> None:
     st.markdown(
         '<h3><i class="fa-solid fa-scale-balanced" style="color:#0033A0;margin-right:8px;"></i>RHU Workbook vs VaccTrack</h3>',
         unsafe_allow_html=True,
     )
     st.markdown("VaccTrack remains the official final dataset. This page highlights differences against the latest RHU workbook accomplishment totals.")
-    try:
-        all_entries = _fetch_entries(supabase)
-    except Exception as exc:
-        st.error(f"Unable to load RHU accomplishment records: {exc}")
-        return
+    if all_entries is None:
+        try:
+            all_entries = _fetch_entries(supabase)
+        except Exception as exc:
+            st.error(f"Unable to load RHU accomplishment records: {exc}")
+            return
 
     province_entries = _filter_period(all_entries, "activity_date", start_date, end_date) if not all_entries.empty else all_entries
     province_events = {
@@ -1115,7 +1118,8 @@ def render_rhu_accomplishments(
         st.error("RHU Accomplishment Tracker is not initialized. Run supabase/003_sbi_rhu_accomplishments.sql once, then reload the app.")
         return
 
-    if user_role == "RHU Encoder":
+    if user_role in {"RHU Encoder", "RHU QA Encoder"}:
+        is_qa_encoder = user_role == "RHU QA Encoder"
         canonical = _canonical_muni(assigned_muni)
         valid = {normalize_municipality_key(m): m for m in ABRA_MUNIS}
         if normalize_municipality_key(canonical) not in valid:
@@ -1123,6 +1127,10 @@ def render_rhu_accomplishments(
             return
         canonical = valid[normalize_municipality_key(canonical)]
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
+        if is_qa_encoder:
+            st.warning(
+                f"RHU QA TEST ACCOUNT — simulating {canonical} RHU. Workbook uploads are validation-only and do not save, replace, finalize, reopen, or alter production RHU data."
+            )
         campaign = get_campaign_config(supabase)
         status = str(campaign.get("status") or "Pre-Implementation")
         announcement = str(campaign.get("announcement") or "").strip()
@@ -1142,29 +1150,59 @@ def render_rhu_accomplishments(
 
         render_feedback_form(supabase, canonical, username, role=user_role)
 
+        upload_label = "2. QA Validate Workbook" if is_qa_encoder else "2. Upload Current Workbook"
+        mine_label = "Production RHU Accomplishments" if is_qa_encoder else "My Accomplishments"
         download_tab, upload_tab, check_tab, mine_tab = st.tabs([
             "1. Offline Workbook",
-            "2. Upload Current Workbook",
+            upload_label,
             "3. VaccTrack Check",
-            "My Accomplishments",
+            mine_label,
         ])
         workbook_targets = actual_targets if actual_targets is not None and not actual_targets.empty else targets
         with download_tab:
             render_workbook_download(workbook_targets, canonical)
         with upload_tab:
-            render_workbook_upload(supabase, workbook_targets, canonical, username)
+            render_workbook_upload(
+                supabase,
+                workbook_targets,
+                canonical,
+                username,
+                dry_run=is_qa_encoder,
+            )
         with check_tab:
             _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
     else:
-        _render_coordinator_view(
-            supabase,
-            g1_events,
-            g7_events,
-            hpv_events,
-            report_start,
-            report_end,
-            selected_muni,
-        )
-        
+        try:
+            all_entries = _fetch_entries(supabase)
+        except Exception as exc:
+            st.error(f"Unable to load RHU accomplishment records: {exc}")
+            return
+
+        workbook_entries, _ = prepare_workbook_entries(all_entries)
+
+        workbook_tab, reconciliation_tab = st.tabs([
+            "Workbook Dashboard",
+            "VaccTrack Reconciliation",
+        ])
+        with workbook_tab:
+            render_workbook_dashboard(
+                entries=workbook_entries,
+                baseline_targets=targets,
+                actual_targets=actual_targets,
+                start_date=report_start,
+                end_date=report_end,
+                selected_muni=selected_muni,
+            )
+        with reconciliation_tab:
+            _render_coordinator_view(
+                supabase,
+                g1_events,
+                g7_events,
+                hpv_events,
+                report_start,
+                report_end,
+                selected_muni,
+                all_entries=workbook_entries,
+            )

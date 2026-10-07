@@ -32,7 +32,7 @@ from programs.sbi.production_readiness import render_all_rhu_workbook_package, r
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.22.1.3"
+APP_VERSION = "v5.22.2"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
