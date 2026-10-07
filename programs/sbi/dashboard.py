@@ -19,6 +19,7 @@ from streamlit_autorefresh import st_autorefresh
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
+from programs.sbi.campaign_control import get_campaign_config
 from programs.sbi.analytics import (
     available_date_bounds,
     build_target_basis_targets,
@@ -104,6 +105,9 @@ def render_sbi_dashboard(supabase) -> None:
     df_g1, df_g4, df_g7 = fetch_sbi_vacctrack()
     df_sbi_targets = fetch_sbi_targets()
     df_sbi_actual_targets = fetch_sbi_actual_targets()
+    campaign_config = get_campaign_config(supabase)
+    activity_start = campaign_config.get("start_date")
+    activity_end = campaign_config.get("end_date")
 
     # Normalize the three VaccTrack sheet variants once, before rendering tabs.
     # The source exports include CAR-wide rows and multiple historical form
@@ -156,9 +160,19 @@ def render_sbi_dashboard(supabase) -> None:
             else:
                 selected_muni = "None"
 
+            period_options = ["2026 Campaign"]
+            activity_period_label = None
+            if activity_start and activity_end:
+                activity_period_label = (
+                    "Official Activity Period "
+                    f"({activity_start.strftime('%b %d, %Y')} to {activity_end.strftime('%b %d, %Y')})"
+                )
+                period_options.append(activity_period_label)
+            period_options.extend(["All Available Dates", "Custom Date Range"])
+
             period_mode = st.selectbox(
                 "Reporting Period:",
-                ["2026 Campaign", "All Available Dates", "Custom Date Range"],
+                period_options,
                 index=0,
                 key="sbi_reporting_period"
             )
@@ -166,12 +180,15 @@ def render_sbi_dashboard(supabase) -> None:
             if period_mode == "2026 Campaign":
                 report_start = date(2026, 1, 1)
                 report_end = date(2026, 12, 31)
+            elif activity_period_label and period_mode == activity_period_label:
+                report_start = activity_start
+                report_end = activity_end
             elif period_mode == "All Available Dates":
                 report_start = available_min_date
                 report_end = available_max_date
             else:
-                default_start = available_min_date or date(2026, 1, 1)
-                default_end = available_max_date or date(2026, 12, 31)
+                default_start = activity_start or available_min_date or date(2026, 1, 1)
+                default_end = activity_end or available_max_date or date(2026, 12, 31)
                 custom_range = st.date_input(
                     "Date Range:",
                     value=(default_start, default_end),
