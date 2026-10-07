@@ -368,7 +368,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         (
             "2",
             "PREPARE VACC TRACK",
-            "Open VaccTrack G1, G4 or G7. Set the Report Date at the top. Use the rows marked YES and encode the displayed values into VaccTrack.",
+            "Open VaccTrack G1, G4 or G7. Set the Report Date at the top. Only schools with accomplishments for that selected date and grade are shown; encode the displayed values into VaccTrack.",
             "D9:F11",
         ),
         (
@@ -569,10 +569,18 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         report_date_default = datetime.combine(datetime.now(MANILA_TZ).date(), datetime.min.time())
         vac.write_datetime("B2", report_date_default, vac_date_fmt)
         vac.data_validation("B2", {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31)})
-        vac.merge_range("D2:J2", "Select the report date, then encode the displayed school values in the matching VaccTrack grade page. Location and facility details are already handled in VaccTrack and are intentionally omitted here.", subtitle_fmt)
+        vac.merge_range(
+            "D2:J2",
+            "Select the report date. Only schools with accomplishments on that date for this grade are shown below. Encode the displayed values in the matching VaccTrack grade page.",
+            subtitle_fmt,
+        )
         vac.set_row(1, 42)
 
-        common = ["Activity?", "School"]
+        # The visible table is intentionally compact: schools without an accomplishment
+        # for the selected date/grade are omitted rather than shown as rows of zeroes.
+        # Two hidden helper columns build a compact active-school list without VBA or
+        # dynamic-array formulas, so the view updates whenever Report Date changes.
+        common = ["School"]
         reasons = [f"{code} {label}" for code, label in REASON_LABELS.items()]
         if grade == "G1":
             metrics = [
@@ -604,10 +612,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         vac.set_row(3, 72)
         # Keep only the header rows frozen. The encoder should be able to scroll freely across VaccTrack fields.
         vac.freeze_panes(4, 0)
-        vac.autofilter(3, 0, 3 + len(roster), len(headers) - 1)
-        vac.set_column(0, 0, 10)
-        vac.set_column(1, 1, 34)
-        vac.set_column(2, len(headers) - 1, 15)
+        vac.set_column(0, 0, 34)
+        vac.set_column(1, len(headers) - 1, 15)
 
         input_end = MAX_INPUT_ROWS + 1
         acc_grade_col = _column_letter(ALL_COLUMNS.index("Grade Level"))
@@ -620,52 +626,79 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             "G4": ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
         }
 
-        for idx, school in roster.iterrows():
-            excel_row = idx + 5
-            school_id = str(school["School ID"]).replace('"', '""')
-            school_name = str(school.get("School Name", ""))
-            vac.write(idx + 4, 1, school_name)
+        helper_match_col = len(headers)
+        helper_active_col = len(headers) + 1
+        vac.set_column(helper_match_col, helper_active_col, 3, None, {"hidden": True})
 
-            # Compare by calendar date rather than exact datetime serial. This keeps
-            # the workbook correct even if Report Date or an imported Activity Date
-            # contains a hidden time component.
-            count_formula = (
-                f'=IF(COUNTIFS('
-                f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
-                f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
-                f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
-                f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
-            )
-            vac.write_formula(idx + 4, 0, count_formula, helper_fmt)
+        roster_count = len(roster)
+        if roster_count:
+            first_output_row = 5
+            last_output_row = 4 + roster_count
+            active_col_letter = _column_letter(helper_active_col)
+            match_col_letter = _column_letter(helper_match_col)
 
-            metric_start = len(common)
-            metric_inputs = metric_map[grade]
-
-            for offset, source_name in enumerate(metric_inputs):
-                source_col = _column_letter(ALL_COLUMNS.index(source_name))
-                formula = (
-                    f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
+            # Hidden activity flags stay aligned to the Reference roster. Each flag is
+            # YES only when that school has an accomplishment on the selected calendar
+            # date for this VaccTrack grade.
+            for idx, school in roster.iterrows():
+                sheet_row = idx + 4
+                school_id = str(school["School ID"]).replace('"', '""')
+                active_formula = (
+                    f'=IF(COUNTIFS('
                     f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
                     f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
                     f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
-                    f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                    f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
                 )
-                vac.write_formula(idx + 4, metric_start + offset, formula, count_fmt)
+                vac.write_formula(sheet_row, helper_active_col, active_formula, helper_fmt)
 
-            reason_start = metric_start + len(metrics)
-            for r_offset, code in enumerate(REASON_LABELS):
-                source_col = _column_letter(ALL_COLUMNS.index(f"Reason {code}"))
-                formula = (
-                    f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
-                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
-                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
-                    f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
-                    f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+            # Visible rows are a compact list of only the active schools. AGGREGATE
+            # finds the 1st, 2nd, 3rd... YES helper row and leaves all later rows blank.
+            for idx in range(roster_count):
+                sheet_row = idx + 4
+                excel_row = idx + 5
+                match_formula = (
+                    f'=IFERROR(AGGREGATE(15,6,'
+                    f'(ROW(${active_col_letter}${first_output_row}:${active_col_letter}${last_output_row})-ROW(${active_col_letter}${first_output_row})+1)'
+                    f'/(${active_col_letter}${first_output_row}:${active_col_letter}${last_output_row}="YES"),'
+                    f'ROWS($A$5:A{excel_row})),"")'
                 )
-                vac.write_formula(idx + 4, reason_start + r_offset, formula, count_fmt)
+                vac.write_formula(sheet_row, helper_match_col, match_formula, helper_fmt)
 
-        vac.conditional_format(4, 0, 3 + len(roster), 0, {"type": "text", "criteria": "containing", "value": "YES", "format": ok_fmt})
-        vac.protect(PROTECTION_PASSWORD, {"autofilter": True})
+                match_cell = f'${match_col_letter}{excel_row}'
+                school_formula = (
+                    f'=IF({match_cell}="","",INDEX(Reference!$B$2:$B${last_ref_row},{match_cell}))'
+                )
+                vac.write_formula(sheet_row, 0, school_formula, formula_fmt)
+
+                metric_start = len(common)
+                metric_inputs = metric_map[grade]
+                school_id_expr = f'INDEX(Reference!$A$2:$A${last_ref_row},{match_cell})'
+
+                for offset, source_name in enumerate(metric_inputs):
+                    source_col = _column_letter(ALL_COLUMNS.index(source_name))
+                    formula = (
+                        f'=IF({match_cell}="","",SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
+                        f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
+                        f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
+                        f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},{school_id_expr},'
+                        f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}"))'
+                    )
+                    vac.write_formula(sheet_row, metric_start + offset, formula, count_fmt)
+
+                reason_start = metric_start + len(metrics)
+                for r_offset, code in enumerate(REASON_LABELS):
+                    source_col = _column_letter(ALL_COLUMNS.index(f"Reason {code}"))
+                    formula = (
+                        f'=IF({match_cell}="","",SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
+                        f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
+                        f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
+                        f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},{school_id_expr},'
+                        f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}"))'
+                    )
+                    vac.write_formula(sheet_row, reason_start + r_offset, formula, count_fmt)
+
+        vac.protect(PROTECTION_PASSWORD)
 
     add_vacctrack_sheet("VaccTrack G1", "G1")
     add_vacctrack_sheet("VaccTrack G4", "G4")
