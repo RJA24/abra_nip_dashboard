@@ -188,10 +188,61 @@ def render_all_rhu_workbook_package(read_only: bool = False) -> None:
     manifest = workbook_package_manifest(targets)
     ready = int(manifest["Status"].eq("Ready").sum())
     missing = int(manifest["Status"].ne("Ready").sum())
-    c1, c2, c3 = st.columns(3)
-    c1.metric("RHUs Ready", f"{ready}/{EXPECTED_RHU_COUNT}")
-    c2.metric("Workbook Version", WORKBOOK_VERSION)
-    c3.metric("Roster Issues", missing)
+    st.markdown(
+        """
+        <style>
+        .sbi-workbook-summary-card {
+            min-height: 124px;
+            border: 1px solid #dbe4f0;
+            border-bottom: 5px solid #0033A0;
+            border-radius: 0.65rem;
+            background: #ffffff;
+            padding: 1rem 1.1rem 0.9rem 1.1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .sbi-workbook-summary-label {
+            color: #334155;
+            font-size: 0.85rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin-bottom: 0.55rem;
+        }
+        .sbi-workbook-summary-value {
+            color: #0033A0;
+            font-size: clamp(1.55rem, 2.35vw, 2.55rem);
+            line-height: 1.05;
+            font-weight: 800;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .sbi-workbook-summary-card.version .sbi-workbook-summary-value {
+            font-size: clamp(1.05rem, 1.75vw, 1.9rem);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3 = st.columns([1, 1.35, 1])
+    cards = [
+        (c1, "RHUs Ready", f"{ready}/{EXPECTED_RHU_COUNT}", ""),
+        (c2, "Workbook Version", WORKBOOK_VERSION, "version"),
+        (c3, "Roster Issues", str(missing), ""),
+    ]
+    for column, label, value, extra_class in cards:
+        with column:
+            st.markdown(
+                f'<div class="sbi-workbook-summary-card {extra_class}">'
+                f'<div class="sbi-workbook-summary-label">{label}</div>'
+                f'<div class="sbi-workbook-summary-value">{value}</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
     st.dataframe(manifest, width="stretch", hide_index=True)
 
