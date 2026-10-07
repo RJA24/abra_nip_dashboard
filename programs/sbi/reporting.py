@@ -236,14 +236,6 @@ def render_daily_tally(
     location_label: str,
 ) -> None:
     """Render a month/day tally grid patterned after the MR SIA tally sheet."""
-    st.markdown(
-        f'''<h5 style="margin-bottom:0.25rem;">
-        <i class="fa-solid fa-table-cells" style="color:#0033A0; margin-right:8px;"></i>
-        {label} Daily Tally
-        </h5>''',
-        unsafe_allow_html=True,
-    )
-
     if events is None or events.empty or value_col not in events.columns:
         st.info(f"No {label} data are available for the tally sheet.")
         return

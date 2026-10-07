@@ -782,7 +782,7 @@ def render_workbook_dashboard(
             fig_trend.update_layout(
                 dragmode=False,
                 plot_bgcolor="rgba(0,0,0,0)",
-                xaxis_title="Activity Date",
+                xaxis_title="",
                 yaxis_title="Cumulative vaccinated students",
                 height=420,
                 margin=dict(l=10, r=20, t=25, b=55),
