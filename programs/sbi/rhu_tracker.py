@@ -1167,3 +1167,4 @@ def render_rhu_accomplishments(
             report_end,
             selected_muni,
         )
+        
