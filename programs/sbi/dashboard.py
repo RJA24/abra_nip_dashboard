@@ -170,10 +170,15 @@ def render_sbi_dashboard(supabase) -> None:
                 period_options.append(activity_period_label)
             period_options.extend(["All Available Dates", "Custom Date Range"])
 
+            default_period_index = (
+                period_options.index(activity_period_label)
+                if activity_period_label in period_options
+                else 0
+            )
             period_mode = st.selectbox(
                 "Reporting Period:",
                 period_options,
-                index=0,
+                index=default_period_index,
                 key="sbi_reporting_period"
             )
 
