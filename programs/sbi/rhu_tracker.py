@@ -991,33 +991,47 @@ def _render_coordinator_view(
             st.error(f"Unable to load RHU accomplishment records: {exc}")
             return
 
-    province_entries = _filter_period(all_entries, "activity_date", start_date, end_date) if not all_entries.empty else all_entries
-    province_events = {
-        "g1": _filter_event_period(g1_events, start_date, end_date),
-        "g7": _filter_event_period(g7_events, start_date, end_date),
-        "g4": _filter_event_period(hpv_events, start_date, end_date),
-    }
-    province_summary = _fresh_summary_table(province_entries, province_events)
-    st.markdown("#### Abra Summary")
-    st.dataframe(province_summary, width="stretch", hide_index=True)
-    if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
-        st.info("Some RHU tracker values are newer than their corresponding VaccTrack report date and are pending verification.")
+    if selected_muni in ABRA_MUNIS:
+        scope_entries = (
+            _entries_for_muni_period(all_entries, selected_muni, start_date, end_date)
+            if not all_entries.empty else pd.DataFrame()
+        )
+        scope_events = _events_for_muni_period(
+            g1_events, g7_events, hpv_events, selected_muni, start_date, end_date
+        )
+        scope_summary = _fresh_summary_table(scope_entries, scope_events)
+        st.markdown(f"#### {selected_muni} Summary")
+        st.dataframe(scope_summary, width="stretch", hide_index=True)
+        if pd.to_numeric(scope_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
+            st.info("Some RHU workbook values are newer than the corresponding VaccTrack report date and are pending verification.")
+        drill_muni = selected_muni
+    else:
+        province_entries = _filter_period(all_entries, "activity_date", start_date, end_date) if not all_entries.empty else all_entries
+        province_events = {
+            "g1": _filter_event_period(g1_events, start_date, end_date),
+            "g7": _filter_event_period(g7_events, start_date, end_date),
+            "g4": _filter_event_period(hpv_events, start_date, end_date),
+        }
+        province_summary = _fresh_summary_table(province_entries, province_events)
+        st.markdown("#### Abra Summary")
+        st.dataframe(province_summary, width="stretch", hide_index=True)
+        if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
+            st.info("Some RHU workbook values are newer than their corresponding VaccTrack report date and are pending verification.")
 
-    metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key="rhu_coord_metric")
-    muni_rows = []
-    for muni in ABRA_MUNIS:
-        muni_entries = _entries_for_muni_period(all_entries, muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
-        muni_events = _events_for_muni_period(g1_events, g7_events, hpv_events, muni, start_date, end_date)
-        row = _fresh_summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
-        row["Municipality"] = muni
-        muni_rows.append(row)
-    muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Workbook", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
-    st.markdown("#### Municipality Reconciliation")
-    st.dataframe(muni_table, width="stretch", hide_index=True)
+        metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key="rhu_coord_metric")
+        muni_rows = []
+        for muni in ABRA_MUNIS:
+            muni_entries = _entries_for_muni_period(all_entries, muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
+            muni_events = _events_for_muni_period(g1_events, g7_events, hpv_events, muni, start_date, end_date)
+            row = _fresh_summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
+            row["Municipality"] = muni
+            muni_rows.append(row)
+        muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Workbook", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
+        st.markdown("#### Municipality Reconciliation")
+        st.dataframe(muni_table, width="stretch", hide_index=True)
 
-    drill_muni = selected_muni if selected_muni in ABRA_MUNIS else None
-    drill_index = ABRA_MUNIS.index(drill_muni) if drill_muni in ABRA_MUNIS else 0
-    drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key="rhu_coord_drill_muni")
+        drill_index = 0
+        drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key="rhu_coord_drill_muni")
     drill_entries = _entries_for_muni_period(all_entries, drill_muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
     drill_events = _events_for_muni_period(g1_events, g7_events, hpv_events, drill_muni, start_date, end_date)
     drill_cutoff = _safe_school_cutoff(drill_events)
@@ -1059,7 +1073,7 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
           <div style="font-size:1.02rem;font-weight:700;color:#0f172a;margin-bottom:0.8rem;">
             <i class="fa-solid fa-route" style="color:#0033A0;margin-right:7px;"></i>RHU Encoder Process — {assigned_muni}
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.7rem;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.7rem;">
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
               <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Maintain One Offline Workbook</div>
               <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Download your RHU workbook once, then encode every activity date and school in Excel even when internet is unavailable.</div>
@@ -1069,12 +1083,8 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
               <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Use the workbook's VaccTrack sheets for daily encoding, then upload the complete current workbook when internet is available.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Review Workbook Dashboard</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Review your uploaded workbook totals, coverage, daily trend, and school-level accomplishment charts.</div>
-            </div>
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">4. Reconcile with VaccTrack</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the latest VaccTrack extract is uploaded by the NIP coordinator, refresh and check matched, pending, or discrepant records.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Refresh & Check</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the latest VaccTrack extract is uploaded by the NIP coordinator, refresh and check for matched, pending, or discrepant records.</div>
             </div>
           </div>
         </div>
@@ -1104,6 +1114,46 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
             )
 
 
+def fetch_workbook_dashboard_entries(supabase) -> pd.DataFrame:  # noqa: ANN001
+    """Load current workbook-only RHU accomplishments for read-only dashboards."""
+    ready, _ = schema_available(supabase)
+    if not ready:
+        return pd.DataFrame()
+    entries = _fetch_entries(supabase)
+    workbook_entries, _ = prepare_workbook_entries(entries)
+    return workbook_entries
+
+
+def render_vacctrack_vs_workbook(
+    supabase,
+    g1_events: pd.DataFrame,
+    g7_events: pd.DataFrame,
+    hpv_events: pd.DataFrame,
+    report_start: date | None,
+    report_end: date | None,
+    selected_muni: str | None = None,
+    workbook_entries: pd.DataFrame | None = None,
+) -> None:
+    """Province-wide read-only reconciliation between RHU workbooks and VaccTrack."""
+    if workbook_entries is None:
+        try:
+            workbook_entries = fetch_workbook_dashboard_entries(supabase)
+        except Exception as exc:
+            st.error(f"Unable to load current RHU workbook data: {exc}")
+            return
+
+    _render_coordinator_view(
+        supabase,
+        g1_events,
+        g7_events,
+        hpv_events,
+        report_start,
+        report_end,
+        selected_muni,
+        all_entries=workbook_entries,
+    )
+
+
 def render_rhu_accomplishments(
     supabase,
     targets: pd.DataFrame,
@@ -1117,6 +1167,12 @@ def render_rhu_accomplishments(
     selected_muni: str | None = None,
     actual_targets: pd.DataFrame | None = None,
 ) -> None:
+    """Render the RHU-specific operational workflow only.
+
+    Province-wide workbook analytics and VaccTrack reconciliation live in their
+    own top-level SBI tabs. RHU Encoder write actions remain locked to the
+    account's assigned municipality.
+    """
     ready, _ = schema_available(supabase)
     if not ready:
         st.error("RHU Accomplishment Tracker is not initialized. Run supabase/003_sbi_rhu_accomplishments.sql once, then reload the app.")
@@ -1131,10 +1187,12 @@ def render_rhu_accomplishments(
             return
         canonical = valid[normalize_municipality_key(canonical)]
         username = str(st.session_state.get("username") or st.session_state.get("user_name") or canonical)
+
         if is_qa_encoder:
             st.warning(
                 f"RHU QA TEST ACCOUNT — simulating {canonical} RHU. Workbook uploads are validation-only and do not save, replace, finalize, reopen, or alter production RHU data."
             )
+
         campaign = get_campaign_config(supabase)
         status = str(campaign.get("status") or "Pre-Implementation")
         announcement = str(campaign.get("announcement") or "").strip()
@@ -1150,19 +1208,19 @@ def render_rhu_accomplishments(
             st.info("SBI campaign status: PRE-IMPLEMENTATION — testing and preparation are still in progress.")
         if announcement:
             st.info(f"NIP Coordinator Announcement: {announcement}")
-        _render_rhu_encoder_process_guide(canonical)
 
+        _render_rhu_encoder_process_guide(canonical)
         render_feedback_form(supabase, canonical, username, role=user_role)
 
         upload_label = "2. QA Validate Workbook" if is_qa_encoder else "2. Upload Current Workbook"
         mine_label = "Production RHU Accomplishments" if is_qa_encoder else "My Accomplishments"
-        download_tab, upload_tab, dashboard_tab, reconciliation_tab, mine_tab = st.tabs([
+        download_tab, upload_tab, check_tab, mine_tab = st.tabs([
             "1. Offline Workbook",
             upload_label,
-            "3. Workbook Dashboard",
-            "4. VaccTrack Reconciliation",
+            "3. VaccTrack Check",
             mine_label,
         ])
+
         workbook_targets = actual_targets if actual_targets is not None and not actual_targets.empty else targets
         with download_tab:
             render_workbook_download(workbook_targets, canonical)
@@ -1174,77 +1232,32 @@ def render_rhu_accomplishments(
                 username,
                 dry_run=is_qa_encoder,
             )
-
-        # Dashboard and reconciliation are intentionally Abra-wide read views,
-        # matching the MR SIA experience. The RHU's assigned municipality still
-        # controls all workbook download/upload/write actions above.
-        try:
-            rhu_entries = _fetch_entries(supabase)
-        except Exception as exc:
-            rhu_entries = pd.DataFrame()
-            st.warning(f"Unable to load current RHU workbook data for dashboard/reconciliation: {exc}")
-
-        workbook_entries, _ = prepare_workbook_entries(rhu_entries)
-
-        with dashboard_tab:
-            if is_qa_encoder:
-                st.info(
-                    "QA read view of current production workbook data across Abra. "
-                    "Your QA dry-run upload is not included because it is never saved to production."
-                )
-            render_workbook_dashboard(
-                entries=workbook_entries,
-                baseline_targets=targets,
-                actual_targets=actual_targets,
-                start_date=report_start,
-                end_date=report_end,
-                selected_muni=selected_muni,
-            )
-
-        with reconciliation_tab:
-            _render_coordinator_view(
+        with check_tab:
+            _render_check(
                 supabase,
+                canonical,
                 g1_events,
                 g7_events,
                 hpv_events,
                 report_start,
                 report_end,
-                selected_muni,
-                all_entries=workbook_entries,
             )
-
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
+        return
+
+    # Coordinator/admin accounts do not get a duplicate province-wide dashboard here.
+    # This tab stays RHU-specific; choose a municipality in the sidebar to inspect it.
+    if selected_muni:
+        canonical = _canonical_muni(selected_muni)
+        st.markdown(f"### RHU Accomplishments — {canonical}")
+        st.caption(
+            "RHU-specific uploaded workbook records. Province-wide analytics are available in "
+            "Workbook Dashboard and VaccTrack vs Workbook."
+        )
+        _render_my_accomplishments(supabase, canonical)
     else:
-        try:
-            all_entries = _fetch_entries(supabase)
-        except Exception as exc:
-            st.error(f"Unable to load RHU accomplishment records: {exc}")
-            return
-
-        workbook_entries, _ = prepare_workbook_entries(all_entries)
-
-        workbook_tab, reconciliation_tab = st.tabs([
-            "Workbook Dashboard",
-            "VaccTrack Reconciliation",
-        ])
-        with workbook_tab:
-            render_workbook_dashboard(
-                entries=workbook_entries,
-                baseline_targets=targets,
-                actual_targets=actual_targets,
-                start_date=report_start,
-                end_date=report_end,
-                selected_muni=selected_muni,
-            )
-        with reconciliation_tab:
-            _render_coordinator_view(
-                supabase,
-                g1_events,
-                g7_events,
-                hpv_events,
-                report_start,
-                report_end,
-                selected_muni,
-                all_entries=workbook_entries,
-            )
+        st.info(
+            "RHU Accomplishments is an RHU-specific workspace. Select **Specific Municipality** "
+            "in Dashboard Filters to inspect one RHU, or use **Workbook Dashboard** for province-wide data."
+        )
