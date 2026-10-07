@@ -34,7 +34,7 @@ from programs.sbi.rhu_tracker import (
     render_vacctrack_vs_workbook,
 )
 from programs.sbi.workbook_dashboard import render_workbook_dashboard
-from programs.sbi.source_dashboard_layout import render_activity_overview, render_source_kpi_summary
+from programs.sbi.source_dashboard_layout import render_source_kpi_summary
 from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
@@ -2182,15 +2182,6 @@ def render_sbi_dashboard(supabase) -> None:
             key_prefix="sbi_vacctrack",
             row_label="Report Rows",
             latest_label="Latest Report",
-        )
-        st.divider()
-        render_activity_overview(
-            g1_view,
-            g7_view,
-            hpv_view,
-            all_municipalities=view_mode == "All Municipalities (Abra)",
-            key_prefix="sbi_vacctrack",
-            date_axis_title="Report Date",
         )
         st.divider()
 

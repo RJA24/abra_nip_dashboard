@@ -19,7 +19,7 @@ import streamlit as st
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.analytics import REASON_LABELS, build_effective_targets, reason_summary
-from programs.sbi.source_dashboard_layout import render_activity_overview, render_source_kpi_summary
+from programs.sbi.source_dashboard_layout import render_source_kpi_summary
 from programs.sbi.reporting import (
     render_daily_trend,
     render_municipality_choropleth,
@@ -378,15 +378,6 @@ def render_workbook_dashboard(
         key_prefix="sbi_workbook",
         row_label="Activity Rows",
         latest_label="Latest Activity",
-    )
-    st.divider()
-    render_activity_overview(
-        g1_view,
-        g7_view,
-        hpv_view,
-        all_municipalities=all_municipalities,
-        key_prefix="sbi_workbook",
-        date_axis_title="Activity Date",
     )
     st.divider()
 
