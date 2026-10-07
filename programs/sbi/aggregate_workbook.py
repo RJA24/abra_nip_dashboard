@@ -563,7 +563,11 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         vac.hide_gridlines(2)
         vac.write("A1", f"{name} — values to encode in VaccTrack", title_fmt)
         vac.write("A2", "Report Date", section_fmt)
-        vac.write_datetime("B2", datetime.now(MANILA_TZ).replace(tzinfo=None), vac_date_fmt)
+        # Use a date-only value. A datetime with the current clock time looks like a
+        # normal date in Excel, but exact date criteria will not match an Activity Date
+        # stored at midnight. Keeping B2 at midnight avoids hidden time components.
+        report_date_default = datetime.combine(datetime.now(MANILA_TZ).date(), datetime.min.time())
+        vac.write_datetime("B2", report_date_default, vac_date_fmt)
         vac.data_validation("B2", {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31)})
         vac.merge_range("D2:J2", "Select the report date, then encode the displayed school values in the matching VaccTrack grade page. Location and facility details are already handled in VaccTrack and are intentionally omitted here.", subtitle_fmt)
         vac.set_row(1, 42)
@@ -622,7 +626,16 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             school_name = str(school.get("School Name", ""))
             vac.write(idx + 4, 1, school_name)
 
-            count_formula = f'=IF(COUNTIFS(Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
+            # Compare by calendar date rather than exact datetime serial. This keeps
+            # the workbook correct even if Report Date or an imported Activity Date
+            # contains a hidden time component.
+            count_formula = (
+                f'=IF(COUNTIFS('
+                f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
+                f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
+                f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
+                f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
+            )
             vac.write_formula(idx + 4, 0, count_formula, helper_fmt)
 
             metric_start = len(common)
@@ -630,13 +643,25 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
             for offset, source_name in enumerate(metric_inputs):
                 source_col = _column_letter(ALL_COLUMNS.index(source_name))
-                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                formula = (
+                    f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
+                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
+                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
+                    f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
+                    f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                )
                 vac.write_formula(idx + 4, metric_start + offset, formula, count_fmt)
 
             reason_start = metric_start + len(metrics)
             for r_offset, code in enumerate(REASON_LABELS):
                 source_col = _column_letter(ALL_COLUMNS.index(f"Reason {code}"))
-                formula = f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},$B$2,Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                formula = (
+                    f'=SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
+                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
+                    f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
+                    f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
+                    f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")'
+                )
                 vac.write_formula(idx + 4, reason_start + r_offset, formula, count_fmt)
 
         vac.conditional_format(4, 0, 3 + len(roster), 0, {"type": "text", "criteria": "containing", "value": "YES", "format": ok_fmt})
@@ -1105,15 +1130,34 @@ def render_workbook_download(targets: pd.DataFrame, municipality: str) -> None:
     )
 
 
-def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, username: str) -> None:
+def render_workbook_upload(
+    supabase,
+    targets: pd.DataFrame,
+    municipality: str,
+    username: str,
+    *,
+    dry_run: bool = False,
+) -> None:
+    step_title = "Step 2 — QA Validate Workbook" if dry_run else "Step 2 — Upload Current Workbook"
     st.markdown(
-        '<h3><i class="fa-solid fa-cloud-arrow-up" style="color:#0033A0;margin-right:8px;"></i>Step 2 — Upload Current Workbook</h3>',
+        f'<h3><i class="fa-solid fa-cloud-arrow-up" style="color:#0033A0;margin-right:8px;"></i>{step_title}</h3>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        "Upload the workbook when internet is available. The upload is treated as your RHU's complete current dataset. "
-        "If you corrected or removed an entry in Excel, that change will replace the previous dashboard value after confirmation."
-    )
+    if dry_run:
+        st.markdown(
+            "Upload a workbook to test the same template, municipality, roster, activity-date, and data-quality checks used by a production RHU upload. "
+            "The results are compared with the current production RHU dataset, but nothing is saved."
+        )
+    else:
+        st.markdown(
+            "Upload the workbook when internet is available. The upload is treated as your RHU's complete current dataset. "
+            "If you corrected or removed an entry in Excel, that change will replace the previous dashboard value after confirmation."
+        )
+    if dry_run:
+        st.warning(
+            "RHU QA TEST MODE — this upload is validation-only. The workbook will be checked against the selected RHU roster and current production data, "
+            "but no accomplishment rows, upload history, finalization state, or production submission will be changed."
+        )
     if not workbook_schema_available(supabase):
         st.error("Offline workbook upload is temporarily unavailable. Please contact the NIP coordinator.")
         return
@@ -1130,13 +1174,23 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
         )
 
     if current and current.get("is_finalized"):
-        st.success("Your RHU submission is finalized. Ask the System Administrator to reopen it if a correction is required.")
-        return
+        if dry_run:
+            st.info(
+                "The production RHU submission is finalized. QA dry-run validation remains available and will not reopen or modify it."
+            )
+        else:
+            st.success("Your RHU submission is finalized. Ask the System Administrator to reopen it if a correction is required.")
+            return
 
     campaign_status = str(campaign.get("status") or "Pre-Implementation")
     if campaign_status == "Closed":
-        st.warning("SBI workbook uploads are closed by the System Administrator. You can still view your existing data and VaccTrack check.")
-        return
+        if dry_run:
+            st.info(
+                "Production workbook uploads are closed. RHU QA dry-run validation remains available because it does not write production data."
+            )
+        else:
+            st.warning("SBI workbook uploads are closed by the System Administrator. You can still view your existing data and VaccTrack check.")
+            return
     if campaign_status == "Post-Activity Correction":
         st.info(
             "Post-activity correction period: you may still upload corrections or late reports, but every Activity Date must remain within the official SBI activity date range. "
@@ -1146,16 +1200,19 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
     # Rotate the uploader key after a successful save so the selected workbook is
     # cleared on the next rerun. This makes a completed upload visually obvious
     # and reduces accidental repeat uploads of the same file.
-    upload_reset = int(st.session_state.get("sbi_offline_workbook_upload_reset", 0))
+    reset_key = "sbi_qa_offline_workbook_upload_reset" if dry_run else "sbi_offline_workbook_upload_reset"
+    success_key = "sbi_qa_offline_workbook_success_notice" if dry_run else "sbi_offline_workbook_success_notice"
+    widget_prefix = "sbi_qa_offline_workbook" if dry_run else "sbi_offline_workbook"
+    upload_reset = int(st.session_state.get(reset_key, 0))
 
-    success_notice = st.session_state.pop("sbi_offline_workbook_success_notice", None)
+    success_notice = st.session_state.pop(success_key, None)
     if success_notice:
         st.success(success_notice)
 
     uploaded = st.file_uploader(
         "Upload SBI Offline Accomplishment Workbook",
         type=["xlsx"],
-        key=f"sbi_offline_workbook_upload_{upload_reset}",
+        key=f"{widget_prefix}_upload_{upload_reset}",
         help="Use the workbook downloaded from Step 1. Do not upload VaccTrack exports here.",
     )
     if uploaded is not None:
@@ -1197,18 +1254,39 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
             st.dataframe(preview, width="stretch", hide_index=True)
 
         if removed:
-            st.warning(f"{removed} existing dashboard record(s) are not present in this workbook and will be removed after confirmation.")
-        confirm = st.checkbox(
-            "I confirm that this workbook contains the complete current SBI accomplishment data for our RHU.",
-            key=f"sbi_offline_workbook_confirm_{upload_reset}",
+            if dry_run:
+                st.warning(
+                    f"QA preview: {removed} current production record(s) are not present in this workbook. A real RHU upload would remove them, but this dry-run will not change production."
+                )
+            else:
+                st.warning(f"{removed} existing dashboard record(s) are not present in this workbook and will be removed after confirmation.")
+        confirm_label = (
+            "I confirm that I want to complete this RHU QA dry-run validation. No production data will be saved."
+            if dry_run
+            else "I confirm that this workbook contains the complete current SBI accomplishment data for our RHU."
         )
+        confirm = st.checkbox(
+            confirm_label,
+            key=f"{widget_prefix}_confirm_{upload_reset}",
+        )
+        button_label = "Complete QA Dry-Run Validation" if dry_run else "Use This Workbook as Current RHU Data"
         if st.button(
-            "Use This Workbook as Current RHU Data",
+            button_label,
             type="primary",
             disabled=not confirm,
             width="stretch",
-            key=f"sbi_offline_workbook_save_{upload_reset}",
+            key=f"{widget_prefix}_save_{upload_reset}",
         ):
+            if dry_run:
+                st.session_state[success_key] = (
+                    f"QA dry-run passed. {len(incoming):,} validated record(s); "
+                    f"{added:,} added, {modified:,} modified, {removed:,} removed, {unchanged:,} unchanged versus current production data. "
+                    "Nothing was saved or changed in production. The upload field has been cleared."
+                )
+                st.session_state[reset_key] = upload_reset + 1
+                st.toast("RHU QA dry-run validation passed.")
+                st.rerun()
+
             batch_id = hashlib.sha256(raw).hexdigest()
             try:
                 saved, removed_count = _save_snapshot(supabase, incoming, municipality, username, batch_id)
@@ -1228,13 +1306,16 @@ def render_workbook_upload(supabase, targets: pd.DataFrame, municipality: str, u
                 st.error(f"The workbook could not be saved: {exc}")
                 return
             st.cache_data.clear()
-            st.session_state["sbi_offline_workbook_success_notice"] = (
+            st.session_state[success_key] = (
                 f"Workbook uploaded successfully. Current RHU data now contains {saved:,} record(s); "
                 f"{removed_count:,} old record(s) were removed. The upload field has been cleared."
             )
-            st.session_state["sbi_offline_workbook_upload_reset"] = upload_reset + 1
+            st.session_state[reset_key] = upload_reset + 1
             st.toast("SBI workbook uploaded successfully.")
             st.rerun()
+
+    if dry_run:
+        return
 
     current = get_current_submission(supabase, municipality)
     finalization_status = str(campaign.get("status") or "Pre-Implementation")
