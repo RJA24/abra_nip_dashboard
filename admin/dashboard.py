@@ -1148,9 +1148,11 @@ def _render_rhu_accounts(supabase, read_only: bool = False) -> None:
 
     accounts = _load_accounts(supabase)
     if accounts.empty:
-        rhu_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status"])
+        rhu_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status", "must_change_password"])
+        rhu_qa_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status", "must_change_password"])
     else:
         rhu_df = accounts[accounts["role"].eq("RHU Encoder")].copy()
+        rhu_qa_df = accounts[accounts["role"].eq("RHU QA Encoder")].copy()
 
     _section_heading("fa-users-gear", "RHU Encoder Accounts")
     if not rhu_df.empty:
@@ -1299,6 +1301,142 @@ def _render_rhu_accounts(supabase, read_only: bool = False) -> None:
             _audit(supabase, f"RHU account deleted | username={action_username}")
             st.toast(f"Deleted {action_username}.")
             st.rerun()
+
+    st.divider()
+    _section_heading("fa-flask-vial", "RHU QA Encoder Accounts")
+    st.caption(
+        "RHU QA Encoder accounts simulate the selected municipality's RHU workflow. Workbook uploads are dry-run validation only: "
+        "they do not save accomplishments, create upload history, finalize submissions, or change production RHU data."
+    )
+
+    if not rhu_qa_df.empty:
+        qa_display = rhu_qa_df[["name", "username", "assigned_muni", "account_status", "must_change_password"]].rename(
+            columns={
+                "name": "Name",
+                "username": "Username",
+                "assigned_muni": "Municipality",
+                "account_status": "Status",
+                "must_change_password": "Password Change Required",
+            }
+        )
+        qa_display["Password Change Required"] = qa_display["Password Change Required"].map(
+            lambda value: "Yes" if bool(value) else "No"
+        )
+        st.dataframe(qa_display.sort_values(["Municipality", "Username"]), width="stretch", hide_index=True)
+    else:
+        st.write("No RHU QA Encoder accounts are configured yet.")
+
+    _section_heading("fa-user-plus", "Create RHU QA Encoder")
+    with st.form("rhu_qa_create_account_form"):
+        q1, q2 = st.columns(2)
+        with q1:
+            qa_name = st.text_input("Display Name", placeholder="e.g., RHU QA Tester", key="rhu_qa_new_name")
+            qa_username = st.text_input("Username", key="rhu_qa_new_username")
+        with q2:
+            qa_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, key="rhu_qa_new_muni")
+            qa_password = st.text_input("Temporary Password", type="password", key="rhu_qa_new_password")
+        create_qa_rhu = st.form_submit_button("Create RHU QA Encoder", type="primary", disabled=read_only)
+
+    if create_qa_rhu and not read_only:
+        username = qa_username.strip()
+        display_name = qa_name.strip() or "RHU QA Tester"
+        if not username or not qa_password:
+            st.error("Username and password are required.")
+        elif len(qa_password) < 8:
+            st.error("Use a password with at least 8 characters.")
+        else:
+            existing = (
+                supabase.table("user_accounts")
+                .select("username")
+                .eq("username", username)
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                st.error("That username already exists.")
+            else:
+                supabase.table("user_accounts").insert(
+                    {
+                        "username": username,
+                        "password_hash": hash_password(qa_password),
+                        "name": display_name,
+                        "role": "RHU QA Encoder",
+                        "assigned_muni": qa_muni,
+                        "account_status": "Approved",
+                        "failed_attempts": 0,
+                        "must_change_password": True,
+                    }
+                ).execute()
+                _audit(supabase, f"RHU QA Encoder created | username={username} | municipality={qa_muni}")
+                st.toast(f"RHU QA Encoder created: {username}")
+                st.rerun()
+
+    if not rhu_qa_df.empty:
+        qa_usernames = sorted(rhu_qa_df["username"].dropna().astype(str).tolist())
+
+        _section_heading("fa-location-dot", "RHU QA Municipality Assignment")
+        with st.form("rhu_qa_assignment_form"):
+            qa_assign_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_assign_username")
+            qa_row = rhu_qa_df[rhu_qa_df["username"].eq(qa_assign_username)].iloc[0]
+            qa_current_muni = str(qa_row.get("assigned_muni") or ABRA_MUNIS[0]).strip()
+            qa_current_index = ABRA_MUNIS.index(qa_current_muni) if qa_current_muni in ABRA_MUNIS else 0
+            qa_assign_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, index=qa_current_index, key="rhu_qa_assign_muni")
+            qa_assign_submit = st.form_submit_button("Update QA Assignment", disabled=read_only)
+        if qa_assign_submit and not read_only:
+            supabase.table("user_accounts").update({"assigned_muni": qa_assign_muni}).eq("username", qa_assign_username).execute()
+            _audit(supabase, f"RHU QA assignment updated | username={qa_assign_username} | municipality={qa_assign_muni}")
+            st.toast(f"Updated {qa_assign_username} to {qa_assign_muni}.")
+            st.rerun()
+
+        _section_heading("fa-key", "Reset RHU QA Password")
+        with st.form("rhu_qa_reset_password_form"):
+            qa_reset_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_reset_username")
+            qa_reset_password = st.text_input("Temporary Password", type="password", key="rhu_qa_reset_password")
+            qa_confirm_password = st.text_input("Confirm Temporary Password", type="password", key="rhu_qa_reset_confirm")
+            qa_reset_submit = st.form_submit_button("Reset QA Password", disabled=read_only)
+        if qa_reset_submit and not read_only:
+            if len(qa_reset_password) < 8:
+                st.error("Use a password with at least 8 characters.")
+            elif qa_reset_password != qa_confirm_password:
+                st.error("The passwords do not match.")
+            else:
+                supabase.table("user_accounts").update(
+                    {
+                        "password_hash": hash_password(qa_reset_password),
+                        "failed_attempts": 0,
+                        "must_change_password": True,
+                    }
+                ).eq("username", qa_reset_username).execute()
+                _audit(supabase, f"RHU QA password reset | username={qa_reset_username}")
+                st.toast(f"Temporary password set for {qa_reset_username}.")
+                st.rerun()
+
+        _section_heading("fa-user-lock", "RHU QA Account Status")
+        qa_action_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_status_username")
+        qa_selected = rhu_qa_df[rhu_qa_df["username"].eq(qa_action_username)].iloc[0]
+        qa_active = str(qa_selected.get("account_status") or "Approved").strip().lower() in {"approved", "active"}
+        qa_enable, qa_disable = st.columns(2)
+        with qa_enable:
+            if st.button("Enable RHU QA", width="stretch", disabled=(read_only or qa_active), key="rhu_qa_enable") and not read_only:
+                supabase.table("user_accounts").update({"account_status": "Approved", "failed_attempts": 0}).eq("username", qa_action_username).execute()
+                _audit(supabase, f"RHU QA enabled | username={qa_action_username}")
+                st.rerun()
+        with qa_disable:
+            if st.button("Disable RHU QA", width="stretch", disabled=(read_only or not qa_active), key="rhu_qa_disable") and not read_only:
+                supabase.table("user_accounts").update({"account_status": "Disabled"}).eq("username", qa_action_username).execute()
+                _audit(supabase, f"RHU QA disabled | username={qa_action_username}")
+                st.rerun()
+
+        _section_heading("fa-user-xmark", "Delete RHU QA Encoder")
+        qa_delete_confirm = st.text_input("Type the RHU QA username to confirm deletion", key="rhu_qa_delete_confirm")
+        if st.button("Delete RHU QA Encoder", type="secondary", disabled=read_only, key="rhu_qa_delete") and not read_only:
+            if qa_delete_confirm.strip() != qa_action_username:
+                st.error("The confirmation username does not match.")
+            else:
+                supabase.table("user_accounts").delete().eq("username", qa_action_username).execute()
+                _audit(supabase, f"RHU QA Encoder deleted | username={qa_action_username}")
+                st.toast(f"Deleted {qa_action_username}.")
+                st.rerun()
 
 def _render_admin_accounts(supabase, read_only: bool = False) -> None:
     accounts = _load_accounts(supabase)

@@ -1,1897 +1,931 @@
 from __future__ import annotations
 
-from datetime import datetime
-import hashlib
+from datetime import date, datetime
+from io import BytesIO
 import json
-import time
+import re
+import zipfile
 
-import numpy as np
 import pandas as pd
 import pytz
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 
-from auth_utils import hash_password
-from core.config import ABRA_MUNIS, SIA_SHEET_URL, SBI_SHEET_URL
-from core.geo import clean_and_process_car_data, fetch_abra_geojson
-from core.map_labels import (
-    build_label_records,
-    canonical_municipality_name,
-    invalidate_runtime_label_cache,
-    reset_all_label_positions,
-    reset_label_position,
-    save_label_records,
-    table_available as map_label_table_available,
+from core.config import ABRA_MUNIS
+from core.data import (
+    SBI_SETTINGS_TABLE,
+    VACCTRACK_GOOGLE_FALLBACK_KEY,
+    fetch_sbi_vacctrack_source_info,
+    vacctrack_google_fallback_enabled,
 )
-from db_utils import consolidate_sbi_targets, replace_table_with_rollback, validate_sbi_targets
-from programs.sbi.vacctrack_import import render_vacctrack_importer
-from programs.sbi.import_management import render_import_management
-from admin.operations import render_operations
+from programs.sbi.aggregate_workbook import (
+    SUBMISSION_TABLE,
+    TABLE_NAME as ACCOMPLISHMENT_TABLE,
+    WORKBOOK_VERSION,
+    fetch_submission_history,
+    get_current_submission,
+    reopen_current_submission,
+    restore_submission,
+)
+from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config, save_campaign_config
+from programs.sbi.admin_monitoring import render_data_quality_center, render_reconciliation_monitor
+from programs.sbi.production_readiness import render_all_rhu_workbook_package, render_production_readiness
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-ADMIN_ACCESS_ROLES = {"System Admin", "QA Admin"}
+APP_VERSION = "v5.22.6"
+FEEDBACK_TABLE = "sbi_user_feedback"
 
 
-def _is_qa_admin() -> bool:
-    return st.session_state.get("user_role") == "QA Admin"
-
-
-class _ReadOnlyTableProxy:
-    def __init__(self, table):
-        self._table = table
-
-    def __getattr__(self, name):
-        if name in {"insert", "update", "delete", "upsert"}:
-            def blocked(*args, **kwargs):
-                raise PermissionError("QA Admin is read-only. Production database changes are disabled.")
-            return blocked
-        return getattr(self._table, name)
-
-
-class _ReadOnlySupabaseProxy:
-    def __init__(self, client):
-        self._client = client
-
-    def table(self, name):
-        return _ReadOnlyTableProxy(self._client.table(name))
-
-    def __getattr__(self, name):
-        return getattr(self._client, name)
-
-
-def _now_string() -> str:
-    return datetime.now(MANILA_TZ).strftime("%Y-%m-%d %I:%M:%S %p")
-
-
-def _audit(supabase, action: str) -> None:
-    try:
-        supabase.table("access_logs").insert(
-            {
-                "timestamp": _now_string(),
-                "name": st.session_state.get("user_name") or st.session_state.get("username") or "System Admin",
-                "role": st.session_state.get("user_role") or "System Admin",
-                "action": f"Admin: {action}",
-            }
-        ).execute()
-    except Exception:
-        pass
-
-
-def _logout_session() -> None:
-    st.session_state.clear()
-    st.rerun()
-
-
-def _table_row_count(supabase, table: str, key_column: str) -> int:
-    total = 0
+def _fetch_all(build_query, page_size: int = 1000) -> list[dict]:
+    rows: list[dict] = []
     offset = 0
-    limit = 1000
     while True:
-        response = (
-            supabase.table(table)
-            .select(key_column)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-        rows = response.data or []
-        total += len(rows)
-        if len(rows) < limit:
+        response = build_query().range(offset, offset + page_size - 1).execute()
+        batch = response.data or []
+        rows.extend(batch)
+        if len(batch) < page_size:
             break
-        offset += limit
-    return total
+        offset += page_size
+    return rows
 
 
-def _load_accounts(supabase) -> pd.DataFrame:
-    response = supabase.table("user_accounts").select("*").execute()
-    if not response.data:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(response.data)
-    for col in ["username", "name", "role", "account_status", "assigned_muni"]:
-        if col not in df.columns:
-            df[col] = ""
-        df[col] = df[col].fillna("").astype(str).str.strip()
-
-    if "must_change_password" not in df.columns:
-        df["must_change_password"] = False
-    df["must_change_password"] = df["must_change_password"].map(
-        lambda value: value is True or str(value or "").strip().lower() in {"1", "true", "yes", "y"}
-    )
-
-    df.loc[df["account_status"].eq(""), "account_status"] = "Approved"
-    return df
-
-
-def _load_admin_logs(supabase, limit: int = 200) -> pd.DataFrame:
-    response = (
-        supabase.table("access_logs")
-        .select("*")
-        .order("id", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    if not response.data:
-        return pd.DataFrame(columns=["timestamp", "name", "role", "action"])
-
-    df = pd.DataFrame(response.data)
-    if "action" not in df.columns:
-        df["action"] = ""
-    df["action"] = df["action"].fillna("").astype(str)
-    df = df[df["action"].str.startswith("Admin:", na=False)].copy()
-    display_cols = [c for c in ["timestamp", "name", "action"] if c in df.columns]
-    return df[display_cols]
-
-
-
-def _load_login_logs(supabase, limit: int = 500) -> pd.DataFrame:
-    """Load one-time login events for visitors and registered accounts."""
-    response = (
-        supabase.table("access_logs")
-        .select("*")
-        .order("id", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    if not response.data:
-        return pd.DataFrame(columns=["timestamp", "name", "role", "action", "Username", "Municipality"])
-
-    df = pd.DataFrame(response.data)
-    if "action" not in df.columns:
-        df["action"] = ""
-    df["action"] = df["action"].fillna("").astype(str)
-    mask = df["action"].str.startswith("Login", na=False) | df["action"].eq("Active Session")
-    df = df.loc[mask].copy()
-    if df.empty:
-        return pd.DataFrame(columns=["timestamp", "name", "role", "action", "Username", "Municipality"])
-
-    def parse_detail(action: object, key: str) -> str:
-        raw = str(action or "")
-        for part in raw.split("|"):
-            part = part.strip()
-            if part.lower().startswith(key.lower() + "="):
-                return part.split("=", 1)[1].strip()
-        return ""
-
-    df["Username"] = df["action"].map(lambda x: parse_detail(x, "username"))
-    df["Municipality"] = df["action"].map(lambda x: parse_detail(x, "municipality"))
-    return df
-
-
-def _rhu_account_schema_available(supabase) -> tuple[bool, str]:
+def _table_exists(supabase, table: str, column: str = "id") -> tuple[bool, str]:
     try:
-        supabase.table("user_accounts").select(
-            "username,assigned_muni,must_change_password"
-        ).limit(1).execute()
-        return True, ""
+        supabase.table(table).select(column).limit(1).execute()
+        return True, "Ready"
     except Exception as exc:
-        return False, str(exc)
-
-def _active_admin_mask(accounts: pd.DataFrame) -> pd.Series:
-    if accounts.empty:
-        return pd.Series(dtype=bool)
-    status = accounts["account_status"].fillna("Approved").astype(str).str.strip().str.lower()
-    return accounts["role"].eq("System Admin") & status.isin({"approved", "active"})
+        text = str(exc).strip()
+        return False, text[:160] if text else "Unavailable"
 
 
-def _section_heading(icon: str, text: str) -> None:
-    st.markdown(
-        f"""
-        <div class="admin-section-heading">
-            <i class="fa-solid {icon}" aria-hidden="true"></i>
-            <span>{text}</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_kpi_card(icon: str, label: str, value: str, detail: str = "") -> None:
-    detail_html = f'<div class="admin-kpi-detail">{detail}</div>' if detail else ""
-    st.markdown(
-        f"""
-        <div class="admin-kpi-card">
-            <div class="admin-kpi-top">
-                <i class="fa-solid {icon}" aria-hidden="true"></i>
-                <span>{label}</span>
-            </div>
-            <div class="admin-kpi-value">{value}</div>
-            {detail_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _format_timestamp(value: object) -> tuple[str, str]:
-    raw = str(value or "").strip()
-    if not raw or raw.lower() in {"none", "nan", "not recorded"}:
-        return "Not recorded", ""
-
-    parsed = pd.to_datetime(raw, errors="coerce")
+def _format_date(value) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
     if pd.isna(parsed):
-        return raw, ""
-
-    return parsed.strftime("%b %d, %Y"), parsed.strftime("%I:%M %p").lstrip("0")
-
-
-def _clean_activity(action: object) -> tuple[str, str]:
-    raw = str(action or "").strip()
-    if raw.lower().startswith("admin:"):
-        raw = raw.split(":", 1)[1].strip()
-
-    parts = [part.strip() for part in raw.split("|") if part.strip()]
-    if not parts:
-        return "", ""
-
-    activity = parts[0]
-    detail_labels = {
-        "rows": "Rows",
-        "exact_duplicates": "Exact duplicates",
-        "repeated_ids": "Repeated IDs",
-        "username": "Username",
-    }
-
-    details = []
-    for part in parts[1:]:
-        if "=" in part:
-            key, value = part.split("=", 1)
-            label = detail_labels.get(key.strip(), key.strip().replace("_", " ").title())
-            details.append(f"{label}: {value.strip()}")
-        else:
-            details.append(part)
-
-    return activity, " · ".join(details)
+        return ""
+    return parsed.strftime("%b %d, %Y")
 
 
-def _prepare_sia_targets() -> pd.DataFrame:
-    conn = st.connection("gsheets", type=GSheetsConnection)
+def _format_datetime(value) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return ""
+    return parsed.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
 
-    mr_cols = [
-        "Code", "Location", "6-59m_M", "6-59m_F", "6-59m_Total",
-        "6-12m_M", "6-12m_F", "6-12m_Total",
-        "13-23m_M", "13-23m_F", "13-23m_Total",
-        "24-59m_M", "24-59m_F", "24-59m_Total",
+
+def render_system_health(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### System Health")
+    st.caption(f"System version: {APP_VERSION}")
+
+    operational_checks = [
+        ("Accounts", "user_accounts", "username"),
+        ("Access Logs", "access_logs", "id"),
+        ("SBI Targets", "sbi_targets", "school_id"),
+        ("RHU Accomplishments", "sbi_rhu_accomplishments", "id"),
+        ("VaccTrack Imports", "sbi_vacctrack_imports", "id"),
+        ("VaccTrack Rows", "sbi_vacctrack_rows", "id"),
+        ("RHU Feedback", FEEDBACK_TABLE, "id"),
+        ("SBI Settings", SBI_SETTINGS_TABLE, "setting_key"),
+        ("SBI Workbook Submissions", SUBMISSION_TABLE, "id"),
     ]
-    df_mr_nat = clean_and_process_car_data(
-        conn.read(
-            spreadsheet=SIA_SHEET_URL,
-            worksheet="MR Target(CAR)",
-            usecols=list(range(14)),
-            skiprows=2,
-            names=mr_cols,
-            ttl=0,
-        ),
-        mr_cols,
-    )
-
-    mr_act_cols = [
-        "Code", "Location", "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-59m_Total",
-        "Act_MR_6-12m_M", "Act_MR_6-12m_F", "Act_MR_6-12m_Total",
-        "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_13-23m_Total",
-        "Act_MR_24-59m_M", "Act_MR_24-59m_F", "Act_MR_24-59m_Total",
-    ]
-    df_mr_act = clean_and_process_car_data(
-        conn.read(
-            spreadsheet=SIA_SHEET_URL,
-            worksheet="MR Actual Target(UPDATE THIS)",
-            usecols=list(range(14)),
-            skiprows=2,
-            names=mr_act_cols,
-            ttl=0,
-        ),
-        mr_act_cols,
-    )
-
-    vita_cols = [
-        "Code", "Location", "VitA_6-11m_M", "VitA_6-11m_F", "VitA_6-11m_Total",
-        "VitA_12-59m_M", "VitA_12-59m_F", "VitA_12-59m_Total", "VitA_Total",
-    ]
-    df_vita_nat = clean_and_process_car_data(
-        conn.read(
-            spreadsheet=SIA_SHEET_URL,
-            worksheet="Vitamin A Target",
-            usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9],
-            skiprows=2,
-            names=vita_cols,
-            ttl=0,
-        ),
-        vita_cols,
-    )
-
-    vita_act_cols = [
-        "Code", "Location", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_6-11m_Total",
-        "Act_VitA_12-59m_M", "Act_VitA_12-59m_F", "Act_VitA_12-59m_Total", "Act_VitA_Total",
-    ]
-    df_vita_act = clean_and_process_car_data(
-        conn.read(
-            spreadsheet=SIA_SHEET_URL,
-            worksheet="Vitamin A Actual Target(UPDATE THIS)",
-            usecols=[0, 2, 3, 4, 5, 6, 7, 8, 9],
-            skiprows=2,
-            names=vita_act_cols,
-            ttl=0,
-        ),
-        vita_act_cols,
-    )
-
-    if df_mr_nat.empty:
-        raise ValueError("The MR projected target sheet returned no records.")
-
-    for c in ["VitA_6-11m_M", "VitA_12-59m_M", "VitA_6-11m_F", "VitA_12-59m_F"]:
-        df_vita_nat[c] = pd.to_numeric(
-            df_vita_nat[c].astype(str).str.replace(",", ""), errors="coerce"
-        ).fillna(0)
-    df_vita_nat["VitA_Total_M"] = df_vita_nat["VitA_6-11m_M"] + df_vita_nat["VitA_12-59m_M"]
-    df_vita_nat["VitA_Total_F"] = df_vita_nat["VitA_6-11m_F"] + df_vita_nat["VitA_12-59m_F"]
-
-    for c in ["Act_VitA_6-11m_M", "Act_VitA_12-59m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_F"]:
-        df_vita_act[c] = pd.to_numeric(
-            df_vita_act[c].astype(str).str.replace(",", ""), errors="coerce"
-        ).fillna(0)
-    df_vita_act["Act_VitA_Total_M"] = df_vita_act["Act_VitA_6-11m_M"] + df_vita_act["Act_VitA_12-59m_M"]
-    df_vita_act["Act_VitA_Total_F"] = df_vita_act["Act_VitA_6-11m_F"] + df_vita_act["Act_VitA_12-59m_F"]
-
-    df_merged = df_mr_nat.copy()
-    df_merged = pd.merge(
-        df_merged,
-        df_mr_act[
-            [
-                "Code", "Act_MR_6-59m_Total", "Act_MR_6-59m_M", "Act_MR_6-59m_F",
-                "Act_MR_6-12m_Total", "Act_MR_6-12m_M", "Act_MR_6-12m_F",
-                "Act_MR_13-23m_Total", "Act_MR_13-23m_M", "Act_MR_13-23m_F",
-                "Act_MR_24-59m_Total", "Act_MR_24-59m_M", "Act_MR_24-59m_F",
-            ]
-        ],
-        on="Code",
-        how="left",
-    )
-    df_merged = pd.merge(
-        df_merged,
-        df_vita_nat[
-            [
-                "Code", "VitA_6-11m_Total", "VitA_12-59m_Total", "VitA_Total",
-                "VitA_6-11m_M", "VitA_6-11m_F", "VitA_12-59m_M", "VitA_12-59m_F",
-                "VitA_Total_M", "VitA_Total_F",
-            ]
-        ],
-        on="Code",
-        how="left",
-    )
-    df_merged = pd.merge(
-        df_merged,
-        df_vita_act[
-            [
-                "Code", "Act_VitA_6-11m_Total", "Act_VitA_6-11m_M", "Act_VitA_6-11m_F",
-                "Act_VitA_12-59m_Total", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F",
-                "Act_VitA_Total", "Act_VitA_Total_M", "Act_VitA_Total_F",
-            ]
-        ],
-        on="Code",
-        how="left",
-    )
-
-    source_columns = [
-        "Code", "Location", "Level", "Parent_Province", "Parent_Municipality",
-        "6-59m_Total", "6-12m_Total", "13-23m_Total", "24-59m_Total",
-        "6-59m_M", "6-59m_F", "6-12m_M", "6-12m_F", "13-23m_M", "13-23m_F", "24-59m_M", "24-59m_F",
-        "VitA_6-11m_Total", "VitA_12-59m_Total", "VitA_Total",
-        "VitA_6-11m_M", "VitA_6-11m_F", "VitA_12-59m_M", "VitA_12-59m_F", "VitA_Total_M", "VitA_Total_F",
-        "Act_MR_6-59m_Total", "Act_MR_6-12m_Total", "Act_MR_13-23m_Total", "Act_MR_24-59m_Total",
-        "Act_VitA_6-11m_Total", "Act_VitA_12-59m_Total", "Act_VitA_Total",
-        "Act_MR_6-59m_M", "Act_MR_6-59m_F", "Act_MR_6-12m_M", "Act_MR_6-12m_F",
-        "Act_MR_13-23m_M", "Act_MR_13-23m_F", "Act_MR_24-59m_M", "Act_MR_24-59m_F",
-        "Act_VitA_6-11m_M", "Act_VitA_6-11m_F", "Act_VitA_12-59m_M", "Act_VitA_12-59m_F",
-        "Act_VitA_Total_M", "Act_VitA_Total_F",
-    ]
-    df_push = df_merged[source_columns].copy()
-    df_push.columns = [
-        "code", "location", "level", "parent_province", "parent_municipality",
-        "grand_total_6_59m", "grand_total_6_12m", "grand_total_13_23m", "grand_total_24_59m",
-        "mr_6_59m_m", "mr_6_59m_f", "mr_6_12m_m", "mr_6_12m_f", "mr_13_23m_m", "mr_13_23m_f", "mr_24_59m_m", "mr_24_59m_f",
-        "vita_6_11m", "vita_12_59m", "vita_total",
-        "vita_6_11m_m", "vita_6_11m_f", "vita_12_59m_m", "vita_12_59m_f", "vita_total_m", "vita_total_f",
-        "actual_mr_6_59m_total", "actual_mr_6_12m_total", "actual_mr_13_23m_total", "actual_mr_24_59m_total",
-        "actual_vita_6_11m_total", "actual_vita_12_59m_total", "actual_vita_total",
-        "actual_mr_6_59m_m", "actual_mr_6_59m_f", "actual_mr_6_12m_m", "actual_mr_6_12m_f",
-        "actual_mr_13_23m_m", "actual_mr_13_23m_f", "actual_mr_24_59m_m", "actual_mr_24_59m_f",
-        "actual_vita_6_11m_m", "actual_vita_6_11m_f", "actual_vita_12_59m_m", "actual_vita_12_59m_f",
-        "actual_vita_total_m", "actual_vita_total_f",
+    legacy_checks = [
+        ("Legacy Learner Records", "sbi_linelist_records", "id"),
+        ("Legacy Line-List Imports", "sbi_linelist_imports", "id"),
+        ("Legacy Line-List Audit", "sbi_linelist_audit", "id"),
+        ("Legacy Regional Sessions", "sbi_regional_sessions", "id"),
     ]
 
-    numeric_cols = df_push.columns[5:]
-    for c in numeric_cols:
-        df_push[c] = pd.to_numeric(df_push[c], errors="coerce").fillna(0).astype(int)
-
-    df_push["code"] = df_push["code"].fillna("").astype(str).str.strip()
-    if (df_push["code"] == "").any():
-        raise ValueError("One or more MR SIA target rows have a blank geographic code.")
-    if df_push["code"].duplicated().any():
-        raise ValueError("Duplicate geographic codes were detected in the prepared MR SIA targets.")
-
-    return df_push.replace({np.nan: None})
-
-
-def _sync_sia_targets(supabase) -> int:
-    df_push = _prepare_sia_targets()
-    records = df_push.to_dict(orient="records")
-    if not records:
-        raise ValueError("Refusing to sync an empty MR SIA target dataset.")
-
-    # Preserve the established SIA behavior: upsert by the table's configured key.
-    for start in range(0, len(records), 500):
-        supabase.table("targets").upsert(records[start:start + 500]).execute()
-    return len(records)
-
-
-def _prepare_sbi_targets() -> tuple[pd.DataFrame, dict]:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_raw = conn.read(
-        spreadsheet=SBI_SHEET_URL,
-        worksheet="Target by School",
-        skiprows=5,
-        ttl=0,
-    )
-    if df_raw.empty:
-        raise ValueError("The SBI Target by School sheet returned no records.")
-
-    df_raw.columns = [str(c).strip() for c in df_raw.columns]
-    if "Province" in df_raw.columns:
-        df_raw = df_raw[df_raw["Province"].astype(str).str.upper() == "ABRA"].copy()
-
-    required_source = {
-        "Municipality", "Barangay", "beis_school_id", "School_name",
-        "g1male", "g1female", "g4female", "g7male", "g7female",
-    }
-    missing = sorted(required_source - set(df_raw.columns))
-    if missing:
-        raise ValueError(f"Missing SBI source columns: {', '.join(missing)}")
-
-    # Canonicalize DepEd naming variants (for example, "Bangued (Capital)")
-    # before persisting baseline targets so RHU account assignments match cleanly.
-    df_raw["Municipality"] = df_raw["Municipality"].map(canonical_municipality_name)
-    df_raw["School_name"] = df_raw["School_name"].astype(str).str.strip()
-    df_raw["beis_school_id"] = df_raw["beis_school_id"].astype(str).str.replace(r"\.0$", "", regex=True)
-
-    target_cols = {
-        "Municipality": "municipality",
-        "Barangay": "barangay",
-        "beis_school_id": "school_id",
-        "School_name": "school_name",
-        "g1male": "g1_male",
-        "g1female": "g1_female",
-        "g4female": "g4_female",
-        "g7male": "g7_male",
-        "g7female": "g7_female",
-    }
-    df_push = df_raw[list(target_cols)].rename(columns=target_cols)
-
-    for c in ["g1_male", "g1_female", "g4_female", "g7_male", "g7_female"]:
-        df_push[c] = pd.to_numeric(df_push[c], errors="coerce").fillna(0).astype(int)
-    df_push["g1_total"] = df_push["g1_male"] + df_push["g1_female"]
-    df_push["g7_total"] = df_push["g7_male"] + df_push["g7_female"]
-
-    df_push, dedupe_report = consolidate_sbi_targets(df_push)
-    valid, validation_message = validate_sbi_targets(df_push)
-    if not valid:
-        raise ValueError(validation_message)
-
-    return df_push.replace({np.nan: None}), dedupe_report
-
-
-def _sync_sbi_targets(supabase) -> tuple[int, dict]:
-    df_push, dedupe_report = _prepare_sbi_targets()
-    records = df_push.to_dict(orient="records")
-    inserted = replace_table_with_rollback(supabase, "sbi_targets", records)
-    return inserted, dedupe_report
-
-
-def _render_sidebar() -> None:
-    role = st.session_state.get("user_role") or "System Admin"
-    with st.sidebar:
-        st.markdown(
-            f"""
-            <div style="text-align:center;padding:10px 0 15px 0;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/1/1a/Abra_provincial_seal.png"
-                     width="90" style="margin-bottom:15px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.1));">
-                <h3 style="margin:0;font-size:1.15rem;font-weight:700;">{st.session_state.get('user_name', role)}</h3>
-                <p style="margin:2px 0 12px 0;font-size:0.85rem;opacity:0.8;font-style:italic;">{role}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.divider()
-        if st.button("Main Menu", width="stretch", key="admin_main_menu"):
-            st.session_state["active_program"] = None
-            st.rerun()
-        if st.button("Logout", width="stretch", key="admin_logout"):
-            _logout_session()
-
-
-def _render_overview(supabase) -> None:
-    accounts = _load_accounts(supabase)
-    active_admins = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
-    qa_admins = int(accounts["role"].eq("QA Admin").sum()) if not accounts.empty else 0
-
-    try:
-        sia_count = _table_row_count(supabase, "targets", "code")
-    except Exception:
-        sia_count = 0
-
-    try:
-        sbi_count = _table_row_count(supabase, "sbi_targets", "school_id")
-    except Exception:
-        sbi_count = 0
-
-    logs = _load_admin_logs(supabase, 200)
-    sync_logs = (
-        logs[logs["action"].str.contains("target sync complete", case=False, na=False)]
-        if not logs.empty
-        else logs
-    )
-    last_sync_raw = (
-        sync_logs.iloc[0]["timestamp"]
-        if not sync_logs.empty and "timestamp" in sync_logs.columns
-        else "Not recorded"
-    )
-    last_sync_date, last_sync_time = _format_timestamp(last_sync_raw)
-
-    c1, c2, c3, c4 = st.columns(4, gap="medium")
-    with c1:
-        _render_kpi_card("fa-user-shield", "Active Admins", f"{active_admins:,}", f"{qa_admins:,} QA read-only")
-    with c2:
-        _render_kpi_card("fa-syringe", "MR SIA Target Rows", f"{sia_count:,}")
-    with c3:
-        _render_kpi_card("fa-school", "SBI School Rows", f"{sbi_count:,}")
-    with c4:
-        _render_kpi_card("fa-clock-rotate-left", "Last Target Sync", last_sync_date, last_sync_time)
-
-    try:
-        login_logs = _load_login_logs(supabase, 1000)
-    except Exception:
-        login_logs = pd.DataFrame()
-    rhu_accounts = int(accounts["role"].eq("RHU Encoder").sum()) if not accounts.empty else 0
-    logins_today = 0
-    latest_login_name = "Not recorded"
-    latest_login_time = ""
-    if not login_logs.empty:
-        parsed = pd.to_datetime(login_logs.get("timestamp"), errors="coerce")
-        logins_today = int((parsed.dt.date == datetime.now(MANILA_TZ).date()).sum())
-        latest_login_name = str(login_logs.iloc[0].get("name") or "Unknown")
-        _, latest_login_time = _format_timestamp(login_logs.iloc[0].get("timestamp"))
-    l1, l2, l3 = st.columns(3, gap="medium")
-    with l1:
-        _render_kpi_card("fa-hospital-user", "RHU Accounts", f"{rhu_accounts:,}")
-    with l2:
-        _render_kpi_card("fa-right-to-bracket", "Logins Today", f"{logins_today:,}")
-    with l3:
-        _render_kpi_card("fa-user-clock", "Latest Login", latest_login_name, latest_login_time)
-
-    _section_heading("fa-database", "Data Status")
-    status = pd.DataFrame(
-        [
+    status_rows = []
+    for label, table, column in operational_checks:
+        ready, detail = _table_exists(supabase, table, column)
+        status_rows.append(
             {
-                "Program": "MR SIA",
-                "Database": "targets",
-                "Rows": sia_count,
-                "Status": "Ready" if sia_count else "Empty",
-            },
-            {
-                "Program": "SBI",
-                "Database": "sbi_targets",
-                "Rows": sbi_count,
-                "Status": "Ready" if sbi_count else "Empty",
-            },
-        ]
-    )
-    st.dataframe(
-        status,
-        width="stretch",
-        hide_index=True,
-        column_config={"Rows": st.column_config.NumberColumn("Rows", format="%d")},
-    )
-
-    _section_heading("fa-clock-rotate-left", "Recent Admin Activity")
-    if logs.empty:
-        st.write("No admin activity has been recorded yet.")
-    else:
-        recent = logs.head(10).copy()
-        recent[["Activity", "Details"]] = recent["action"].apply(
-            lambda value: pd.Series(_clean_activity(value))
-        )
-        recent["Date / Time"] = recent["timestamp"].apply(
-            lambda value: " ".join(filter(None, _format_timestamp(value)))
-        )
-        recent = recent.rename(columns={"name": "Admin"})
-        display_cols = ["Date / Time", "Admin", "Activity", "Details"]
-        st.dataframe(
-            recent[[c for c in display_cols if c in recent.columns]],
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Date / Time": st.column_config.TextColumn("Date / Time", width="medium"),
-                "Admin": st.column_config.TextColumn("Admin", width="medium"),
-                "Activity": st.column_config.TextColumn("Activity", width="medium"),
-                "Details": st.column_config.TextColumn("Details", width="large"),
-            },
-        )
-
-
-    _section_heading("fa-right-to-bracket", "Recent Logins")
-    if login_logs.empty:
-        st.write("No login events have been recorded yet.")
-    else:
-        recent_logins = login_logs.head(10).copy()
-        recent_logins["Date / Time"] = recent_logins["timestamp"].apply(
-            lambda value: " ".join(filter(None, _format_timestamp(value)))
-        )
-        recent_logins = recent_logins.rename(columns={"name": "Name", "role": "Role"})
-        recent_cols = ["Date / Time", "Name", "Role", "Municipality"]
-        for col in recent_cols:
-            if col not in recent_logins.columns:
-                recent_logins[col] = ""
-        st.dataframe(recent_logins[recent_cols], width="stretch", hide_index=True)
-
-
-def _render_data_sync(supabase, read_only: bool = False) -> None:
-    _section_heading("fa-syringe", "MR SIA Targets")
-    try:
-        current_sia = _table_row_count(supabase, "targets", "code")
-    except Exception:
-        current_sia = 0
-    st.metric("Current Database Rows", f"{current_sia:,}")
-
-    if st.button("Sync MR SIA Targets", type="primary", width="stretch", disabled=read_only, key="admin_sync_sia") and not read_only:
-        with st.spinner("Syncing MR SIA targets..."):
-            try:
-                rows = _sync_sia_targets(supabase)
-                _audit(supabase, f"MR SIA target sync complete | rows={rows}")
-                st.cache_data.clear()
-                st.toast(f"MR SIA targets synced: {rows:,} rows.")
-                time.sleep(0.5)
-                st.rerun()
-            except Exception as exc:
-                _audit(supabase, f"MR SIA target sync failed | {type(exc).__name__}")
-                st.error(f"MR SIA target sync failed: {exc}")
-
-    st.divider()
-    _section_heading("fa-school", "SBI Targets")
-    try:
-        current_sbi = _table_row_count(supabase, "sbi_targets", "school_id")
-    except Exception:
-        current_sbi = 0
-    st.metric("Current Database Rows", f"{current_sbi:,}")
-
-    if st.button("Sync SBI Targets", type="primary", width="stretch", disabled=read_only, key="admin_sync_sbi") and not read_only:
-        with st.spinner("Syncing SBI targets..."):
-            try:
-                rows, report = _sync_sbi_targets(supabase)
-                _audit(
-                    supabase,
-                    "SBI target sync complete | "
-                    f"rows={rows} | exact_duplicates={report.get('exact_duplicates_removed', 0)} | "
-                    f"repeated_ids={report.get('duplicate_ids_consolidated', 0)}",
-                )
-                st.cache_data.clear()
-                st.toast(f"SBI targets synced: {rows:,} schools.")
-                time.sleep(0.5)
-                st.rerun()
-            except Exception as exc:
-                _audit(supabase, f"SBI target sync failed | {type(exc).__name__}")
-                st.error(f"SBI target sync failed: {exc}")
-
-    st.divider()
-    render_vacctrack_importer(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
-
-    st.divider()
-    _section_heading("fa-clock-rotate-left", "Sync History")
-    logs = _load_admin_logs(supabase, 200)
-    if logs.empty:
-        st.write("No target sync history has been recorded yet.")
-    else:
-        sync_logs = logs[logs["action"].str.contains("target sync", case=False, na=False)].head(20)
-        if sync_logs.empty:
-            st.write("No target sync history has been recorded yet.")
-        else:
-            st.dataframe(sync_logs, width="stretch", hide_index=True)
-
-
-
-def _bump_map_label_editor_revision() -> None:
-    st.session_state["_map_label_editor_revision"] = int(
-        st.session_state.get("_map_label_editor_revision", 0)
-    ) + 1
-    st.session_state.pop("_map_label_editor_payload", None)
-
-
-
-def _build_map_label_editor(records: pd.DataFrame):
-    import folium
-    from branca.element import MacroElement, Template
-    from folium.plugins import Draw
-    from streamlit_folium import st_folium
-
-    geojson = fetch_abra_geojson()
-    if not geojson:
-        st.error("Abra municipality boundary data could not be loaded.")
-        return None
-
-    m = folium.Map(
-        location=[17.58, 120.80],
-        zoom_start=9,
-        tiles=None,
-        control_scale=True,
-        prefer_canvas=False,
-    )
-    folium.TileLayer(
-        tiles=(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/"
-            "Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-        ),
-        attr="Esri World Light Gray Canvas",
-        name="Light Gray",
-        overlay=False,
-        control=False,
-    ).add_to(m)
-
-    folium.GeoJson(
-        geojson,
-        name="Abra Municipalities",
-        style_function=lambda _feature: {
-            "fillColor": "#dbeafe",
-            "color": "#475569",
-            "weight": 1.2,
-            "fillOpacity": 0.38,
-        },
-        highlight_function=lambda _feature: {
-            "weight": 2,
-            "color": "#0033A0",
-            "fillOpacity": 0.50,
-        },
-    ).add_to(m)
-
-    draw = Draw(
-        export=False,
-        position="topright",
-        draw_options={
-            "polyline": False,
-            "polygon": False,
-            "rectangle": False,
-            "circle": False,
-            "circlemarker": False,
-            "marker": False,
-        },
-        edit_options={"edit": True, "remove": False},
-    )
-    draw.add_to(m)
-
-    labels = []
-    for _, row in records.iterrows():
-        labels.append(
-            {
-                "key": str(row["municipality_key"]),
-                "name": str(row["municipality_name"]),
-                "lat": float(row["label_lat"]),
-                "lon": float(row["label_lon"]),
+                "Component": label,
+                "Table": table,
+                "Status": "Ready" if ready else "Needs attention",
+                "Detail": "Available" if ready else detail,
             }
         )
 
-    class _EditableLabelLayer(MacroElement):
-        def __init__(self, draw_group_var: str, label_rows: list[dict]):
-            super().__init__()
-            self._name = "EditableLabelLayer"
-            self.draw_group_var = draw_group_var
-            self.labels_json = json.dumps(label_rows, ensure_ascii=False)
-            self._template = Template(
-                r'''
-                {% macro script(this, kwargs) %}
-                (function() {
-                    var group = {{ this.draw_group_var|safe }};
-                    var labels = {{ this.labels_json|safe }};
-                    labels.forEach(function(item) {
-                        var safeName = String(item.name)
-                            .replace(/&/g, "&amp;")
-                            .replace(/</g, "&lt;")
-                            .replace(/>/g, "&gt;")
-                            .replace(/"/g, "&quot;")
-                            .replace(/'/g, "&#039;");
-                        var icon = L.divIcon({
-                            className: "nip-label-anchor",
-                            html: '<div class="nip-label-chip">' + safeName + '</div>',
-                            iconSize: [126, 30],
-                            iconAnchor: [63, 15]
-                        });
-                        var marker = L.marker([item.lat, item.lon], {
-                            icon: icon,
-                            keyboard: true,
-                            title: item.name
-                        });
-                        marker.feature = {
-                            type: "Feature",
-                            properties: {
-                                municipality_key: item.key,
-                                municipality_name: item.name
-                            }
-                        };
-                        group.addLayer(marker);
-                    });
-                })();
-                {% endmacro %}
-                '''
+    ready_count = sum(row["Status"] == "Ready" for row in status_rows)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Operational Components", f"{ready_count}/{len(status_rows)}")
+    c2.metric("System Version", APP_VERSION)
+    c3.metric("Server Time", datetime.now(MANILA_TZ).strftime("%I:%M %p"))
+
+    st.dataframe(pd.DataFrame(status_rows), width="stretch", hide_index=True)
+
+    with st.expander("Legacy / archival SBI tables", expanded=False):
+        st.caption(
+            "These tables belong to retired learner-level and regional test workflows. They are kept only for historical cleanup or audit and do not affect current aggregate-workbook production readiness."
+        )
+        legacy_rows = []
+        for label, table, column in legacy_checks:
+            ready, detail = _table_exists(supabase, table, column)
+            legacy_rows.append(
+                {
+                    "Component": label,
+                    "Table": table,
+                    "Status": "Available" if ready else "Not installed / unavailable",
+                    "Detail": "Legacy data retained" if ready else detail,
+                }
             )
+        st.dataframe(pd.DataFrame(legacy_rows), width="stretch", hide_index=True)
 
-    _EditableLabelLayer(f"drawnItems_{draw.get_name()}", labels).add_to(m)
-
-    m.get_root().header.add_child(
-        folium.Element(
-            """
-            <style>
-            .nip-label-anchor { background: transparent !important; border: 0 !important; }
-            .nip-label-chip {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                min-width: 76px;
-                padding: 3px 7px;
-                border: 1px solid rgba(15, 23, 42, 0.42);
-                border-radius: 5px;
-                background: rgba(255, 255, 255, 0.90);
-                color: #0f172a;
-                font: 700 11px/1.15 Arial, sans-serif;
-                text-align: center;
-                white-space: nowrap;
-                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
-                cursor: move;
-                user-select: none;
-            }
-            .leaflet-edit-marker-selected .nip-label-chip {
-                border-color: #0033A0;
-                box-shadow: 0 0 0 2px rgba(0, 51, 160, 0.18);
-            }
-            </style>
-            """
-        )
+    st.markdown("#### VaccTrack Data Sources")
+    fallback_enabled = vacctrack_google_fallback_enabled()
+    current_label = "On" if fallback_enabled else "Off"
+    st.caption(
+        f"Google Sheet fallback: {current_label}. When it is on, Google Sheets is used only for a grade that has no direct VaccTrack upload."
     )
 
-    return st_folium(
-        m,
-        key=f"nip_municipality_label_editor_map_{st.session_state.get('_map_label_editor_revision', 0)}",
-        height=650,
-        use_container_width=True,
-        returned_objects=["all_drawings", "last_clicked"],
-    )
-
-
-def _positions_from_drawings(drawings) -> dict[str, tuple[float, float]]:
-    positions: dict[str, tuple[float, float]] = {}
-    for feature in drawings or []:
-        if not isinstance(feature, dict):
-            continue
-        props = feature.get("properties") or {}
-        geometry = feature.get("geometry") or {}
-        coords = geometry.get("coordinates") or []
-        key = str(props.get("municipality_key") or "").strip()
-        if not key or geometry.get("type") != "Point" or len(coords) < 2:
-            continue
-        try:
-            positions[key] = (float(coords[1]), float(coords[0]))
-        except (TypeError, ValueError):
-            continue
-    return positions
-
-
-def _merge_pending_label_positions(records: pd.DataFrame) -> pd.DataFrame:
-    work = records.copy()
-    pending = st.session_state.get("_map_label_pending", {})
-    if not pending or work.empty:
-        return work
-
-    for key, position in pending.items():
-        mask = work["municipality_key"].eq(key)
-        if not mask.any():
-            continue
-        lat, lon = position
-        work.loc[mask, "label_lat"] = float(lat)
-        work.loc[mask, "label_lon"] = float(lon)
-        work.loc[mask, "lat_nudge"] = float(lat) - work.loc[mask, "centroid_lat"]
-        work.loc[mask, "lon_nudge"] = float(lon) - work.loc[mask, "centroid_lon"]
-        work.loc[mask, "source"] = "Unsaved"
-    return work
-
-
-def _render_map_label_editor(supabase, read_only: bool = False) -> None:
-    _section_heading("fa-map-location-dot", "Municipality Label Editor")
-
-    table_ready = map_label_table_available(supabase)
-    if not table_ready:
-        st.error(
-            "Map label storage is not configured yet. Run "
-            "supabase/001_map_label_positions.sql in the Supabase SQL Editor, then reload this page."
+    settings_ready, _ = _table_exists(supabase, SBI_SETTINGS_TABLE, "setting_key")
+    if settings_ready:
+        desired = st.toggle(
+            "Enable Google Sheet fallback when a direct VaccTrack upload is missing",
+            value=fallback_enabled,
+            key="ops_vacctrack_google_fallback",
+            disabled=read_only,
         )
+        if desired != fallback_enabled and not read_only:
+            actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
+            supabase.table(SBI_SETTINGS_TABLE).upsert(
+                {
+                    "setting_key": VACCTRACK_GOOGLE_FALLBACK_KEY,
+                    "setting_value": "true" if desired else "false",
+                    "updated_at": datetime.now(MANILA_TZ).isoformat(),
+                    "updated_by": actor,
+                },
+                on_conflict="setting_key",
+            ).execute()
+            if audit_callback:
+                audit_callback(supabase, f"VaccTrack Google Sheet fallback {'enabled' if desired else 'disabled'}")
+            st.cache_data.clear()
+            st.toast(f"Google Sheet fallback turned {'on' if desired else 'off'}.")
+            st.rerun()
+    else:
+        st.info("Run supabase/010_sbi_vacctrack_fallback_setting.sql to manage the Google Sheet fallback from the dashboard.")
 
-    base_records = build_label_records(supabase)
-    if base_records.empty:
-        st.error("Abra municipality label positions could not be prepared.")
+    source_info = fetch_sbi_vacctrack_source_info()
+    source_rows = []
+    for grade in ("G1", "G4", "G7"):
+        info = source_info.get(grade, {}) or {}
+        source_rows.append(
+            {
+                "Grade": grade,
+                "Source": info.get("source") or "Unavailable",
+                "Data Through": _format_date(info.get("report_date_max")) or "Not available",
+                "Rows": info.get("abra_row_count") if info.get("abra_row_count") is not None else info.get("row_count"),
+                "Imported": _format_datetime(info.get("imported_at")) or "",
+            }
+        )
+    st.dataframe(pd.DataFrame(source_rows), width="stretch", hide_index=True)
+
+    if st.button("Refresh Health Check", width="stretch", key="ops_refresh_health"):
+        st.cache_data.clear()
+        st.rerun()
+
+
+def _login_username(action: object) -> str:
+    match = re.search(r"(?:^|\|)\s*username=([^|]+)", str(action or ""), flags=re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def render_rollout_status(supabase) -> None:
+    st.markdown("### RHU Rollout Status")
+    st.caption("Use this during rollout to see who has signed in, changed the temporary password, and started uploading SBI workbooks.")
+
+    accounts = pd.DataFrame(
+        _fetch_all(
+            lambda: supabase.table("user_accounts")
+            .select("username,name,role,assigned_muni,account_status,must_change_password")
+            .eq("role", "RHU Encoder")
+            .order("assigned_muni"),
+            page_size=500,
+        )
+    )
+    if accounts.empty:
+        st.info("No RHU Encoder accounts are configured yet.")
         return
 
-    effective = _merge_pending_label_positions(base_records)
-
-    st.markdown(
-        """
-        <div style="margin:0.1rem 0 0.8rem 0;color:#475569;font-size:0.92rem;">
-            Use the map's <strong>Edit layers</strong> tool, drag the municipality labels, then click
-            <strong>Save</strong> in the map toolbar. The exact coordinates and centroid nudges are calculated automatically.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    map_state = _build_map_label_editor(effective)
-    if map_state:
-        moved = _positions_from_drawings(map_state.get("all_drawings"))
-        if moved:
-            payload = "|".join(
-                f"{key}:{lat:.8f}:{lon:.8f}" for key, (lat, lon) in sorted(moved.items())
+    try:
+        logs = pd.DataFrame(
+            _fetch_all(
+                lambda: supabase.table("access_logs")
+                .select("timestamp,name,role,action")
+                .eq("role", "RHU Encoder")
+                .order("id", desc=True),
+                page_size=1000,
             )
-            payload_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-            if st.session_state.get("_map_label_editor_payload") != payload_hash:
-                pending = dict(st.session_state.get("_map_label_pending", {}))
-                current_by_key = effective.set_index("municipality_key")
-                for key, (lat, lon) in moved.items():
-                    if key not in current_by_key.index:
-                        continue
-                    current = current_by_key.loc[key]
-                    if isinstance(current, pd.DataFrame):
-                        current = current.iloc[0]
-                    if (
-                        abs(float(current["label_lat"]) - lat) > 1e-7
-                        or abs(float(current["label_lon"]) - lon) > 1e-7
-                    ):
-                        pending[key] = (lat, lon)
-                st.session_state["_map_label_pending"] = pending
-                st.session_state["_map_label_editor_payload"] = payload_hash
-                _bump_map_label_editor_revision()
-                st.rerun()
+        )
+    except Exception:
+        logs = pd.DataFrame()
 
-    effective = _merge_pending_label_positions(base_records)
-    pending = st.session_state.get("_map_label_pending", {})
+    try:
+        submissions = fetch_submission_history(supabase)
+    except Exception:
+        submissions = pd.DataFrame()
 
-    if pending:
-        st.markdown(
-            f'<div style="font-weight:700;color:#0033A0;margin:0.35rem 0 0.5rem 0;">'
-            f'{len(pending)} unsaved label change{"s" if len(pending) != 1 else ""}</div>',
-            unsafe_allow_html=True,
+    last_login: dict[str, object] = {}
+    if not logs.empty:
+        logs["_username"] = logs.get("action", pd.Series(dtype=object)).map(_login_username)
+        logs = logs[logs["_username"].ne("")].copy()
+        if not logs.empty:
+            logs["_parsed"] = pd.to_datetime(logs["timestamp"], errors="coerce")
+            logs = logs.sort_values("_parsed", ascending=False)
+            last_login = logs.drop_duplicates("_username").set_index("_username")["timestamp"].to_dict()
+
+    submission_summary: dict[str, dict] = {}
+    if not submissions.empty:
+        submissions["_muni"] = submissions["municipality"].fillna("").astype(str).str.strip()
+        for municipality, group in submissions[submissions["_muni"].ne("")].groupby("_muni"):
+            parsed_upload = pd.to_datetime(group["uploaded_at"], errors="coerce")
+            current_rows = group[group["is_current"].fillna(False).astype(bool)] if "is_current" in group.columns else pd.DataFrame()
+            current = current_rows.iloc[0] if not current_rows.empty else group.iloc[parsed_upload.argmax()] if parsed_upload.notna().any() else group.iloc[0]
+            submission_summary[municipality] = {
+                "First Upload": group.loc[parsed_upload.idxmin(), "uploaded_at"] if parsed_upload.notna().any() else "",
+                "Latest Upload": current.get("uploaded_at"),
+                "Latest Activity": current.get("activity_date_max"),
+                "Uploads": int(len(group)),
+                "Current Rows": int(current.get("row_count") or 0),
+                "Finalized": bool(current.get("is_finalized")),
+            }
+
+    rows = []
+    for _, account in accounts.iterrows():
+        username = str(account.get("username") or "").strip()
+        municipality = str(account.get("assigned_muni") or "").strip()
+        summary = submission_summary.get(municipality, {})
+        login_value = last_login.get(username)
+        rows.append(
+            {
+                "Municipality": municipality,
+                "Account": username,
+                "Status": account.get("account_status") or "",
+                "Last Login": _format_datetime(login_value) or "Not yet",
+                "Password Changed": "No" if (
+                    account.get("must_change_password") is True
+                    or str(account.get("must_change_password") or "").strip().lower() in {"1", "true", "yes", "y"}
+                ) else "Yes",
+                "First Workbook Upload": _format_datetime(summary.get("First Upload")) or "Not yet",
+                "Latest Activity": _format_date(summary.get("Latest Activity")) or "",
+                "Uploads": summary.get("Uploads", 0),
+                "Current Rows": summary.get("Current Rows", 0),
+                "Submission": "Finalized" if summary.get("Finalized") else ("Uploaded" if summary else "No Upload"),
+            }
         )
 
-    names = effective["municipality_name"].tolist()
-    selected_name = st.selectbox("Fine-tune municipality", names, key="map_label_selected_municipality")
-    selected = effective[effective["municipality_name"].eq(selected_name)].iloc[0]
+    rollout = pd.DataFrame(rows).sort_values(["Municipality", "Account"])
+    logged_in = int((rollout["Last Login"] != "Not yet").sum())
+    changed = int((rollout["Password Changed"] == "Yes").sum())
+    started = int((rollout["First Workbook Upload"] != "Not yet").sum())
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Label Latitude", f"{float(selected['label_lat']):.6f}")
-    c2.metric("Label Longitude", f"{float(selected['label_lon']):.6f}")
-    c3.metric("Latitude Nudge", f"{float(selected['lat_nudge']):+.6f}")
-    c4.metric("Longitude Nudge", f"{float(selected['lon_nudge']):+.6f}")
+    c1.metric("RHU Accounts", len(rollout))
+    c2.metric("Logged In", logged_in)
+    c3.metric("Password Changed", changed)
+    c4.metric("Started Uploading", started)
 
-    edit1, edit2, action1, action2 = st.columns([1.25, 1.25, 1, 1])
-    with edit1:
-        manual_lat = st.number_input(
-            "Exact Latitude",
-            value=float(selected["label_lat"]),
-            format="%.6f",
-            step=0.001,
-            key=f"map_label_lat_{selected['municipality_key']}_{st.session_state.get('_map_label_editor_revision', 0)}",
-        )
-    with edit2:
-        manual_lon = st.number_input(
-            "Exact Longitude",
-            value=float(selected["label_lon"]),
-            format="%.6f",
-            step=0.001,
-            key=f"map_label_lon_{selected['municipality_key']}_{st.session_state.get('_map_label_editor_revision', 0)}",
-        )
-    with action1:
-        st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
-        if st.button("Apply Coordinates", width="stretch", key="map_label_apply_manual"):
-            pending = dict(st.session_state.get("_map_label_pending", {}))
-            pending[str(selected["municipality_key"])] = (float(manual_lat), float(manual_lon))
-            st.session_state["_map_label_pending"] = pending
-            _bump_map_label_editor_revision()
-            st.rerun()
-    with action2:
-        st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
-        if st.button(
-            "Reset Selected",
-            width="stretch",
-            disabled=(read_only or not table_ready),
-            key="map_label_reset_selected",
-        ) and not read_only:
-            reset_label_position(supabase, str(selected["municipality_key"]))
-            pending = dict(st.session_state.get("_map_label_pending", {}))
-            pending.pop(str(selected["municipality_key"]), None)
-            st.session_state["_map_label_pending"] = pending
-            _bump_map_label_editor_revision()
-            _audit(supabase, f"Map label reset | municipality={selected_name}")
-            st.rerun()
-
-    last_clicked = map_state.get("last_clicked") if map_state else None
-    if last_clicked and isinstance(last_clicked, dict):
-        click_col, use_col = st.columns([2.6, 1])
-        with click_col:
-            st.markdown(
-                f"Last map click: `{float(last_clicked.get('lat', 0)):.6f}, "
-                f"{float(last_clicked.get('lng', 0)):.6f}`"
-            )
-        with use_col:
-            if st.button("Use Click Position", width="stretch", key="map_label_use_click"):
-                pending = dict(st.session_state.get("_map_label_pending", {}))
-                pending[str(selected["municipality_key"])] = (
-                    float(last_clicked["lat"]),
-                    float(last_clicked["lng"]),
-                )
-                st.session_state["_map_label_pending"] = pending
-                _bump_map_label_editor_revision()
-                st.rerun()
-
-    save_col, discard_col, reset_col = st.columns([1.2, 1.0, 1.0])
-    with save_col:
-        if st.button(
-            "Save All Changes",
-            type="primary",
-            width="stretch",
-            disabled=(read_only or not table_ready or not pending),
-            key="map_label_save_all",
-        ) and not read_only:
-            final_records = _merge_pending_label_positions(base_records)
-            changed = final_records[final_records["municipality_key"].isin(pending.keys())].copy()
-            save_label_records(
-                supabase,
-                changed,
-                st.session_state.get("user_name") or st.session_state.get("username") or "System Admin",
-            )
-            _audit(supabase, f"Map label positions saved | municipalities={len(changed)}")
-            st.session_state.pop("_map_label_pending", None)
-            st.session_state.pop("_map_label_editor_payload", None)
-            invalidate_runtime_label_cache()
-            _bump_map_label_editor_revision()
-            st.toast(f"Saved {len(changed)} municipality label position(s).")
-            st.rerun()
-    with discard_col:
-        if st.button(
-            "Discard Changes",
-            width="stretch",
-            disabled=not pending,
-            key="map_label_discard",
-        ):
-            st.session_state.pop("_map_label_pending", None)
-            st.session_state.pop("_map_label_editor_payload", None)
-            _bump_map_label_editor_revision()
-            st.rerun()
-    with reset_col:
-        if st.button(
-            "Reset All Defaults",
-            width="stretch",
-            disabled=(read_only or not table_ready),
-            key="map_label_reset_all",
-        ) and not read_only:
-            st.session_state["_map_label_confirm_reset_all"] = True
-
-    if st.session_state.get("_map_label_confirm_reset_all"):
-        confirm1, confirm2 = st.columns(2)
-        with confirm1:
-            if st.button("Confirm Reset All", type="primary", width="stretch", disabled=read_only, key="map_label_confirm_reset") and not read_only:
-                reset_all_label_positions(supabase)
-                st.session_state.pop("_map_label_pending", None)
-                st.session_state.pop("_map_label_editor_payload", None)
-                st.session_state.pop("_map_label_confirm_reset_all", None)
-                _bump_map_label_editor_revision()
-                _audit(supabase, "All map label positions reset to defaults")
-                st.rerun()
-        with confirm2:
-            if st.button("Cancel", width="stretch", key="map_label_cancel_reset"):
-                st.session_state.pop("_map_label_confirm_reset_all", None)
-                st.rerun()
-
-    st.divider()
-    _section_heading("fa-location-crosshairs", "Current Label Coordinates")
-    display = effective[
-        [
-            "municipality_name",
-            "label_lat",
-            "label_lon",
-            "lat_nudge",
-            "lon_nudge",
-            "source",
-        ]
-    ].copy()
-    display.columns = [
-        "Municipality",
-        "Label Lat",
-        "Label Lon",
-        "Lat Nudge",
-        "Lon Nudge",
-        "Source",
-    ]
-    for col in ["Label Lat", "Label Lon", "Lat Nudge", "Lon Nudge"]:
-        display[col] = pd.to_numeric(display[col], errors="coerce").round(6)
-    st.dataframe(display, width="stretch", hide_index=True)
-
-
-
-def _render_rhu_accounts(supabase, read_only: bool = False) -> None:
-    ready, message = _rhu_account_schema_available(supabase)
-    if not ready:
-        st.error(
-            f"RHU Encoder setup is not complete ({message}). Run the required RHU account migrations, including supabase/008_user_password_change.sql, then reload this page."
-        )
-        return
-
-    accounts = _load_accounts(supabase)
-    if accounts.empty:
-        rhu_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status", "must_change_password"])
-        rhu_qa_df = pd.DataFrame(columns=["name", "username", "assigned_muni", "account_status", "must_change_password"])
-    else:
-        rhu_df = accounts[accounts["role"].eq("RHU Encoder")].copy()
-        rhu_qa_df = accounts[accounts["role"].eq("RHU QA Encoder")].copy()
-
-    _section_heading("fa-users-gear", "RHU Encoder Accounts")
-    if not rhu_df.empty:
-        display = rhu_df[["name", "username", "assigned_muni", "account_status", "must_change_password"]].rename(
-            columns={
-                "name": "Name",
-                "username": "Username",
-                "assigned_muni": "Municipality",
-                "account_status": "Status",
-                "must_change_password": "Password Change Required",
-            }
-        )
-        display["Password Change Required"] = display["Password Change Required"].map(
-            lambda value: "Yes" if bool(value) else "No"
-        )
-        try:
-            login_logs = _load_login_logs(supabase, 1000)
-            if not login_logs.empty and "Username" in login_logs.columns:
-                latest = login_logs[login_logs["Username"].astype(str).str.strip().ne("")].drop_duplicates("Username", keep="first")
-                latest = latest[["Username", "timestamp"]].rename(columns={"timestamp": "Last Login"})
-                display = display.merge(latest, on="Username", how="left")
-        except Exception:
-            display["Last Login"] = ""
-        st.dataframe(display.sort_values(["Municipality", "Username"]), width="stretch", hide_index=True)
-    else:
-        st.write("No RHU Encoder accounts are configured yet.")
-
-    _section_heading("fa-user-plus", "Create RHU Encoder")
-    with st.form("rhu_create_account_form"):
-        c1, c2 = st.columns(2)
-        with c1:
-            new_name = st.text_input("Display Name", placeholder="e.g., La Paz RHU")
-            new_username = st.text_input("Username", key="rhu_new_username")
-        with c2:
-            new_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, key="rhu_new_muni")
-            new_password = st.text_input("Temporary Password", type="password", key="rhu_new_password")
-        create_rhu = st.form_submit_button("Create RHU Encoder", type="primary", disabled=read_only)
-
-    if create_rhu and not read_only:
-        username = new_username.strip()
-        display_name = new_name.strip() or f"{new_muni} RHU"
-        if not username or not new_password:
-            st.error("Username and password are required.")
-        elif len(new_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        else:
-            existing = (
-                supabase.table("user_accounts")
-                .select("username")
-                .eq("username", username)
-                .limit(1)
-                .execute()
-            )
-            if existing.data:
-                st.error("That username already exists.")
-            else:
-                supabase.table("user_accounts").insert(
-                    {
-                        "username": username,
-                        "password_hash": hash_password(new_password),
-                        "name": display_name,
-                        "role": "RHU Encoder",
-                        "assigned_muni": new_muni,
-                        "account_status": "Approved",
-                        "failed_attempts": 0,
-                        "must_change_password": True,
-                    }
-                ).execute()
-                _audit(supabase, f"RHU Encoder created | username={username} | municipality={new_muni}")
-                st.toast(f"RHU Encoder created: {username}")
-                st.rerun()
-
-    if rhu_df.empty:
-        return
-
-    usernames = sorted(rhu_df["username"].dropna().astype(str).tolist())
-
-    st.divider()
-    _section_heading("fa-location-dot", "Municipality Assignment")
-    with st.form("rhu_assignment_form"):
-        assign_username = st.selectbox("RHU Account", usernames, key="rhu_assign_username")
-        current_row = rhu_df[rhu_df["username"].eq(assign_username)].iloc[0]
-        current_muni = str(current_row.get("assigned_muni") or ABRA_MUNIS[0]).strip()
-        current_index = ABRA_MUNIS.index(current_muni) if current_muni in ABRA_MUNIS else 0
-        assign_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, index=current_index, key="rhu_assign_muni")
-        assign_submit = st.form_submit_button("Update Assignment", disabled=read_only)
-    if assign_submit and not read_only:
-        supabase.table("user_accounts").update({"assigned_muni": assign_muni}).eq("username", assign_username).execute()
-        _audit(supabase, f"RHU assignment updated | username={assign_username} | municipality={assign_muni}")
-        st.toast(f"Updated {assign_username} to {assign_muni}.")
-        st.rerun()
-
-    st.divider()
-    _section_heading("fa-key", "Reset RHU Password")
-    with st.form("rhu_reset_password_form"):
-        reset_username = st.selectbox("RHU Account", usernames, key="rhu_reset_username")
-        reset_password = st.text_input("Temporary Password", type="password", key="rhu_reset_password")
-        confirm_password = st.text_input("Confirm Temporary Password", type="password", key="rhu_reset_confirm")
-        reset_submit = st.form_submit_button("Reset Password", disabled=read_only)
-    if reset_submit and not read_only:
-        if len(reset_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        elif reset_password != confirm_password:
-            st.error("The passwords do not match.")
-        else:
-            supabase.table("user_accounts").update(
-                {
-                    "password_hash": hash_password(reset_password),
-                    "failed_attempts": 0,
-                    "must_change_password": True,
-                }
-            ).eq("username", reset_username).execute()
-            _audit(supabase, f"RHU password reset | username={reset_username}")
-            st.toast(f"Temporary password set for {reset_username}. A password change will be required at the next login.")
-            st.rerun()
-
-    st.divider()
-    _section_heading("fa-user-lock", "RHU Account Status")
-    action_username = st.selectbox("RHU Account", usernames, key="rhu_status_username")
-    selected_row = rhu_df[rhu_df["username"].eq(action_username)].iloc[0]
-    selected_status = str(selected_row.get("account_status") or "Approved").strip()
-    selected_active = selected_status.lower() in {"approved", "active"}
-    e1, e2 = st.columns(2)
-    with e1:
-        if st.button("Enable Account", width="stretch", disabled=(read_only or selected_active), key="rhu_enable_account") and not read_only:
-            supabase.table("user_accounts").update(
-                {"account_status": "Approved", "failed_attempts": 0}
-            ).eq("username", action_username).execute()
-            _audit(supabase, f"RHU account enabled | username={action_username}")
-            st.rerun()
-    with e2:
-        if st.button("Disable Account", width="stretch", disabled=(read_only or not selected_active), key="rhu_disable_account") and not read_only:
-            supabase.table("user_accounts").update(
-                {"account_status": "Disabled"}
-            ).eq("username", action_username).execute()
-            _audit(supabase, f"RHU account disabled | username={action_username}")
-            st.rerun()
-
-    _section_heading("fa-user-xmark", "Delete RHU Account")
-    delete_confirm = st.text_input("Type the RHU username to confirm deletion", key="rhu_delete_confirm")
-    if st.button("Delete RHU Account", type="secondary", disabled=read_only, key="rhu_delete_account") and not read_only:
-        if delete_confirm.strip() != action_username:
-            st.error("The confirmation username does not match.")
-        else:
-            supabase.table("user_accounts").delete().eq("username", action_username).execute()
-            _audit(supabase, f"RHU account deleted | username={action_username}")
-            st.toast(f"Deleted {action_username}.")
-            st.rerun()
-
-    st.divider()
-    _section_heading("fa-flask-vial", "RHU QA Encoder Accounts")
-    st.caption(
-        "RHU QA Encoder accounts simulate the selected municipality's RHU workflow. Workbook uploads are dry-run validation only: "
-        "they do not save accomplishments, create upload history, finalize submissions, or change production RHU data."
-    )
-
-    if not rhu_qa_df.empty:
-        qa_display = rhu_qa_df[["name", "username", "assigned_muni", "account_status", "must_change_password"]].rename(
-            columns={
-                "name": "Name",
-                "username": "Username",
-                "assigned_muni": "Municipality",
-                "account_status": "Status",
-                "must_change_password": "Password Change Required",
-            }
-        )
-        qa_display["Password Change Required"] = qa_display["Password Change Required"].map(
-            lambda value: "Yes" if bool(value) else "No"
-        )
-        st.dataframe(qa_display.sort_values(["Municipality", "Username"]), width="stretch", hide_index=True)
-    else:
-        st.write("No RHU QA Encoder accounts are configured yet.")
-
-    _section_heading("fa-user-plus", "Create RHU QA Encoder")
-    with st.form("rhu_qa_create_account_form"):
-        q1, q2 = st.columns(2)
-        with q1:
-            qa_name = st.text_input("Display Name", placeholder="e.g., RHU QA Tester", key="rhu_qa_new_name")
-            qa_username = st.text_input("Username", key="rhu_qa_new_username")
-        with q2:
-            qa_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, key="rhu_qa_new_muni")
-            qa_password = st.text_input("Temporary Password", type="password", key="rhu_qa_new_password")
-        create_qa_rhu = st.form_submit_button("Create RHU QA Encoder", type="primary", disabled=read_only)
-
-    if create_qa_rhu and not read_only:
-        username = qa_username.strip()
-        display_name = qa_name.strip() or "RHU QA Tester"
-        if not username or not qa_password:
-            st.error("Username and password are required.")
-        elif len(qa_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        else:
-            existing = (
-                supabase.table("user_accounts")
-                .select("username")
-                .eq("username", username)
-                .limit(1)
-                .execute()
-            )
-            if existing.data:
-                st.error("That username already exists.")
-            else:
-                supabase.table("user_accounts").insert(
-                    {
-                        "username": username,
-                        "password_hash": hash_password(qa_password),
-                        "name": display_name,
-                        "role": "RHU QA Encoder",
-                        "assigned_muni": qa_muni,
-                        "account_status": "Approved",
-                        "failed_attempts": 0,
-                        "must_change_password": True,
-                    }
-                ).execute()
-                _audit(supabase, f"RHU QA Encoder created | username={username} | municipality={qa_muni}")
-                st.toast(f"RHU QA Encoder created: {username}")
-                st.rerun()
-
-    if not rhu_qa_df.empty:
-        qa_usernames = sorted(rhu_qa_df["username"].dropna().astype(str).tolist())
-
-        _section_heading("fa-location-dot", "RHU QA Municipality Assignment")
-        with st.form("rhu_qa_assignment_form"):
-            qa_assign_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_assign_username")
-            qa_row = rhu_qa_df[rhu_qa_df["username"].eq(qa_assign_username)].iloc[0]
-            qa_current_muni = str(qa_row.get("assigned_muni") or ABRA_MUNIS[0]).strip()
-            qa_current_index = ABRA_MUNIS.index(qa_current_muni) if qa_current_muni in ABRA_MUNIS else 0
-            qa_assign_muni = st.selectbox("Assigned Municipality", ABRA_MUNIS, index=qa_current_index, key="rhu_qa_assign_muni")
-            qa_assign_submit = st.form_submit_button("Update QA Assignment", disabled=read_only)
-        if qa_assign_submit and not read_only:
-            supabase.table("user_accounts").update({"assigned_muni": qa_assign_muni}).eq("username", qa_assign_username).execute()
-            _audit(supabase, f"RHU QA assignment updated | username={qa_assign_username} | municipality={qa_assign_muni}")
-            st.toast(f"Updated {qa_assign_username} to {qa_assign_muni}.")
-            st.rerun()
-
-        _section_heading("fa-key", "Reset RHU QA Password")
-        with st.form("rhu_qa_reset_password_form"):
-            qa_reset_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_reset_username")
-            qa_reset_password = st.text_input("Temporary Password", type="password", key="rhu_qa_reset_password")
-            qa_confirm_password = st.text_input("Confirm Temporary Password", type="password", key="rhu_qa_reset_confirm")
-            qa_reset_submit = st.form_submit_button("Reset QA Password", disabled=read_only)
-        if qa_reset_submit and not read_only:
-            if len(qa_reset_password) < 8:
-                st.error("Use a password with at least 8 characters.")
-            elif qa_reset_password != qa_confirm_password:
-                st.error("The passwords do not match.")
-            else:
-                supabase.table("user_accounts").update(
-                    {
-                        "password_hash": hash_password(qa_reset_password),
-                        "failed_attempts": 0,
-                        "must_change_password": True,
-                    }
-                ).eq("username", qa_reset_username).execute()
-                _audit(supabase, f"RHU QA password reset | username={qa_reset_username}")
-                st.toast(f"Temporary password set for {qa_reset_username}.")
-                st.rerun()
-
-        _section_heading("fa-user-lock", "RHU QA Account Status")
-        qa_action_username = st.selectbox("RHU QA Account", qa_usernames, key="rhu_qa_status_username")
-        qa_selected = rhu_qa_df[rhu_qa_df["username"].eq(qa_action_username)].iloc[0]
-        qa_active = str(qa_selected.get("account_status") or "Approved").strip().lower() in {"approved", "active"}
-        qa_enable, qa_disable = st.columns(2)
-        with qa_enable:
-            if st.button("Enable RHU QA", width="stretch", disabled=(read_only or qa_active), key="rhu_qa_enable") and not read_only:
-                supabase.table("user_accounts").update({"account_status": "Approved", "failed_attempts": 0}).eq("username", qa_action_username).execute()
-                _audit(supabase, f"RHU QA enabled | username={qa_action_username}")
-                st.rerun()
-        with qa_disable:
-            if st.button("Disable RHU QA", width="stretch", disabled=(read_only or not qa_active), key="rhu_qa_disable") and not read_only:
-                supabase.table("user_accounts").update({"account_status": "Disabled"}).eq("username", qa_action_username).execute()
-                _audit(supabase, f"RHU QA disabled | username={qa_action_username}")
-                st.rerun()
-
-        _section_heading("fa-user-xmark", "Delete RHU QA Encoder")
-        qa_delete_confirm = st.text_input("Type the RHU QA username to confirm deletion", key="rhu_qa_delete_confirm")
-        if st.button("Delete RHU QA Encoder", type="secondary", disabled=read_only, key="rhu_qa_delete") and not read_only:
-            if qa_delete_confirm.strip() != qa_action_username:
-                st.error("The confirmation username does not match.")
-            else:
-                supabase.table("user_accounts").delete().eq("username", qa_action_username).execute()
-                _audit(supabase, f"RHU QA Encoder deleted | username={qa_action_username}")
-                st.toast(f"Deleted {qa_action_username}.")
-                st.rerun()
-
-def _render_admin_accounts(supabase, read_only: bool = False) -> None:
-    accounts = _load_accounts(supabase)
-    current_username = str(st.session_state.get("username") or "").strip()
-
-    if accounts.empty:
-        admin_df = pd.DataFrame(columns=["name", "username", "account_status"])
-        qa_df = pd.DataFrame(columns=["name", "username", "account_status", "must_change_password"])
-    else:
-        admin_df = accounts[accounts["role"].eq("System Admin")].copy()
-        qa_df = accounts[accounts["role"].eq("QA Admin")].copy()
-
-    _section_heading("fa-user-shield", "System Admin Accounts")
-    if not admin_df.empty:
-        admin_df["Current"] = admin_df["username"].eq(current_username)
-        display = admin_df[["name", "username", "account_status", "Current"]].rename(
-            columns={"name": "Name", "username": "Username", "account_status": "Status"}
-        )
-        st.dataframe(display, width="stretch", hide_index=True)
-    else:
-        st.write("No System Admin accounts were returned by the database.")
-
-    active_admin_count = int(_active_admin_mask(accounts).sum()) if not accounts.empty else 0
-
-    _section_heading("fa-user-plus", "Add Backup Admin")
-    if active_admin_count >= 2:
-        st.write("Two active System Admin accounts are already configured.")
-        create_admin = False
-        new_name = new_username = new_password = ""
-    else:
-        with st.form("admin_add_backup_form"):
-            new_name = st.text_input("Display Name")
-            new_username = st.text_input("Username")
-            new_password = st.text_input("Temporary Password", type="password")
-            create_admin = st.form_submit_button("Create Admin Account", type="primary", disabled=read_only)
-
-    if create_admin and not read_only:
-        username = new_username.strip()
-        display_name = new_name.strip() or username
-        if not username or not new_password:
-            st.error("Username and password are required.")
-        elif len(new_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        else:
-            existing = (
-                supabase.table("user_accounts")
-                .select("username")
-                .eq("username", username)
-                .limit(1)
-                .execute()
-            )
-            if existing.data:
-                st.error("That username already exists.")
-            else:
-                supabase.table("user_accounts").insert(
-                    {
-                        "username": username,
-                        "password_hash": hash_password(new_password),
-                        "name": display_name,
-                        "role": "System Admin",
-                        "account_status": "Approved",
-                        "failed_attempts": 0,
-                    }
-                ).execute()
-                _audit(supabase, f"Admin account created | username={username}")
-                st.toast(f"Admin account created: {username}")
-                st.rerun()
-
-    if not admin_df.empty:
-        usernames = admin_df["username"].tolist()
-
-        st.divider()
-        _section_heading("fa-key", "Reset System Admin Password")
-        with st.form("admin_reset_password_form"):
-            reset_username = st.selectbox("Admin Account", usernames, key="admin_reset_username")
-            reset_password = st.text_input("New Password", type="password", key="admin_reset_password")
-            confirm_password = st.text_input("Confirm New Password", type="password", key="admin_reset_confirm")
-            reset_submit = st.form_submit_button("Reset Password", disabled=read_only)
-
-        if reset_submit and not read_only:
-            if len(reset_password) < 8:
-                st.error("Use a password with at least 8 characters.")
-            elif reset_password != confirm_password:
-                st.error("The passwords do not match.")
-            else:
-                supabase.table("user_accounts").update(
-                    {"password_hash": hash_password(reset_password), "failed_attempts": 0}
-                ).eq("username", reset_username).execute()
-                _audit(supabase, f"Password reset | username={reset_username}")
-                st.toast(f"Password reset for {reset_username}.")
-
-        st.divider()
-        _section_heading("fa-user-shield", "System Admin Account Status")
-        action_username = st.selectbox("Admin Account", usernames, key="admin_status_username")
-        selected_row = admin_df[admin_df["username"].eq(action_username)].iloc[0]
-        selected_status = str(selected_row.get("account_status") or "Approved").strip()
-        selected_is_active = selected_status.lower() in {"approved", "active"}
-        active_count = int(_active_admin_mask(accounts).sum())
-
-        col_enable, col_disable = st.columns(2)
-        with col_enable:
-            enable_blocked = read_only or selected_is_active or active_count >= 2
-            if st.button("Enable Account", width="stretch", disabled=enable_blocked, key="admin_enable_account") and not read_only:
-                supabase.table("user_accounts").update(
-                    {"account_status": "Approved", "failed_attempts": 0}
-                ).eq("username", action_username).execute()
-                _audit(supabase, f"Admin account enabled | username={action_username}")
-                st.toast(f"Enabled {action_username}.")
-                st.rerun()
-
-        with col_disable:
-            disable_blocked = read_only or action_username == current_username or (selected_is_active and active_count <= 1)
-            if st.button("Disable Account", width="stretch", disabled=disable_blocked, key="admin_disable_account") and not read_only:
-                supabase.table("user_accounts").update(
-                    {"account_status": "Disabled"}
-                ).eq("username", action_username).execute()
-                _audit(supabase, f"Admin account disabled | username={action_username}")
-                st.toast(f"Disabled {action_username}.")
-                st.rerun()
-
-        _section_heading("fa-user-xmark", "Delete System Admin Account")
-        delete_confirm = st.text_input(
-            "Type the username to confirm deletion",
-            key="admin_delete_confirm",
-        )
-        delete_blocked = read_only or action_username == current_username or (selected_is_active and active_count <= 1)
-        if st.button("Delete Admin Account", type="secondary", disabled=delete_blocked, key="admin_delete_account") and not read_only:
-            if delete_confirm.strip() != action_username:
-                st.error("The confirmation username does not match.")
-            else:
-                supabase.table("user_accounts").delete().eq("username", action_username).execute()
-                _audit(supabase, f"Admin account deleted | username={action_username}")
-                st.toast(f"Deleted {action_username}.")
-                st.rerun()
-
-    st.divider()
-    _section_heading("fa-flask-vial", "QA Admin Accounts")
-    st.caption(
-        "QA Admin accounts can open MR SIA, SBI, and the full Administration area, but production-changing admin actions are disabled."
-    )
-
-    if not qa_df.empty:
-        qa_display = qa_df[["name", "username", "account_status", "must_change_password"]].rename(
-            columns={
-                "name": "Name",
-                "username": "Username",
-                "account_status": "Status",
-                "must_change_password": "Password Change Required",
-            }
-        )
-        qa_display["Password Change Required"] = qa_display["Password Change Required"].map(
-            lambda value: "Yes" if bool(value) else "No"
-        )
-        st.dataframe(qa_display.sort_values("Username"), width="stretch", hide_index=True)
-    else:
-        st.write("No QA Admin accounts are configured yet.")
-
-    _section_heading("fa-user-plus", "Create QA Admin")
-    with st.form("qa_admin_create_form"):
-        qa_name = st.text_input("Display Name", key="qa_admin_new_name")
-        qa_username = st.text_input("Username", key="qa_admin_new_username")
-        qa_password = st.text_input("Temporary Password", type="password", key="qa_admin_new_password")
-        create_qa = st.form_submit_button("Create QA Admin", type="primary", disabled=read_only)
-
-    if create_qa and not read_only:
-        username = qa_username.strip()
-        display_name = qa_name.strip() or username
-        if not username or not qa_password:
-            st.error("Username and password are required.")
-        elif len(qa_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        else:
-            existing = (
-                supabase.table("user_accounts")
-                .select("username")
-                .eq("username", username)
-                .limit(1)
-                .execute()
-            )
-            if existing.data:
-                st.error("That username already exists.")
-            else:
-                try:
-                    supabase.table("user_accounts").insert(
-                        {
-                            "username": username,
-                            "password_hash": hash_password(qa_password),
-                            "name": display_name,
-                            "role": "QA Admin",
-                            "assigned_muni": "Abra Province",
-                            "account_status": "Approved",
-                            "failed_attempts": 0,
-                            "must_change_password": True,
-                        }
-                    ).execute()
-                    _audit(supabase, f"QA Admin created | username={username}")
-                    st.toast(f"QA Admin created: {username}")
-                    st.rerun()
-                except Exception as exc:
-                    st.error(f"Unable to create the QA Admin account: {exc}")
-
-    if qa_df.empty:
-        return
-
-    qa_usernames = sorted(qa_df["username"].dropna().astype(str).tolist())
-
-    st.divider()
-    _section_heading("fa-key", "Reset QA Admin Password")
-    with st.form("qa_admin_reset_password_form"):
-        qa_reset_username = st.selectbox("QA Admin Account", qa_usernames, key="qa_admin_reset_username")
-        qa_reset_password = st.text_input("Temporary Password", type="password", key="qa_admin_reset_password")
-        qa_confirm_password = st.text_input("Confirm Temporary Password", type="password", key="qa_admin_reset_confirm")
-        qa_reset_submit = st.form_submit_button("Reset QA Admin Password", disabled=read_only)
-
-    if qa_reset_submit and not read_only:
-        if len(qa_reset_password) < 8:
-            st.error("Use a password with at least 8 characters.")
-        elif qa_reset_password != qa_confirm_password:
-            st.error("The passwords do not match.")
-        else:
-            supabase.table("user_accounts").update(
-                {
-                    "password_hash": hash_password(qa_reset_password),
-                    "failed_attempts": 0,
-                    "must_change_password": True,
-                }
-            ).eq("username", qa_reset_username).execute()
-            _audit(supabase, f"QA Admin password reset | username={qa_reset_username}")
-            st.toast(f"Temporary password set for {qa_reset_username}.")
-            st.rerun()
-
-    _section_heading("fa-user-lock", "QA Admin Account Status")
-    qa_action_username = st.selectbox("QA Admin Account", qa_usernames, key="qa_admin_status_username")
-    qa_selected = qa_df[qa_df["username"].eq(qa_action_username)].iloc[0]
-    qa_active = str(qa_selected.get("account_status") or "Approved").strip().lower() in {"approved", "active"}
-    qa_enable, qa_disable = st.columns(2)
-    with qa_enable:
-        if st.button(
-            "Enable QA Admin",
-            width="stretch",
-            disabled=(read_only or qa_active),
-            key="qa_admin_enable",
-        ) and not read_only:
-            supabase.table("user_accounts").update(
-                {"account_status": "Approved", "failed_attempts": 0}
-            ).eq("username", qa_action_username).execute()
-            _audit(supabase, f"QA Admin enabled | username={qa_action_username}")
-            st.rerun()
-    with qa_disable:
-        if st.button(
-            "Disable QA Admin",
-            width="stretch",
-            disabled=(read_only or not qa_active or qa_action_username == current_username),
-            key="qa_admin_disable",
-        ) and not read_only:
-            supabase.table("user_accounts").update(
-                {"account_status": "Disabled"}
-            ).eq("username", qa_action_username).execute()
-            _audit(supabase, f"QA Admin disabled | username={qa_action_username}")
-            st.rerun()
-
-    _section_heading("fa-user-xmark", "Delete QA Admin Account")
-    qa_delete_confirm = st.text_input("Type the QA username to confirm deletion", key="qa_admin_delete_confirm")
-    qa_delete_blocked = read_only or qa_action_username == current_username
-    if st.button("Delete QA Admin", type="secondary", disabled=qa_delete_blocked, key="qa_admin_delete") and not read_only:
-        if qa_delete_confirm.strip() != qa_action_username:
-            st.error("The confirmation username does not match.")
-        else:
-            supabase.table("user_accounts").delete().eq("username", qa_action_username).execute()
-            _audit(supabase, f"QA Admin deleted | username={qa_action_username}")
-            st.toast(f"Deleted {qa_action_username}.")
-            st.rerun()
-
-
-def _render_login_history(supabase) -> None:
-    logs = _load_login_logs(supabase, 500)
-    if logs.empty:
-        st.write("No login events have been recorded yet.")
-        return
-
-    view = logs.copy()
-    view["Date / Time"] = view["timestamp"].apply(lambda value: " ".join(filter(None, _format_timestamp(value))))
-    view = view.rename(columns={"name": "Name", "role": "Role"})
-    cols = ["Date / Time", "Name", "Role", "Username", "Municipality"]
-    for col in cols:
-        if col not in view.columns:
-            view[col] = ""
-    st.dataframe(view[cols], width="stretch", hide_index=True)
+    st.dataframe(rollout, width="stretch", hide_index=True)
     st.download_button(
-        "Download Login History (CSV)",
-        data=view[cols].to_csv(index=False).encode("utf-8-sig"),
-        file_name="Abra_NIP_Login_History.csv",
+        "Download Rollout Status (CSV)",
+        data=rollout.to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_RHU_Rollout_Status.csv",
         mime="text/csv",
-        key="admin_login_history_download",
+        key="ops_rollout_download",
     )
 
 
-def _render_audit_log(supabase) -> None:
-    logs = _load_admin_logs(supabase, 300)
-    if logs.empty:
-        st.write("No admin activity has been recorded yet.")
+def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### SBI Campaign Control")
+    st.caption("Set the operational state once here instead of changing code during implementation.")
+
+    settings_ready, _ = _table_exists(supabase, SBI_SETTINGS_TABLE, "setting_key")
+    if not settings_ready:
+        st.info("SBI settings are unavailable. Apply the existing settings migration before using campaign controls.")
         return
 
-    st.dataframe(logs, width="stretch", hide_index=True)
-    st.download_button(
-        "Download Audit Log (CSV)",
-        data=logs.to_csv(index=False).encode("utf-8-sig"),
-        file_name="Abra_NIP_Admin_Audit_Log.csv",
-        mime="text/csv",
-        key="admin_audit_download",
-    )
-
-
-def render_admin_dashboard(supabase) -> None:
-    if st.session_state.get("user_role") not in ADMIN_ACCESS_ROLES:
-        st.session_state["active_program"] = None
-        st.rerun()
-
-    read_only = _is_qa_admin()
-    if read_only:
-        supabase = _ReadOnlySupabaseProxy(supabase)
-
-    _render_sidebar()
-
-    if read_only:
-        st.warning("QA ADMIN — READ-ONLY TEST ACCOUNT. You can inspect the full administrative interface, but production changes are disabled.")
+    config = get_campaign_config(supabase)
+    status = str(config.get("status") or "Pre-Implementation")
+    start_config = config.get("start_date")
+    end_config = config.get("end_date")
+    if start_config and end_config:
+        range_label = f"{start_config:%b %d} – {end_config:%b %d, %Y}"
+    else:
+        range_label = "Not enforced"
 
     st.markdown(
         """
         <style>
-        .admin-page-title {
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-            margin: 0.15rem 0 1.25rem 0;
-        }
-        .admin-page-title i {
-            color: #0033A0;
-            font-size: 1.9rem;
-        }
-        .admin-page-title h1 {
-            margin: 0;
-            font-size: clamp(2rem, 3vw, 2.8rem);
-            line-height: 1.05;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-        }
-        .admin-kpi-card {
-            min-height: 138px;
-            background: #ffffff;
-            border: 1px solid #dfe5ee;
+        .sbi-control-card {
+            min-height: 116px;
+            padding: 16px 18px;
+            border: 1px solid #dbe3ef;
             border-bottom: 5px solid #0033A0;
             border-radius: 10px;
-            padding: 1rem 1.05rem 0.9rem 1.05rem;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+            background: #ffffff;
             overflow: hidden;
         }
-        .admin-kpi-top {
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            color: #334155;
-            font-size: 0.91rem;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-        .admin-kpi-top i {
-            color: #0033A0;
-            width: 1.1rem;
-            text-align: center;
-        }
-        .admin-kpi-value {
-            color: #0033A0;
-            font-size: clamp(1.7rem, 2.3vw, 2.35rem);
-            line-height: 1.05;
-            font-weight: 800;
-            margin-top: 0.8rem;
-            overflow-wrap: anywhere;
-        }
-        .admin-kpi-detail {
-            color: #64748b;
-            font-size: 0.88rem;
+        .sbi-control-label {
+            font-size: 0.82rem;
             font-weight: 600;
-            margin-top: 0.35rem;
+            color: #334155;
+            margin-bottom: 8px;
         }
-        .admin-section-heading {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            margin: 1.55rem 0 0.8rem 0;
-            color: #1e293b;
-            font-size: 1.35rem;
+        .sbi-control-value {
+            font-size: clamp(1.15rem, 2vw, 1.75rem);
+            line-height: 1.12;
             font-weight: 750;
-        }
-        .admin-section-heading i {
             color: #0033A0;
-            width: 1.35rem;
-            text-align: center;
-        }
-        @media (max-width: 900px) {
-            .admin-kpi-top {
-                white-space: normal;
-            }
-            .admin-kpi-value {
-                font-size: 1.55rem;
-            }
-            .admin-page-title {
-                margin-top: 0;
-            }
-            .admin-page-title h1 {
-                font-size: 1.9rem;
-            }
-            .admin-kpi-card {
-                min-height: 118px;
-            }
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
         </style>
-
-        <div class="admin-page-title">
-            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-            <h1>System Administration</h1>
-        </div>
         """,
         unsafe_allow_html=True,
     )
+    c1, c2, c3 = st.columns(3)
+    for column, label, value in [
+        (c1, "Campaign Status", status),
+        (c2, "Workbook Version", WORKBOOK_VERSION),
+        (c3, "Activity Date Range", range_label),
+    ]:
+        with column:
+            st.markdown(
+                f'<div class="sbi-control-card"><div class="sbi-control-label">{label}</div>'
+                f'<div class="sbi-control-value">{value}</div></div>',
+                unsafe_allow_html=True,
+            )
 
-    overview_tab, operations_tab, sync_tab, imports_tab, map_tab, rhu_accounts_tab, accounts_tab, login_tab, audit_tab = st.tabs(
-        ["Overview", "Operations", "Data Sync", "Import Management", "Map Labels", "RHU Accounts", "Admin Accounts", "Login History", "Audit Log"]
+    today = datetime.now(MANILA_TZ).date()
+    if status == "Pre-Implementation":
+        st.info("Testing and workbook uploads are allowed. Use this status while preparing RHUs and cleaning test data.")
+    elif status == "Live":
+        st.success("SBI is live. RHU workbook uploads and final submission are enabled.")
+        if end_config and today > end_config:
+            st.warning(
+                f"The configured SBI activity end date was {end_config:%b %d, %Y}. "
+                "If field activities are finished, change the campaign to Post-Activity Correction so RHUs can submit only corrections or late reports for activity dates within the official range."
+            )
+    elif status == "Post-Activity Correction":
+        st.info(
+            "Field implementation is finished, but RHUs may still upload corrected or late workbooks. "
+            "Activity dates must remain within the configured SBI activity date range. Final submission remains available."
+        )
+    else:
+        st.warning("SBI is closed. RHUs can view their data and reconciliation, but workbook uploads are blocked.")
+
+    prelaunch_summary = pd.DataFrame()
+    if status == "Pre-Implementation":
+        try:
+            workbook_rows = _fetch_all(
+                lambda: supabase.table(ACCOMPLISHMENT_TABLE)
+                .select("municipality")
+                .eq("source_type", "workbook"),
+                page_size=1000,
+            )
+        except Exception:
+            workbook_rows = []
+        try:
+            submission_rows = _fetch_all(
+                lambda: supabase.table(SUBMISSION_TABLE).select("municipality"),
+                page_size=1000,
+            )
+        except Exception:
+            submission_rows = []
+
+        accomplishment_counts: dict[str, int] = {}
+        for row in workbook_rows:
+            municipality = str(row.get("municipality") or "").strip()
+            if municipality:
+                accomplishment_counts[municipality] = accomplishment_counts.get(municipality, 0) + 1
+
+        history_counts: dict[str, int] = {}
+        for row in submission_rows:
+            municipality = str(row.get("municipality") or "").strip()
+            if municipality:
+                history_counts[municipality] = history_counts.get(municipality, 0) + 1
+
+        municipalities = sorted(set(accomplishment_counts) | set(history_counts))
+        if municipalities:
+            prelaunch_summary = pd.DataFrame(
+                [
+                    {
+                        "Municipality": municipality,
+                        "Workbook Rows": accomplishment_counts.get(municipality, 0),
+                        "Upload History": history_counts.get(municipality, 0),
+                    }
+                    for municipality in municipalities
+                ]
+            )
+            st.warning(
+                f"Pre-launch check: existing workbook data was found for {len(municipalities)} RHU(s). "
+                "Clear test data under RHU Submissions before switching to Live, unless these records are legitimate production data that should be kept."
+            )
+            st.dataframe(prelaunch_summary, width="stretch", hide_index=True)
+
+    with st.form("ops_sbi_campaign_control"):
+        status_index = CAMPAIGN_STATUSES.index(status) if status in CAMPAIGN_STATUSES else 0
+        selected_status = st.selectbox("Campaign Status", list(CAMPAIGN_STATUSES), index=status_index, disabled=read_only)
+        enforce_dates = st.checkbox(
+            "Enforce official SBI activity date range on workbook uploads",
+            value=bool(start_config or end_config),
+            disabled=read_only,
+        )
+        start_default = start_config or datetime.now(MANILA_TZ).date()
+        end_default = end_config or start_default
+        d1, d2 = st.columns(2)
+        with d1:
+            start_date = st.date_input(
+                "Activity Start Date",
+                value=start_default,
+                disabled=read_only,
+                help="Used only when official activity date enforcement is enabled.",
+            )
+        with d2:
+            end_date = st.date_input(
+                "Activity End Date",
+                value=end_default,
+                disabled=read_only,
+                help="Used only when official activity date enforcement is enabled.",
+            )
+        announcement = st.text_area(
+            "RHU Announcement",
+            value=str(config.get("announcement") or ""),
+            height=100,
+            placeholder="Example: VaccTrack data has been updated through Oct 18.",
+            disabled=read_only,
+        )
+
+        keep_prelaunch_data = False
+        if status == "Pre-Implementation" and not prelaunch_summary.empty:
+            keep_prelaunch_data = st.checkbox(
+                "If I switch to Live, I confirm that I reviewed the existing pre-implementation workbook data and it should be kept as legitimate production data.",
+                value=False,
+                disabled=read_only,
+                help="Leave this unchecked if the existing workbook records are only test data. Clear those records first under RHU Submissions.",
+            )
+
+        save = st.form_submit_button("Save SBI Campaign Settings", type="primary", disabled=read_only)
+
+    if save and not read_only:
+        going_live = status == "Pre-Implementation" and selected_status == "Live"
+        if going_live and not prelaunch_summary.empty and not keep_prelaunch_data:
+            st.error(
+                "Cannot switch to Live while pre-implementation workbook data still exists. "
+                "Clear the test data under RHU Submissions, or explicitly confirm that the existing records are legitimate production data and should be kept."
+            )
+            return
+
+        actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
+        try:
+            save_campaign_config(
+                supabase,
+                status=selected_status,
+                start_date=start_date if enforce_dates else None,
+                end_date=end_date if enforce_dates else None,
+                announcement=announcement,
+                actor=str(actor),
+            )
+        except Exception as exc:
+            st.error(f"Campaign settings could not be saved: {exc}")
+            return
+        if audit_callback:
+            old_start = start_config.isoformat() if start_config else "off"
+            old_end = end_config.isoformat() if end_config else "off"
+            new_start_value = start_date if enforce_dates else None
+            new_end_value = end_date if enforce_dates else None
+            new_start = new_start_value.isoformat() if new_start_value else "off"
+            new_end = new_end_value.isoformat() if new_end_value else "off"
+            changes = []
+            if selected_status != status:
+                changes.append(f"status={status}->{selected_status}")
+            if old_start != new_start or old_end != new_end:
+                changes.append(f"activity_dates={old_start}..{old_end}->{new_start}..{new_end}")
+            if str(announcement or "").strip() != str(config.get("announcement") or "").strip():
+                changes.append("announcement=updated")
+            if going_live and not prelaunch_summary.empty and keep_prelaunch_data:
+                changes.append("prelaunch_data=reviewed_and_kept")
+            audit_callback(
+                supabase,
+                "SBI campaign settings updated" + (" | " + " | ".join(changes) if changes else " | no_material_change"),
+            )
+        st.cache_data.clear()
+        st.toast("SBI campaign settings saved.")
+        st.rerun()
+
+
+def render_submission_status(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### RHU Workbook Submissions")
+    ready, _ = _table_exists(supabase, SUBMISSION_TABLE, "id")
+    if not ready:
+        st.info("Run supabase/012_sbi_workbook_submission_control.sql to enable workbook history, finalization, reopen, and restore controls.")
+        return
+
+    try:
+        history = fetch_submission_history(supabase)
+    except Exception as exc:
+        st.error(f"Unable to load RHU workbook submissions: {exc}")
+        return
+
+    current_by_muni: dict[str, dict] = {}
+    if not history.empty:
+        current_rows = history[history["is_current"].fillna(False).astype(bool)].copy()
+        for _, row in current_rows.iterrows():
+            current_by_muni[str(row.get("municipality") or "")] = row.to_dict()
+
+    rows = []
+    for municipality in ABRA_MUNIS:
+        current = current_by_muni.get(municipality, {})
+        if current:
+            state = "Finalized" if current.get("is_finalized") else "Uploaded"
+        else:
+            state = "No Upload"
+        rows.append(
+            {
+                "Municipality": municipality,
+                "Status": state,
+                "Latest Upload": _format_datetime(current.get("uploaded_at")) or "",
+                "Uploaded By": current.get("uploaded_by") or "",
+                "Rows": int(current.get("row_count") or 0),
+                "Activity From": _format_date(current.get("activity_date_min")) or "",
+                "Activity Through": _format_date(current.get("activity_date_max")) or "",
+                "Workbook Version": current.get("workbook_version") or "",
+            }
+        )
+    status = pd.DataFrame(rows)
+    uploaded = int(status["Status"].isin(["Uploaded", "Finalized"]).sum())
+    finalized = int((status["Status"] == "Finalized").sum())
+    c1, c2, c3 = st.columns(3)
+    c1.metric("RHUs With Upload", f"{uploaded}/{len(ABRA_MUNIS)}")
+    c2.metric("Finalized", f"{finalized}/{len(ABRA_MUNIS)}")
+    c3.metric("No Upload", int((status["Status"] == "No Upload").sum()))
+    st.dataframe(status, width="stretch", hide_index=True)
+    st.download_button(
+        "Download RHU Submission Status (CSV)",
+        status.to_csv(index=False).encode("utf-8-sig"),
+        file_name="Abra_NIP_SBI_RHU_Submission_Status.csv",
+        mime="text/csv",
+        key="ops_submission_status_download",
     )
 
-    with overview_tab:
-        _render_overview(supabase)
+    st.divider()
+    municipality = st.selectbox("Manage RHU submission", ABRA_MUNIS, key="ops_submission_muni")
+    muni_history = history[history["municipality"].astype(str).eq(municipality)].copy() if not history.empty else pd.DataFrame()
 
-    with operations_tab:
-        render_operations(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
+    campaign_status = str(get_campaign_config(supabase).get("status") or "Pre-Implementation")
+    try:
+        workbook_rows = _fetch_all(
+            lambda: supabase.table(ACCOMPLISHMENT_TABLE)
+            .select("id")
+            .eq("municipality", municipality)
+            .eq("source_type", "workbook"),
+            page_size=1000,
+        )
+    except Exception:
+        workbook_rows = []
 
-    with sync_tab:
-        _render_data_sync(supabase, read_only=read_only)
+    with st.expander("Pre-Implementation Cleanup — Clear RHU Test Data", expanded=False):
+        st.caption(
+            "Use this only for test or dummy workbook uploads before SBI implementation. "
+            "It deletes this RHU's workbook-derived accomplishment rows and workbook submission history."
+        )
+        st.info(
+            "The RHU account, SBI targets, VaccTrack snapshots, and data from other municipalities are not deleted."
+        )
+        x1, x2 = st.columns(2)
+        x1.metric("Workbook Accomplishment Rows", len(workbook_rows))
+        x2.metric("Workbook History Entries", len(muni_history))
 
-    with imports_tab:
-        render_import_management(supabase, audit_callback=_audit if not read_only else None, read_only=read_only)
+        if campaign_status != "Pre-Implementation":
+            st.warning(
+                f"Test-data cleanup is locked while the campaign status is {campaign_status}. "
+                "Return the campaign to Pre-Implementation only if cleanup is genuinely required."
+            )
+        elif not workbook_rows and muni_history.empty:
+            st.success(f"{municipality} has no workbook test data to clear.")
+        else:
+            confirm_clear = st.checkbox(
+                f"I understand that clearing {municipality} will permanently remove its workbook test data and upload history.",
+                key="ops_clear_test_data_confirm",
+                disabled=read_only,
+            )
+            typed_muni = st.text_input(
+                f"Type {municipality} to confirm",
+                key="ops_clear_test_data_typed",
+                disabled=read_only,
+            )
+            can_clear = (
+                not read_only
+                and confirm_clear
+                and typed_muni.strip().casefold() == municipality.casefold()
+            )
+            if st.button(
+                f"Clear {municipality} Test Workbook Data",
+                type="primary",
+                disabled=not can_clear,
+                width="stretch",
+                key="ops_clear_test_data",
+            ):
+                try:
+                    (
+                        supabase.table(SUBMISSION_TABLE)
+                        .delete()
+                        .eq("municipality", municipality)
+                        .execute()
+                    )
+                    (
+                        supabase.table(ACCOMPLISHMENT_TABLE)
+                        .delete()
+                        .eq("municipality", municipality)
+                        .eq("source_type", "workbook")
+                        .execute()
+                    )
+                except Exception as exc:
+                    st.error(f"Test data could not be cleared: {exc}")
+                    return
 
-    with map_tab:
-        _render_map_label_editor(supabase, read_only=read_only)
+                if audit_callback:
+                    audit_callback(
+                        supabase,
+                        f"SBI RHU workbook test data cleared | municipality={municipality} "
+                        f"| accomplishment_rows={len(workbook_rows)} | submission_history={len(muni_history)}",
+                    )
+                st.cache_data.clear()
+                st.success(
+                    f"{municipality} test workbook data cleared: "
+                    f"{len(workbook_rows):,} accomplishment row(s) and {len(muni_history):,} history record(s) removed."
+                )
+                st.rerun()
 
-    with rhu_accounts_tab:
-        _render_rhu_accounts(supabase, read_only=read_only)
+    if muni_history.empty:
+        st.info(f"{municipality} has no workbook upload history yet.")
+        return
 
-    with accounts_tab:
-        _render_admin_accounts(supabase, read_only=read_only)
+    display = muni_history[[
+        "id", "uploaded_at", "uploaded_by", "file_name", "workbook_version", "row_count",
+        "activity_date_min", "activity_date_max", "added_count", "modified_count", "removed_count",
+        "unchanged_count", "is_current", "is_finalized",
+    ]].copy()
+    display["uploaded_at"] = display["uploaded_at"].map(_format_datetime)
+    display["activity_date_min"] = display["activity_date_min"].map(_format_date)
+    display["activity_date_max"] = display["activity_date_max"].map(_format_date)
+    display.columns = [
+        "ID", "Uploaded", "Uploaded By", "File", "Version", "Rows", "Activity From", "Activity Through",
+        "Added", "Modified", "Removed", "Unchanged", "Current", "Finalized",
+    ]
+    st.dataframe(display, width="stretch", hide_index=True)
 
-    with login_tab:
-        _section_heading("fa-right-to-bracket", "Login History")
-        _render_login_history(supabase)
+    current = get_current_submission(supabase, municipality)
+    if current and current.get("is_finalized"):
+        st.success(f"{municipality}'s current workbook is finalized.")
+        if st.button("Reopen RHU Submission", disabled=read_only, width="stretch", key="ops_reopen_submission"):
+            if reopen_current_submission(supabase, municipality):
+                if audit_callback:
+                    audit_callback(supabase, f"RHU workbook submission reopened | municipality={municipality}")
+                st.toast(f"{municipality} submission reopened.")
+                st.rerun()
 
-    with audit_tab:
-        _section_heading("fa-clipboard-list", "Audit Log")
-        _render_audit_log(supabase)
+    restorable = muni_history[~muni_history["is_current"].fillna(False).astype(bool)].copy()
+    if restorable.empty:
+        return
+    st.markdown("#### Restore a Previous Workbook")
+    st.warning("Restore replaces the RHU's current dashboard accomplishment data with the selected previous workbook snapshot. A new history entry is created; the old history is not deleted.")
+    restore_ids = restorable["id"].astype(int).tolist()
+    restore_id = st.selectbox("Previous submission ID", restore_ids, key="ops_restore_submission_id")
+    confirm_restore = st.checkbox(
+        f"I understand this will replace {municipality}'s current RHU data with submission #{restore_id}.",
+        key="ops_restore_submission_confirm",
+        disabled=read_only,
+    )
+    if st.button(
+        "Restore Selected Submission",
+        type="primary",
+        disabled=read_only or not confirm_restore,
+        width="stretch",
+        key="ops_restore_submission",
+    ):
+        actor = st.session_state.get("username") or st.session_state.get("user_name") or "System Admin"
+        try:
+            saved, removed = restore_submission(supabase, int(restore_id), str(actor))
+        except Exception as exc:
+            st.error(f"The previous submission could not be restored: {exc}")
+            return
+        if audit_callback:
+            audit_callback(supabase, f"RHU workbook submission restored | municipality={municipality} | source_submission={restore_id}")
+        st.cache_data.clear()
+        st.success(f"Previous workbook restored: {saved:,} record(s) saved and {removed:,} current record(s) removed.")
+        st.rerun()
+
+
+def render_feedback_inbox(supabase, audit_callback=None, read_only: bool = False) -> None:
+    st.markdown("### RHU Feedback")
+    ready, _ = _table_exists(supabase, FEEDBACK_TABLE)
+    if not ready:
+        st.info("Run supabase/009_sbi_operations.sql to enable the built-in feedback inbox.")
+        return
+
+    rows = _fetch_all(
+        lambda: supabase.table(FEEDBACK_TABLE)
+        .select("id,submitted_at,username,role,municipality,category,page,app_version,message,status,admin_note,resolved_at,resolved_by")
+        .order("submitted_at", desc=True),
+        page_size=500,
+    )
+    feedback = pd.DataFrame(rows)
+    if feedback.empty:
+        st.info("No feedback has been submitted yet.")
+        return
+
+    f1, f2 = st.columns(2)
+    with f1:
+        status_filter = st.selectbox("Status", ["All", "Open", "In Review", "Resolved"], key="ops_feedback_status")
+    with f2:
+        muni_options = ["All"] + [m for m in ABRA_MUNIS if m in set(feedback["municipality"].dropna().astype(str))]
+        muni_filter = st.selectbox("Municipality", muni_options, key="ops_feedback_muni")
+
+    view = feedback.copy()
+    if status_filter != "All":
+        view = view[view["status"].eq(status_filter)]
+    if muni_filter != "All":
+        view = view[view["municipality"].eq(muni_filter)]
+
+    table = view[["id", "submitted_at", "municipality", "username", "category", "page", "status", "message"]].copy()
+    table["submitted_at"] = table["submitted_at"].map(_format_datetime)
+    table.columns = ["ID", "Submitted", "Municipality", "Username", "Category", "Page", "Status", "Message"]
+    st.dataframe(table, width="stretch", hide_index=True)
+
+    if view.empty:
+        return
+
+    ids = view["id"].astype(int).tolist()
+    selected_id = st.selectbox("Open feedback item", ids, key="ops_feedback_item")
+    selected = feedback[feedback["id"].astype(int).eq(int(selected_id))].iloc[0]
+    st.markdown(f"**{selected.get('category', '')} — {selected.get('municipality', '')}**")
+    st.write(str(selected.get("message") or ""))
+
+    with st.form("ops_feedback_update_form"):
+        current_status = str(selected.get("status") or "Open")
+        options = ["Open", "In Review", "Resolved"]
+        status = st.selectbox("Status", options, index=options.index(current_status) if current_status in options else 0)
+        note = st.text_area("Admin Note", value=str(selected.get("admin_note") or ""), height=100)
+        save = st.form_submit_button("Save Feedback Update", type="primary", disabled=read_only)
+
+    if save and not read_only:
+        update = {"status": status, "admin_note": note.strip() or None}
+        if status == "Resolved":
+            update["resolved_at"] = datetime.now(MANILA_TZ).isoformat()
+            update["resolved_by"] = st.session_state.get("username") or st.session_state.get("user_name")
+        else:
+            update["resolved_at"] = None
+            update["resolved_by"] = None
+        supabase.table(FEEDBACK_TABLE).update(update).eq("id", int(selected_id)).execute()
+        if audit_callback:
+            audit_callback(supabase, f"Feedback updated | id={selected_id} | status={status}")
+        st.toast("Feedback updated.")
+        st.rerun()
+
+
+def _csv_bytes(rows: list[dict]) -> bytes:
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return b""
+    for column in frame.columns:
+        if frame[column].map(lambda value: isinstance(value, (dict, list))).any():
+            frame[column] = frame[column].map(
+                lambda value: json.dumps(value, ensure_ascii=False, default=str)
+                if isinstance(value, (dict, list))
+                else value
+            )
+    return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+def _build_backup(supabase, include_vacctrack_rows: bool) -> tuple[bytes, list[dict]]:
+    tables = [
+        "user_accounts",
+        "access_logs",
+        "sbi_targets",
+        "sbi_rhu_accomplishments",
+        "sbi_linelist_imports",
+        "sbi_linelist_records",
+        "sbi_linelist_audit",
+        "sbi_vacctrack_imports",
+        SUBMISSION_TABLE,
+        SBI_SETTINGS_TABLE,
+        FEEDBACK_TABLE,
+    ]
+    if include_vacctrack_rows:
+        tables.append("sbi_vacctrack_rows")
+
+    output = BytesIO()
+    report = []
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for table in tables:
+            try:
+                if table == "user_accounts":
+                    rows = _fetch_all(
+                        lambda: supabase.table("user_accounts").select(
+                            "username,name,role,assigned_muni,account_status,failed_attempts,must_change_password"
+                        ),
+                        page_size=1000,
+                    )
+                else:
+                    rows = _fetch_all(lambda table=table: supabase.table(table).select("*"), page_size=1000)
+                archive.writestr(f"{table}.csv", _csv_bytes(rows))
+                report.append({"Table": table, "Rows": len(rows), "Status": "Included"})
+            except Exception as exc:
+                report.append({"Table": table, "Rows": 0, "Status": f"Skipped: {str(exc)[:80]}"})
+
+        archive.writestr(
+            "backup_info.txt",
+            (
+                f"Abra NIP Monitoring Information System backup\n"
+                f"Version: {APP_VERSION}\n"
+                f"Created: {datetime.now(MANILA_TZ).isoformat()}\n"
+                f"VaccTrack raw rows included: {'Yes' if include_vacctrack_rows else 'No'}\n"
+            ).encode("utf-8"),
+        )
+    return output.getvalue(), report
+
+
+def render_backup(supabase, audit_callback=None) -> None:
+    st.markdown("### Data Backup / Export")
+    st.caption("Creates a ZIP of CSV files for review or safekeeping. It does not change any database records.")
+
+    include_rows = st.checkbox(
+        "Include raw VaccTrack rows (larger backup)",
+        value=False,
+        key="ops_backup_vacctrack_rows",
+    )
+
+    if st.button("Prepare Backup", type="primary", width="stretch", key="ops_prepare_backup"):
+        with st.spinner("Preparing backup files..."):
+            payload, report = _build_backup(supabase, include_rows)
+        st.session_state["ops_backup_payload"] = payload
+        st.session_state["ops_backup_report"] = report
+        if audit_callback:
+            audit_callback(supabase, f"Backup prepared | raw_vacctrack_rows={'yes' if include_rows else 'no'}")
+
+    payload = st.session_state.get("ops_backup_payload")
+    report = st.session_state.get("ops_backup_report")
+    if report:
+        st.dataframe(pd.DataFrame(report), width="stretch", hide_index=True)
+    if payload:
+        stamp = datetime.now(MANILA_TZ).strftime("%Y%m%d_%H%M")
+        st.download_button(
+            "Download Backup ZIP",
+            data=payload,
+            file_name=f"Abra_NIP_Backup_{stamp}.zip",
+            mime="application/zip",
+            width="stretch",
+            key="ops_download_backup",
+        )
+
+
+def render_operations(supabase, audit_callback=None, read_only: bool = False) -> None:
+    (
+        health_tab,
+        campaign_tab,
+        submissions_tab,
+        quality_tab,
+        reconciliation_tab,
+        workbook_package_tab,
+        readiness_tab,
+        rollout_tab,
+        feedback_tab,
+        backup_tab,
+    ) = st.tabs(
+        [
+            "System Health",
+            "SBI Control",
+            "RHU Submissions",
+            "Data Quality",
+            "VaccTrack Monitor",
+            "RHU Workbooks",
+            "Production Readiness",
+            "RHU Rollout",
+            "Feedback",
+            "Backup",
+        ]
+    )
+    with health_tab:
+        render_system_health(supabase, audit_callback=audit_callback, read_only=read_only)
+    with campaign_tab:
+        render_sbi_control(supabase, audit_callback=audit_callback, read_only=read_only)
+    with submissions_tab:
+        render_submission_status(supabase, audit_callback=audit_callback, read_only=read_only)
+    with quality_tab:
+        render_data_quality_center(supabase)
+    with reconciliation_tab:
+        render_reconciliation_monitor(supabase)
+    with workbook_package_tab:
+        render_all_rhu_workbook_package(read_only=read_only)
+    with readiness_tab:
+        render_production_readiness(supabase, read_only=read_only)
+    with rollout_tab:
+        render_rollout_status(supabase)
+    with feedback_tab:
+        render_feedback_inbox(supabase, audit_callback=audit_callback, read_only=read_only)
+    with backup_tab:
+        render_backup(supabase, audit_callback=audit_callback if not read_only else None)
+
+
+        
