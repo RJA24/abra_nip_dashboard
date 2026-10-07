@@ -1175,21 +1175,21 @@ def render_rhu_accomplishments(
                 dry_run=is_qa_encoder,
             )
 
+        # Dashboard and reconciliation are intentionally Abra-wide read views,
+        # matching the MR SIA experience. The RHU's assigned municipality still
+        # controls all workbook download/upload/write actions above.
         try:
-            rhu_entries = _fetch_entries(supabase, canonical)
+            rhu_entries = _fetch_entries(supabase)
         except Exception as exc:
             rhu_entries = pd.DataFrame()
             st.warning(f"Unable to load current RHU workbook data for dashboard/reconciliation: {exc}")
 
-        workbook_entries, _ = prepare_workbook_entries(
-            rhu_entries,
-            municipality=canonical,
-        )
+        workbook_entries, _ = prepare_workbook_entries(rhu_entries)
 
         with dashboard_tab:
             if is_qa_encoder:
                 st.info(
-                    f"QA view of the current production workbook data for {canonical} RHU. "
+                    "QA read view of current production workbook data across Abra. "
                     "Your QA dry-run upload is not included because it is never saved to production."
                 )
             render_workbook_dashboard(
@@ -1198,18 +1198,19 @@ def render_rhu_accomplishments(
                 actual_targets=actual_targets,
                 start_date=report_start,
                 end_date=report_end,
-                selected_muni=canonical,
+                selected_muni=selected_muni,
             )
 
         with reconciliation_tab:
-            _render_check(
+            _render_coordinator_view(
                 supabase,
-                canonical,
                 g1_events,
                 g7_events,
                 hpv_events,
                 report_start,
                 report_end,
+                selected_muni,
+                all_entries=workbook_entries,
             )
 
         with mine_tab:
