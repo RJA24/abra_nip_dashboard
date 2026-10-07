@@ -1,6 +1,6 @@
 # Abra NIP Monitoring Information System
 
-Production baseline: **v5.22.0**  
+Production baseline: **v5.22.4**  
 Programs: **MR Supplemental Immunization Activity (MR SIA)** and **School-Based Immunization (SBI)**  
 Primary deployment: Streamlit Community Cloud + Supabase + Google Sheets/VaccTrack sources.
 
@@ -58,6 +58,8 @@ The production operations area contains:
 - **RHU Submissions** — municipality submission status, history, restore, finalization/reopen, and Pre-Implementation test-data cleanup.
 - **Data Quality** — province-wide validation findings and actionable filters.
 - **VaccTrack Monitor** — province-wide RHU workbook vs VaccTrack reconciliation with pending-verification logic.
+- **Workbook Dashboard** — operational/provisional RHU workbook analytics using the same MR/Td, HPV, and Deferrals & Refusals outline as VaccTrack.
+- **VaccTrack Dashboard** — official/final VaccTrack analytics plus municipality accomplishment and combined daily-activity overview charts.
 - **RHU Workbooks** — generate all 27 municipality-specific workbooks in one ZIP.
 - **Production Readiness** — pre-launch checks across accounts, schema, rosters, campaign settings, VaccTrack, data quality, backup, and workbook package readiness.
 - **RHU Rollout** — account/login/password/upload rollout visibility.

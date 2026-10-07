@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.22.4 — Workbook/VaccTrack Dashboard Parity
+
+- Expanded **Workbook Dashboard** to mirror the full VaccTrack analytical outline: MR & Td (combined/G1/G7), HPV, and Deferrals & Refusals.
+- Workbook views now include target coverage, municipality/school performance, maps, daily trends, cumulative trends, tally sheets, school-level performance, reason analysis, and CSV exports using workbook activity dates.
+- Added the Workbook Dashboard's **Vaccination Accomplishments by Municipality** and combined **Daily Activity Trend** overview charts to the official **VaccTrack Dashboard**.
+- Workbook `reason_counts` JSON is normalized into Reason 01–19 for dashboard analysis.
+- No SQL migration. RHU encoding/upload workflow is unchanged.
+
 ## v5.22.0 — Production Documentation and Code Freeze
 
 - Standardized production version labels to v5.22.0.

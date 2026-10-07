@@ -610,6 +610,122 @@ def render_sbi_dashboard(supabase) -> None:
             key=f'{key_prefix}_raw_download',
         )
 
+    def _render_vacctrack_activity_overview():
+        """Mirror the workbook municipality-accomplishment and daily-trend views."""
+        if g1_view.empty and g7_view.empty and hpv_view.empty:
+            return
+
+        if view_mode == "All Municipalities (Abra)":
+            municipality_parts = []
+            for frame, series in [
+                (g1_view, [('MR Doses', 'G1 MR'), ('Td Doses', 'G1 Td')]),
+                (hpv_view, [('HPV Dose 1', 'G4 HPV1'), ('HPV Dose 2', 'G4 HPV2')]),
+                (g7_view, [('MR Doses', 'G7 MR'), ('Td Doses', 'G7 Td')]),
+            ]:
+                if frame is None or frame.empty or 'Municipality' not in frame.columns:
+                    continue
+                grouped = frame.groupby('Municipality', dropna=False)[[col for col, _ in series]].sum().reset_index()
+                for column, label in series:
+                    part = grouped[['Municipality', column]].rename(columns={column: 'Vaccinated'}).copy()
+                    part['Indicator'] = label
+                    municipality_parts.append(part)
+
+            if municipality_parts:
+                municipality_chart = pd.concat(municipality_parts, ignore_index=True)
+                municipality_chart['Vaccinated'] = pd.to_numeric(
+                    municipality_chart['Vaccinated'], errors='coerce'
+                ).fillna(0)
+                municipality_chart = municipality_chart.loc[
+                    municipality_chart['Vaccinated'].gt(0)
+                ].copy()
+                if not municipality_chart.empty:
+                    st.markdown('#### Vaccination Accomplishments by Municipality')
+                    fig_muni = px.bar(
+                        municipality_chart,
+                        x='Vaccinated',
+                        y='Municipality',
+                        color='Indicator',
+                        orientation='h',
+                        barmode='group',
+                        text_auto='.0f',
+                    )
+                    fig_muni.update_layout(
+                        dragmode=False,
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        xaxis_title='Vaccinated',
+                        yaxis_title='',
+                        height=max(460, len(ABRA_MUNIS) * 30),
+                        legend=dict(
+                            orientation='h', yanchor='top', y=-0.08,
+                            xanchor='center', x=0.5,
+                        ),
+                        legend_title_text='',
+                    )
+                    st.plotly_chart(
+                        fig_muni,
+                        width='stretch',
+                        key='sbi_vacctrack_muni_accomplishments_chart',
+                    )
+
+        daily_parts = []
+        for frame, series in [
+            (g1_view, [('MR Doses', 'G1 MR'), ('Td Doses', 'G1 Td')]),
+            (hpv_view, [('HPV Dose 1', 'G4 HPV1'), ('HPV Dose 2', 'G4 HPV2')]),
+            (g7_view, [('MR Doses', 'G7 MR'), ('Td Doses', 'G7 Td')]),
+        ]:
+            if frame is None or frame.empty or 'Report Date' not in frame.columns:
+                continue
+            valid_cols = [col for col, _ in series if col in frame.columns]
+            if not valid_cols:
+                continue
+            part = frame[['Report Date', *valid_cols]].copy()
+            part['Report Date'] = pd.to_datetime(part['Report Date'], errors='coerce')
+            part = part.dropna(subset=['Report Date'])
+            for column in valid_cols:
+                part[column] = pd.to_numeric(part[column], errors='coerce').fillna(0)
+            part = part.groupby('Report Date', as_index=False)[valid_cols].sum()
+            rename_map = {col: label for col, label in series if col in valid_cols}
+            part = part.rename(columns=rename_map).melt(
+                id_vars=['Report Date'],
+                value_vars=list(rename_map.values()),
+                var_name='Indicator',
+                value_name='Vaccinated',
+            )
+            daily_parts.append(part)
+
+        if daily_parts:
+            daily_chart = pd.concat(daily_parts, ignore_index=True)
+            daily_chart = (
+                daily_chart.groupby(['Report Date', 'Indicator'], as_index=False)['Vaccinated']
+                .sum()
+                .sort_values('Report Date')
+            )
+            if not daily_chart.empty:
+                st.markdown('#### Daily Activity Trend')
+                fig_daily = px.line(
+                    daily_chart,
+                    x='Report Date',
+                    y='Vaccinated',
+                    color='Indicator',
+                    markers=True,
+                )
+                fig_daily.update_layout(
+                    dragmode=False,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis_title='Report Date',
+                    yaxis_title='Vaccinated',
+                    legend=dict(
+                        orientation='h', yanchor='top', y=-0.12,
+                        xanchor='center', x=0.5,
+                    ),
+                    legend_title_text='',
+                )
+                st.plotly_chart(
+                    fig_daily,
+                    width='stretch',
+                    key='sbi_vacctrack_daily_activity_overview_chart',
+                )
+
     # --- DASHBOARD TABS ---
     sbi_tabs = st.tabs([
         "Executive Summary",
@@ -2181,6 +2297,12 @@ def render_sbi_dashboard(supabase) -> None:
 
     # 6. VACC TRACK DASHBOARD — official/final source
     with tab_sbi_vacctrack:
+        st.caption(
+            "Official/final SBI accomplishments from the latest available VaccTrack data."
+        )
+        _render_vacctrack_activity_overview()
+        st.divider()
+
         vacc_mr_tab, vacc_hpv_tab, vacc_def_tab = st.tabs([
             "MR & Td (Grades 1 & 7)",
             "HPV (Grade 4)",
