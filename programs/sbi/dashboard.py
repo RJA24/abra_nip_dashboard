@@ -21,8 +21,9 @@ from core.map_labels import canonical_municipality_name, normalize_municipality_
 from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
 from programs.sbi.analytics import (
     available_date_bounds,
-    build_effective_targets,
+    build_target_basis_targets,
     filter_dates,
+    filter_events_to_target_schools,
     filter_location,
     prepare_hpv_events,
     prepare_mr_td_events,
@@ -34,7 +35,11 @@ from programs.sbi.rhu_tracker import (
     render_vacctrack_vs_workbook,
 )
 from programs.sbi.workbook_dashboard import render_workbook_dashboard
-from programs.sbi.source_dashboard_layout import render_source_kpi_summary
+from programs.sbi.source_dashboard_layout import (
+    render_actual_target_gap_notice,
+    render_source_kpi_summary,
+    render_target_basis_selector,
+)
 from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
@@ -102,7 +107,12 @@ def render_sbi_dashboard(supabase) -> None:
     g1_events = prepare_mr_td_events(df_g1, "G1")
     g7_events = prepare_mr_td_events(df_g7, "G7")
     hpv_events = prepare_hpv_events(df_g4)
-    effective_targets = build_effective_targets(df_sbi_targets, df_sbi_actual_targets)
+    baseline_target_all = build_target_basis_targets(
+        df_sbi_targets, df_sbi_actual_targets, "Baseline Targets"
+    )
+    actual_target_all = build_target_basis_targets(
+        df_sbi_targets, df_sbi_actual_targets, "Actual Targets"
+    )
     available_min_date, available_max_date = available_date_bounds(
         g1_events, g7_events, hpv_events
     )
@@ -195,7 +205,7 @@ def render_sbi_dashboard(supabase) -> None:
     g1_view = filter_dates(filter_location(g1_events, selected_muni_filter), report_start, report_end)
     g7_view = filter_dates(filter_location(g7_events, selected_muni_filter), report_start, report_end)
     hpv_view = filter_dates(filter_location(hpv_events, selected_muni_filter), report_start, report_end)
-    target_view = filter_location(effective_targets, selected_muni_filter)
+    baseline_target_view = filter_location(baseline_target_all, selected_muni_filter)
 
     location_label = "Abra Province" if view_mode == "All Municipalities (Abra)" else f"{selected_muni}, Abra"
     if report_start and report_end:
@@ -408,7 +418,7 @@ def render_sbi_dashboard(supabase) -> None:
             key='sbi_hpv_school_download',
         )
 
-    def _render_mr_td_panel(events, targets, target_col, panel_label, key_prefix):
+    def _render_mr_td_panel(events, targets, target_col, panel_label, key_prefix, coverage_events=None):
         st.markdown(
             f'''<h4 style="margin-bottom:0.25rem;">
             <i class="fa-solid fa-syringe" style="color:#0033A0; margin-right:8px;"></i>
@@ -421,13 +431,14 @@ def render_sbi_dashboard(supabase) -> None:
             st.info("No VaccTrack records are available for this selection and reporting period.")
             return
 
+        coverage_events = events if coverage_events is None else coverage_events
         target_total = pd.to_numeric(targets.get(target_col, 0), errors='coerce').fillna(0).sum() if not targets.empty else 0
-        school = _build_mr_td_school_summary(events, targets, target_col)
+        school = _build_mr_td_school_summary(coverage_events, targets, target_col)
 
 
         if view_mode == "All Municipalities (Abra)":
             geo_col = 'Municipality'
-            event_geo = events.groupby(geo_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+            event_geo = coverage_events.groupby(geo_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
             if not targets.empty:
                 target_geo = targets.groupby(geo_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: 'Target'})
                 geo = target_geo.merge(event_geo, on=geo_col, how='outer').fillna(0)
@@ -538,7 +549,7 @@ def render_sbi_dashboard(supabase) -> None:
             </h4>''',
             unsafe_allow_html=True,
         )
-        trend = events.dropna(subset=['Report Date']).groupby('Report Date')[['MR Doses', 'Td Doses']].sum().reset_index().sort_values('Report Date')
+        trend = coverage_events.dropna(subset=['Report Date']).groupby('Report Date')[['MR Doses', 'Td Doses']].sum().reset_index().sort_values('Report Date')
         if not trend.empty:
             trend['Cumulative MR'] = trend['MR Doses'].cumsum()
             trend['Cumulative Td'] = trend['Td Doses'].cumsum()
@@ -619,20 +630,28 @@ def render_sbi_dashboard(supabase) -> None:
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
         st.markdown(f"### SBI Campaign Overview: {location_label}")
+        exec_target_basis = render_target_basis_selector(key="sbi_exec_target_basis")
+        exec_target_all = actual_target_all if exec_target_basis == "Actual Targets" else baseline_target_all
+        exec_target_view = filter_location(exec_target_all, selected_muni_filter)
+        render_actual_target_gap_notice(exec_target_basis, baseline_target_view, exec_target_view)
 
-        if target_view.empty:
+        g1_exec_cov = filter_events_to_target_schools(g1_view, exec_target_view)
+        g7_exec_cov = filter_events_to_target_schools(g7_view, exec_target_view)
+        hpv_exec_cov = filter_events_to_target_schools(hpv_view, exec_target_view)
+
+        if exec_target_view.empty:
             st.warning("Target data is unavailable. Sync the target database first.")
         else:
-            tgt_g1 = pd.to_numeric(target_view['G1 Target'], errors='coerce').fillna(0).sum()
-            tgt_g7 = pd.to_numeric(target_view['G7 Target'], errors='coerce').fillna(0).sum()
+            tgt_g1 = pd.to_numeric(exec_target_view['G1 Target'], errors='coerce').fillna(0).sum()
+            tgt_g7 = pd.to_numeric(exec_target_view['G7 Target'], errors='coerce').fillna(0).sum()
             tgt_mr_td = tgt_g1 + tgt_g7
-            tgt_hpv = pd.to_numeric(target_view['G4 Target'], errors='coerce').fillna(0).sum()
+            tgt_hpv = pd.to_numeric(exec_target_view['G4 Target'], errors='coerce').fillna(0).sum()
 
-            g1_mr_doses = pd.to_numeric(g1_view.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0
-            g1_td_doses = pd.to_numeric(g1_view.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g1_view.empty else 0
-            g7_mr_doses = pd.to_numeric(g7_view.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0
-            g7_td_doses = pd.to_numeric(g7_view.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g7_view.empty else 0
-            hpv_1st = pd.to_numeric(hpv_view.get('HPV Dose 1', 0), errors='coerce').fillna(0).sum() if not hpv_view.empty else 0
+            g1_mr_doses = pd.to_numeric(g1_exec_cov.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g1_exec_cov.empty else 0
+            g1_td_doses = pd.to_numeric(g1_exec_cov.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g1_exec_cov.empty else 0
+            g7_mr_doses = pd.to_numeric(g7_exec_cov.get('MR Doses', 0), errors='coerce').fillna(0).sum() if not g7_exec_cov.empty else 0
+            g7_td_doses = pd.to_numeric(g7_exec_cov.get('Td Doses', 0), errors='coerce').fillna(0).sum() if not g7_exec_cov.empty else 0
+            hpv_1st = pd.to_numeric(hpv_exec_cov.get('HPV Dose 1', 0), errors='coerce').fillna(0).sum() if not hpv_exec_cov.empty else 0
 
             total_mr = g1_mr_doses + g7_mr_doses
             total_td = g1_td_doses + g7_td_doses
@@ -718,7 +737,7 @@ def render_sbi_dashboard(supabase) -> None:
                 unsafe_allow_html=True
             )
             exec_daily = render_campaign_burnup(
-                g1_view, g7_view, hpv_view,
+                g1_exec_cov, g7_exec_cov, hpv_exec_cov,
                 mr_td_target=tgt_mr_td,
                 hpv_target=tgt_hpv,
                 key='sbi_exec_campaign_burnup',
@@ -735,13 +754,13 @@ def render_sbi_dashboard(supabase) -> None:
                     )
 
             st.divider()
-            exec_targets = target_view.copy()
+            exec_targets = exec_target_view.copy()
             exec_targets['MR/Td Target'] = (
                 pd.to_numeric(exec_targets.get('G1 Target', 0), errors='coerce').fillna(0)
                 + pd.to_numeric(exec_targets.get('G7 Target', 0), errors='coerce').fillna(0)
             )
             exec_targets['HPV Target'] = pd.to_numeric(exec_targets.get('G4 Target', 0), errors='coerce').fillna(0)
-            mrtd_exec = pd.concat([g1_view, g7_view], ignore_index=True, sort=False)
+            mrtd_exec = pd.concat([g1_exec_cov, g7_exec_cov], ignore_index=True, sort=False)
 
             if view_mode == "All Municipalities (Abra)":
                 geo_exec_col = 'Municipality'
@@ -752,8 +771,8 @@ def render_sbi_dashboard(supabase) -> None:
                     else pd.DataFrame(columns=[geo_exec_col, 'MR Doses', 'Td Doses'])
                 )
                 hpv_geo_exec = (
-                    hpv_view.groupby(geo_exec_col, dropna=False)[['HPV Dose 1']].sum().reset_index()
-                    if not hpv_view.empty
+                    hpv_exec_cov.groupby(geo_exec_col, dropna=False)[['HPV Dose 1']].sum().reset_index()
+                    if not hpv_exec_cov.empty
                     else pd.DataFrame(columns=[geo_exec_col, 'HPV Dose 1'])
                 )
                 exec_geo = exec_target_geo.merge(mrtd_geo, on=geo_exec_col, how='outer').merge(
@@ -864,8 +883,8 @@ def render_sbi_dashboard(supabase) -> None:
                     else pd.DataFrame(columns=['School ID', 'School Name', 'MR Doses', 'Td Doses'])
                 )
                 hpv_school = (
-                    hpv_view.groupby(['School ID', 'School Name'], dropna=False)[['HPV Dose 1']].sum().reset_index()
-                    if not hpv_view.empty
+                    hpv_exec_cov.groupby(['School ID', 'School Name'], dropna=False)[['HPV Dose 1']].sum().reset_index()
+                    if not hpv_exec_cov.empty
                     else pd.DataFrame(columns=['School ID', 'School Name', 'HPV Dose 1'])
                 )
                 for frame in [mrtd_school, hpv_school]:
@@ -953,7 +972,7 @@ def render_sbi_dashboard(supabase) -> None:
             r1, r2, r3 = st.columns(3)
             r1.metric("VaccTrack Report Rows", f"{report_rows:,}")
             r2.metric("Schools with Reports", f"{reporting_schools:,}")
-            r3.metric("Target Schools", f"{len(target_view):,}")
+            r3.metric("Target Schools", f"{len(exec_target_view):,}")
 
     # 2. TARGETS OVERVIEW
     with tab_sbi_target:
@@ -2173,15 +2192,27 @@ def render_sbi_dashboard(supabase) -> None:
         st.caption(
             "Official/final SBI accomplishments from the latest available VaccTrack data."
         )
+        vac_target_basis = render_target_basis_selector(key="sbi_vacctrack_target_basis")
+        vac_target_all = actual_target_all if vac_target_basis == "Actual Targets" else baseline_target_all
+        vac_target_view = filter_location(vac_target_all, selected_muni_filter)
+        render_actual_target_gap_notice(vac_target_basis, baseline_target_view, vac_target_view)
+
+        g1_vac_cov = filter_events_to_target_schools(g1_view, vac_target_view)
+        g7_vac_cov = filter_events_to_target_schools(g7_view, vac_target_view)
+        hpv_vac_cov = filter_events_to_target_schools(hpv_view, vac_target_view)
+
         render_source_kpi_summary(
             g1_view,
             g7_view,
             hpv_view,
-            target_view,
+            vac_target_view,
             all_municipalities=view_mode == "All Municipalities (Abra)",
             key_prefix="sbi_vacctrack",
             row_label="Report Rows",
             latest_label="Latest Report",
+            coverage_g1_events=g1_vac_cov,
+            coverage_g7_events=g7_vac_cov,
+            coverage_hpv_events=hpv_vac_cov,
         )
         st.divider()
 
@@ -2201,7 +2232,7 @@ def render_sbi_dashboard(supabase) -> None:
 
             with mr_combined_tab:
                 combined_events = pd.concat([g1_view, g7_view], ignore_index=True, sort=False)
-                combined_targets = target_view.copy()
+                combined_targets = vac_target_view.copy()
                 if not combined_targets.empty:
                     combined_targets['MR/Td Target'] = (
                         pd.to_numeric(combined_targets['G1 Target'], errors='coerce').fillna(0)
@@ -2212,25 +2243,28 @@ def render_sbi_dashboard(supabase) -> None:
                     combined_targets,
                     'MR/Td Target',
                     'Combined Grades 1 & 7 Performance',
-                    'sbi_mrtd_combined'
+                    'sbi_mrtd_combined',
+                    coverage_events=pd.concat([g1_vac_cov, g7_vac_cov], ignore_index=True, sort=False),
                 )
 
             with mr_g1_tab:
                 _render_mr_td_panel(
                     g1_view,
-                    target_view,
+                    vac_target_view,
                     'G1 Target',
                     'Grade 1 MR & Td Performance',
-                    'sbi_mrtd_g1'
+                    'sbi_mrtd_g1',
+                    coverage_events=g1_vac_cov,
                 )
 
             with mr_g7_tab:
                 _render_mr_td_panel(
                     g7_view,
-                    target_view,
+                    vac_target_view,
                     'G7 Target',
                     'Grade 7 MR & Td Performance',
-                    'sbi_mrtd_g7'
+                    'sbi_mrtd_g7',
+                    coverage_events=g7_vac_cov,
                 )
 
 
@@ -2240,14 +2274,14 @@ def render_sbi_dashboard(supabase) -> None:
             if hpv_view.empty:
                 st.info("No Grade 4 HPV VaccTrack records are available for this selection and reporting period.")
             else:
-                hpv_target = pd.to_numeric(target_view.get('G4 Target', 0), errors='coerce').fillna(0).sum() if not target_view.empty else 0
-                hpv_school = _build_hpv_school_summary(hpv_view, target_view)
+                hpv_target = pd.to_numeric(vac_target_view.get('G4 Target', 0), errors='coerce').fillna(0).sum() if not vac_target_view.empty else 0
+                hpv_school = _build_hpv_school_summary(hpv_vac_cov, vac_target_view)
 
                 if view_mode == "All Municipalities (Abra)":
                     geo_col_hpv = 'Municipality'
-                    hpv_geo = hpv_view.groupby(geo_col_hpv, dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
-                    if not target_view.empty:
-                        hpv_target_geo = target_view.groupby(geo_col_hpv, dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
+                    hpv_geo = hpv_vac_cov.groupby(geo_col_hpv, dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+                    if not vac_target_view.empty:
+                        hpv_target_geo = vac_target_view.groupby(geo_col_hpv, dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
                         hpv_geo = hpv_target_geo.merge(hpv_geo, on=geo_col_hpv, how='outer').fillna(0)
                     else:
                         hpv_geo['Target'] = 0
@@ -2355,7 +2389,7 @@ def render_sbi_dashboard(supabase) -> None:
                     </h4>''',
                     unsafe_allow_html=True
                 )
-                hpv_trend = hpv_view.dropna(subset=['Report Date']).groupby('Report Date')[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index().sort_values('Report Date')
+                hpv_trend = hpv_vac_cov.dropna(subset=['Report Date']).groupby('Report Date')[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index().sort_values('Report Date')
                 if not hpv_trend.empty:
                     hpv_trend['Cumulative 1st Dose'] = hpv_trend['HPV Dose 1'].cumsum()
                     hpv_trend['Cumulative 2nd Dose'] = hpv_trend['HPV Dose 2'].cumsum()

@@ -2,7 +2,7 @@
 
 RHU_FULL_GUIDE_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.22.4.1
+Version: v5.22.5
 
 ## 1. Reporting workflow
 
@@ -167,7 +167,7 @@ Use **Send Feedback / Report a Problem** for workbook, upload, reconciliation, i
 
 RHU_FAQ_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.22.4.1
+Version: v5.22.5
 
 ## 1. Do I need internet while encoding accomplishments?
 

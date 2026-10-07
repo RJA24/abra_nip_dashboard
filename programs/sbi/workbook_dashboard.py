@@ -18,8 +18,17 @@ import streamlit as st
 
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
-from programs.sbi.analytics import REASON_LABELS, build_effective_targets, reason_summary
-from programs.sbi.source_dashboard_layout import render_source_kpi_summary
+from programs.sbi.analytics import (
+    REASON_LABELS,
+    build_target_basis_targets,
+    filter_events_to_target_schools,
+    reason_summary,
+)
+from programs.sbi.source_dashboard_layout import (
+    render_actual_target_gap_notice,
+    render_source_kpi_summary,
+    render_target_basis_selector,
+)
 from programs.sbi.reporting import (
     render_daily_trend,
     render_municipality_choropleth,
@@ -342,6 +351,8 @@ def render_workbook_dashboard(
         "VaccTrack remains the official/final SBI reporting source."
     )
 
+    target_basis = render_target_basis_selector(key="sbi_workbook_target_basis")
+
     entries_view, legacy_count = prepare_workbook_entries(
         entries,
         start_date=start_date,
@@ -361,13 +372,24 @@ def render_workbook_dashboard(
     location_label = "Abra Province" if selected_muni is None else f"{selected_muni}, Abra"
     all_municipalities = selected_muni is None
 
-    effective_targets = build_effective_targets(
+    baseline_target_all = build_target_basis_targets(
         baseline_targets if baseline_targets is not None else pd.DataFrame(),
         actual_targets if actual_targets is not None else pd.DataFrame(),
+        "Baseline Targets",
     )
-    target_view = _filter_targets(effective_targets, selected_muni)
+    selected_target_all = build_target_basis_targets(
+        baseline_targets if baseline_targets is not None else pd.DataFrame(),
+        actual_targets if actual_targets is not None else pd.DataFrame(),
+        target_basis,
+    )
+    baseline_target_view = _filter_targets(baseline_target_all, selected_muni)
+    target_view = _filter_targets(selected_target_all, selected_muni)
+    render_actual_target_gap_notice(target_basis, baseline_target_view, target_view)
 
     g1_view, g7_view, hpv_view = build_workbook_event_frames(entries_view)
+    g1_cov_view = filter_events_to_target_schools(g1_view, target_view)
+    g7_cov_view = filter_events_to_target_schools(g7_view, target_view)
+    hpv_cov_view = filter_events_to_target_schools(hpv_view, target_view)
 
     render_source_kpi_summary(
         g1_view,
@@ -378,6 +400,9 @@ def render_workbook_dashboard(
         key_prefix="sbi_workbook",
         row_label="Activity Rows",
         latest_label="Latest Activity",
+        coverage_g1_events=g1_cov_view,
+        coverage_g7_events=g7_cov_view,
+        coverage_hpv_events=hpv_cov_view,
     )
     st.divider()
 
@@ -599,6 +624,7 @@ def render_workbook_dashboard(
         target_col: str,
         panel_label: str,
         key_prefix: str,
+        coverage_events: pd.DataFrame | None = None,
     ) -> None:
         st.markdown(
             f'''<h4 style="margin-bottom:0.25rem;">
@@ -611,12 +637,13 @@ def render_workbook_dashboard(
             st.info("No RHU workbook records are available for this selection and reporting period.")
             return
 
+        coverage_events = events if coverage_events is None else coverage_events
         target_total = pd.to_numeric(targets.get(target_col, 0), errors="coerce").fillna(0).sum() if targets is not None and not targets.empty else 0
-        school = _build_mr_td_school_summary(events, targets, target_col)
+        school = _build_mr_td_school_summary(coverage_events, targets, target_col)
 
         if all_municipalities:
             geo_col = "Municipality"
-            event_geo = events.groupby(geo_col, dropna=False)[["MR Doses", "Td Doses"]].sum().reset_index()
+            event_geo = coverage_events.groupby(geo_col, dropna=False)[["MR Doses", "Td Doses"]].sum().reset_index()
             if targets is not None and not targets.empty and target_col in targets.columns:
                 target_geo = targets.groupby(geo_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: "Target"})
                 geo = target_geo.merge(event_geo, on=geo_col, how="outer").fillna(0)
@@ -726,7 +753,7 @@ def render_workbook_dashboard(
             </h4>''',
             unsafe_allow_html=True,
         )
-        trend = events.dropna(subset=["Report Date"]).groupby("Report Date")[["MR Doses", "Td Doses"]].sum().reset_index().sort_values("Report Date")
+        trend = coverage_events.dropna(subset=["Report Date"]).groupby("Report Date")[["MR Doses", "Td Doses"]].sum().reset_index().sort_values("Report Date")
         if not trend.empty:
             trend["Cumulative MR"] = trend["MR Doses"].cumsum()
             trend["Cumulative Td"] = trend["Td Doses"].cumsum()
@@ -813,6 +840,7 @@ def render_workbook_dashboard(
                 "MR/Td Target",
                 "Combined Grades 1 & 7 Performance",
                 "sbi_workbook_mrtd_combined",
+                coverage_events=pd.concat([g1_cov_view, g7_cov_view], ignore_index=True, sort=False),
             )
         with mr_g1_tab:
             _render_mr_td_panel(
@@ -821,6 +849,7 @@ def render_workbook_dashboard(
                 "G1 Target",
                 "Grade 1 MR & Td Performance",
                 "sbi_workbook_mrtd_g1",
+                coverage_events=g1_cov_view,
             )
         with mr_g7_tab:
             _render_mr_td_panel(
@@ -829,6 +858,7 @@ def render_workbook_dashboard(
                 "G7 Target",
                 "Grade 7 MR & Td Performance",
                 "sbi_workbook_mrtd_g7",
+                coverage_events=g7_cov_view,
             )
 
     with vacc_hpv_tab:
@@ -837,11 +867,11 @@ def render_workbook_dashboard(
             st.info("No Grade 4 HPV RHU workbook records are available for this selection and reporting period.")
         else:
             hpv_target = pd.to_numeric(target_view.get("G4 Target", 0), errors="coerce").fillna(0).sum() if not target_view.empty else 0
-            hpv_school = _build_hpv_school_summary(hpv_view, target_view)
+            hpv_school = _build_hpv_school_summary(hpv_cov_view, target_view)
 
             if all_municipalities:
                 geo_col_hpv = "Municipality"
-                hpv_geo = hpv_view.groupby(geo_col_hpv, dropna=False)[["HPV Dose 1", "HPV Dose 2"]].sum().reset_index()
+                hpv_geo = hpv_cov_view.groupby(geo_col_hpv, dropna=False)[["HPV Dose 1", "HPV Dose 2"]].sum().reset_index()
                 if not target_view.empty:
                     hpv_target_geo = target_view.groupby(geo_col_hpv, dropna=False)["G4 Target"].sum().reset_index().rename(columns={"G4 Target": "Target"})
                     hpv_geo = hpv_target_geo.merge(hpv_geo, on=geo_col_hpv, how="outer").fillna(0)
@@ -950,7 +980,7 @@ def render_workbook_dashboard(
                 </h4>''',
                 unsafe_allow_html=True,
             )
-            hpv_trend = hpv_view.dropna(subset=["Report Date"]).groupby("Report Date")[["HPV Dose 1", "HPV Dose 2"]].sum().reset_index().sort_values("Report Date")
+            hpv_trend = hpv_cov_view.dropna(subset=["Report Date"]).groupby("Report Date")[["HPV Dose 1", "HPV Dose 2"]].sum().reset_index().sort_values("Report Date")
             if not hpv_trend.empty:
                 hpv_trend["Cumulative HPV 1st Dose"] = hpv_trend["HPV Dose 1"].cumsum()
                 hpv_trend["Cumulative HPV 2nd Dose"] = hpv_trend["HPV Dose 2"].cumsum()

@@ -245,6 +245,114 @@ def prepare_hpv_events(df: pd.DataFrame) -> pd.DataFrame:
     return canonical
 
 
+
+def build_target_basis_targets(
+    baseline: pd.DataFrame,
+    actual: pd.DataFrame,
+    basis: str,
+) -> pd.DataFrame:
+    """Return one per-school denominator table for an explicit target basis.
+
+    ``Baseline Targets`` always uses the official baseline roster. ``Actual
+    Targets`` uses only RHU rows whose target entry is Complete. It never falls
+    back to baseline values, so missing/partial actual targets remain genuinely
+    unavailable instead of being silently substituted.
+    """
+    basis = str(basis or "Actual Targets").strip()
+    baseline = pd.DataFrame() if baseline is None else baseline.copy()
+    actual = pd.DataFrame() if actual is None else actual.copy()
+
+    source = baseline if basis == "Baseline Targets" else actual
+    if source.empty:
+        return pd.DataFrame(columns=[
+            "Municipality", "Barangay", "School ID", "School Name",
+            "G1 Target", "G4 Target", "G7 Target", "Target Source",
+        ])
+
+    if basis == "Actual Targets" and "Target Entry Status" in source.columns:
+        source = source[source["Target Entry Status"].astype(str).str.casefold().eq("complete")].copy()
+        if source.empty:
+            return pd.DataFrame(columns=[
+                "Municipality", "Barangay", "School ID", "School Name",
+                "G1 Target", "G4 Target", "G7 Target", "Target Source",
+            ])
+
+    for col in ["Municipality", "Barangay", "School ID", "School Name"]:
+        if col not in source.columns:
+            source[col] = ""
+        source[col] = source[col].astype("string").fillna("").str.strip()
+
+    source["Municipality"] = source["Municipality"].map(normalize_municipality_name)
+    source["School ID"] = source["School ID"].str.replace(r"\.0$", "", regex=True)
+
+    mapping = {
+        "G1 Total": "G1 Target",
+        "G4 Female": "G4 Target",
+        "G7 Total": "G7 Target",
+    }
+    for input_col in mapping:
+        if input_col not in source.columns:
+            source[input_col] = np.nan if basis == "Actual Targets" else 0
+        source[input_col] = pd.to_numeric(source[input_col], errors="coerce")
+
+    out = source[[
+        "Municipality", "Barangay", "School ID", "School Name",
+        "G1 Total", "G4 Female", "G7 Total",
+    ]].copy().rename(columns=mapping)
+
+    # Complete Actual Target rows can legitimately contain a zero; baseline
+    # missing values are treated as zero to preserve the existing roster logic.
+    if basis == "Baseline Targets":
+        for col in ["G1 Target", "G4 Target", "G7 Target"]:
+            out[col] = out[col].fillna(0)
+
+    out["Target Source"] = "Baseline" if basis == "Baseline Targets" else "Actual"
+    return out.reset_index(drop=True)
+
+
+def filter_events_to_target_schools(events: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+    """Limit coverage numerators to schools that have the selected denominator.
+
+    Activity/tally/raw-data views should continue to use the original event
+    frames. This helper is only for coverage/target-based calculations so an
+    incomplete Actual Target roster cannot inflate percentages by contributing
+    vaccinated students without a matching denominator.
+    """
+    if events is None or events.empty:
+        return pd.DataFrame() if events is None else events.copy()
+    if targets is None or targets.empty:
+        return events.iloc[0:0].copy()
+
+    event = events.copy()
+    target = targets.copy()
+    for frame in (event, target):
+        if "School ID" not in frame.columns:
+            frame["School ID"] = ""
+        frame["School ID"] = (
+            frame["School ID"].astype("string").fillna("").str.strip().str.replace(r"\.0$", "", regex=True)
+        )
+
+    target_ids = set(target.loc[target["School ID"].ne(""), "School ID"].astype(str))
+    mask = event["School ID"].astype(str).isin(target_ids)
+
+    # Fallback matching for the rare row without a School ID.
+    if "Municipality" in event.columns and "School Name" in event.columns:
+        for frame in (event, target):
+            if "Municipality" not in frame.columns:
+                frame["Municipality"] = ""
+            if "School Name" not in frame.columns:
+                frame["School Name"] = ""
+            frame["_target_match_key"] = (
+                frame["Municipality"].map(normalize_municipality_name).astype(str).str.casefold().str.strip()
+                + "|"
+                + frame["School Name"].astype(str).str.casefold().str.strip()
+            )
+        fallback_keys = set(target.loc[target["School ID"].eq(""), "_target_match_key"].astype(str))
+        if fallback_keys:
+            mask = mask | event["_target_match_key"].astype(str).isin(fallback_keys)
+
+    return event.loc[mask].drop(columns=["_target_match_key"], errors="ignore").copy()
+
 def build_effective_targets(
     baseline: pd.DataFrame,
     actual: pd.DataFrame,
