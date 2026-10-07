@@ -626,42 +626,54 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             "G4": ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"],
         }
 
-        helper_match_col = len(headers)
-        helper_active_col = len(headers) + 1
-        vac.set_column(helper_match_col, helper_active_col, 3, None, {"hidden": True})
+        # Hidden helpers build a compact school list using only widely supported
+        # Excel functions. School Name is the stable criterion because it comes from
+        # the same dropdown used in Accomplishments. This avoids numeric/text School
+        # ID coercion differences that can make COUNTIFS return zero on some Excel
+        # installations.
+        helper_active_col = len(headers)
+        helper_rank_col = len(headers) + 1
+        helper_match_col = len(headers) + 2
+        vac.set_column(helper_active_col, helper_match_col, 3, None, {"hidden": True})
 
         roster_count = len(roster)
         if roster_count:
             first_output_row = 5
             last_output_row = 4 + roster_count
             active_col_letter = _column_letter(helper_active_col)
+            rank_col_letter = _column_letter(helper_rank_col)
             match_col_letter = _column_letter(helper_match_col)
+            acc_school_name_col = _column_letter(ALL_COLUMNS.index("School Name"))
 
-            # Hidden activity flags stay aligned to the Reference roster. Each flag is
-            # YES only when that school has an accomplishment on the selected calendar
-            # date for this VaccTrack grade.
-            for idx, school in roster.iterrows():
-                sheet_row = idx + 4
-                school_id = str(school["School ID"]).replace('"', '""')
+            # Helpers stay aligned to Reference. A school becomes active when an
+            # Accomplishments row has the selected calendar day + grade + exact school
+            # name. Rank gives active schools 1,2,3... without AGGREGATE/array formulas.
+            for pos, (_, school) in enumerate(roster.iterrows()):
+                sheet_row = pos + 4
+                excel_row = pos + 5
+                school_name = str(school["School Name"]).replace('"', '""')
                 active_formula = (
                     f'=IF(COUNTIFS('
                     f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
                     f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
-                    f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},"{school_id}",'
+                    f'Accomplishments!${acc_school_name_col}$2:${acc_school_name_col}${input_end},"{school_name}",'
                     f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}")>0,"YES","")'
                 )
                 vac.write_formula(sheet_row, helper_active_col, active_formula, helper_fmt)
+                rank_formula = (
+                    f'=IF(${active_col_letter}{excel_row}="","",'
+                    f'COUNTIF(${active_col_letter}${first_output_row}:${active_col_letter}{excel_row},"YES"))'
+                )
+                vac.write_formula(sheet_row, helper_rank_col, rank_formula, helper_fmt)
 
-            # Visible rows are a compact list of only the active schools. AGGREGATE
-            # finds the 1st, 2nd, 3rd... YES helper row and leaves all later rows blank.
-            for idx in range(roster_count):
-                sheet_row = idx + 4
-                excel_row = idx + 5
+            # Visible rows ask for active rank 1, 2, 3... and MATCH that rank back to
+            # the Reference roster position. Later rows remain blank automatically.
+            for pos in range(roster_count):
+                sheet_row = pos + 4
+                excel_row = pos + 5
                 match_formula = (
-                    f'=IFERROR(AGGREGATE(15,6,'
-                    f'(ROW(${active_col_letter}${first_output_row}:${active_col_letter}${last_output_row})-ROW(${active_col_letter}${first_output_row})+1)'
-                    f'/(${active_col_letter}${first_output_row}:${active_col_letter}${last_output_row}="YES"),'
-                    f'ROWS($A$5:A{excel_row})),"")'
+                    f'=IFERROR(MATCH(ROWS($A$5:A{excel_row}),'
+                    f'${rank_col_letter}${first_output_row}:${rank_col_letter}${last_output_row},0),"")'
                 )
                 vac.write_formula(sheet_row, helper_match_col, match_formula, helper_fmt)
 
@@ -673,7 +685,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
 
                 metric_start = len(common)
                 metric_inputs = metric_map[grade]
-                school_id_expr = f'INDEX(Reference!$A$2:$A${last_ref_row},{match_cell})'
+                school_name_expr = f'INDEX(Reference!$B$2:$B${last_ref_row},{match_cell})'
 
                 for offset, source_name in enumerate(metric_inputs):
                     source_col = _column_letter(ALL_COLUMNS.index(source_name))
@@ -681,7 +693,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                         f'=IF({match_cell}="","",SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
                         f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
                         f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
-                        f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},{school_id_expr},'
+                        f'Accomplishments!${acc_school_name_col}$2:${acc_school_name_col}${input_end},{school_name_expr},'
                         f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}"))'
                     )
                     vac.write_formula(sheet_row, metric_start + offset, formula, count_fmt)
@@ -693,7 +705,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
                         f'=IF({match_cell}="","",SUMIFS(Accomplishments!${source_col}$2:${source_col}${input_end},'
                         f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},">="&INT($B$2),'
                         f'Accomplishments!${acc_date_col}$2:${acc_date_col}${input_end},"<"&(INT($B$2)+1),'
-                        f'Accomplishments!${acc_school_col}$2:${acc_school_col}${input_end},{school_id_expr},'
+                        f'Accomplishments!${acc_school_name_col}$2:${acc_school_name_col}${input_end},{school_name_expr},'
                         f'Accomplishments!${acc_grade_col}$2:${acc_grade_col}${input_end},"{grade}"))'
                     )
                     vac.write_formula(sheet_row, reason_start + r_offset, formula, count_fmt)
