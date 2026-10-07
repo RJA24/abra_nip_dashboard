@@ -34,7 +34,11 @@ from programs.sbi.rhu_tracker import (
     render_rhu_accomplishments,
     render_vacctrack_vs_workbook,
 )
-from programs.sbi.workbook_dashboard import render_workbook_dashboard
+from programs.sbi.workbook_dashboard import (
+    build_workbook_event_frames,
+    prepare_workbook_entries,
+    render_workbook_dashboard,
+)
 from programs.sbi.source_dashboard_layout import (
     render_actual_target_gap_notice,
     render_source_kpi_summary,
@@ -630,14 +634,54 @@ def render_sbi_dashboard(supabase) -> None:
     # 1. EXECUTIVE SUMMARY
     with tab_sbi_exec:
         st.markdown(f"### SBI Campaign Overview: {location_label}")
-        exec_target_basis = render_target_basis_selector(key="sbi_exec_target_basis")
+
+        exec_source_col, exec_target_col = st.columns(2)
+        with exec_source_col:
+            exec_data_source = st.selectbox(
+                "Accomplishment data source:",
+                ["VaccTrack Data", "Workbook Data"],
+                index=0,
+                key="sbi_exec_data_source",
+                help=(
+                    "Choose which accomplishment dataset is used throughout the Executive Summary. "
+                    "VaccTrack is the official/final source; Workbook Data is the RHU operational/provisional source."
+                ),
+            )
+            if exec_data_source == "Workbook Data":
+                st.caption("Using RHU workbook accomplishments (operational/provisional).")
+            else:
+                st.caption("Using VaccTrack accomplishments (official/final).")
+
+        with exec_target_col:
+            exec_target_basis = render_target_basis_selector(key="sbi_exec_target_basis")
+
         exec_target_all = actual_target_all if exec_target_basis == "Actual Targets" else baseline_target_all
         exec_target_view = filter_location(exec_target_all, selected_muni_filter)
         render_actual_target_gap_notice(exec_target_basis, baseline_target_view, exec_target_view)
 
-        g1_exec_cov = filter_events_to_target_schools(g1_view, exec_target_view)
-        g7_exec_cov = filter_events_to_target_schools(g7_view, exec_target_view)
-        hpv_exec_cov = filter_events_to_target_schools(hpv_view, exec_target_view)
+        if exec_data_source == "Workbook Data":
+            try:
+                exec_workbook_raw = fetch_workbook_dashboard_entries(supabase)
+                exec_workbook_rows, _ = prepare_workbook_entries(
+                    exec_workbook_raw,
+                    start_date=report_start,
+                    end_date=report_end,
+                    municipality=selected_muni_filter,
+                )
+                g1_exec_source, g7_exec_source, hpv_exec_source = build_workbook_event_frames(exec_workbook_rows)
+            except Exception as exc:
+                st.error(f"Unable to load RHU workbook accomplishment data for the Executive Summary: {exc}")
+                g1_exec_source = pd.DataFrame()
+                g7_exec_source = pd.DataFrame()
+                hpv_exec_source = pd.DataFrame()
+        else:
+            g1_exec_source = g1_view
+            g7_exec_source = g7_view
+            hpv_exec_source = hpv_view
+
+        g1_exec_cov = filter_events_to_target_schools(g1_exec_source, exec_target_view)
+        g7_exec_cov = filter_events_to_target_schools(g7_exec_source, exec_target_view)
+        hpv_exec_cov = filter_events_to_target_schools(hpv_exec_source, exec_target_view)
 
         if exec_target_view.empty:
             st.warning("Target data is unavailable. Sync the target database first.")
@@ -965,12 +1009,13 @@ def render_sbi_dashboard(supabase) -> None:
 
             st.divider()
 
-            report_rows = len(g1_view) + len(g7_view) + len(hpv_view)
-            reporting_schools = len(set(g1_view.get('School ID', pd.Series(dtype=str)).astype(str)) |
-                                    set(g7_view.get('School ID', pd.Series(dtype=str)).astype(str)) |
-                                    set(hpv_view.get('School ID', pd.Series(dtype=str)).astype(str)))
+            report_rows = len(g1_exec_source) + len(g7_exec_source) + len(hpv_exec_source)
+            reporting_schools = len(set(g1_exec_source.get('School ID', pd.Series(dtype=str)).astype(str)) |
+                                    set(g7_exec_source.get('School ID', pd.Series(dtype=str)).astype(str)) |
+                                    set(hpv_exec_source.get('School ID', pd.Series(dtype=str)).astype(str)))
             r1, r2, r3 = st.columns(3)
-            r1.metric("VaccTrack Report Rows", f"{report_rows:,}")
+            source_row_label = "Workbook Activity Rows" if exec_data_source == "Workbook Data" else "VaccTrack Report Rows"
+            r1.metric(source_row_label, f"{report_rows:,}")
             r2.metric("Schools with Reports", f"{reporting_schools:,}")
             r3.metric("Target Schools", f"{len(exec_target_view):,}")
 
