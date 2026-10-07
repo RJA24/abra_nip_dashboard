@@ -34,6 +34,7 @@ from programs.sbi.rhu_tracker import (
     render_vacctrack_vs_workbook,
 )
 from programs.sbi.workbook_dashboard import render_workbook_dashboard
+from programs.sbi.source_dashboard_layout import render_activity_overview, render_source_kpi_summary
 from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
@@ -421,21 +422,8 @@ def render_sbi_dashboard(supabase) -> None:
             return
 
         target_total = pd.to_numeric(targets.get(target_col, 0), errors='coerce').fillna(0).sum() if not targets.empty else 0
-        mr_doses = pd.to_numeric(events['MR Doses'], errors='coerce').fillna(0).sum()
-        td_doses = pd.to_numeric(events['Td Doses'], errors='coerce').fillna(0).sum()
-        mr_cov = (mr_doses / target_total * 100) if target_total > 0 else 0
-        td_cov = (td_doses / target_total * 100) if target_total > 0 else 0
-        schools_reporting = events.loc[events['School ID'].astype(str).str.strip().ne(''), 'School ID'].nunique()
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Target", f"{target_total:,.0f}", f"{len(targets):,} target school rows" if not targets.empty else "No target data")
-        m2.metric("MR Vaccinated", f"{mr_doses:,.0f}", f"{mr_cov:.1f}% coverage", delta_color="off")
-        m3.metric("Td Vaccinated", f"{td_doses:,.0f}", f"{td_cov:.1f}% coverage", delta_color="off")
-        m4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(events):,} report rows", delta_color="off")
-
         school = _build_mr_td_school_summary(events, targets, target_col)
 
-        st.divider()
 
         if view_mode == "All Municipalities (Abra)":
             geo_col = 'Municipality'
@@ -609,122 +597,6 @@ def render_sbi_dashboard(supabase) -> None:
             filename=f'{key_prefix}_VaccTrack_{location_label.replace(", ", "_").replace(" ", "_")}.csv',
             key=f'{key_prefix}_raw_download',
         )
-
-    def _render_vacctrack_activity_overview():
-        """Mirror the workbook municipality-accomplishment and daily-trend views."""
-        if g1_view.empty and g7_view.empty and hpv_view.empty:
-            return
-
-        if view_mode == "All Municipalities (Abra)":
-            municipality_parts = []
-            for frame, series in [
-                (g1_view, [('MR Doses', 'G1 MR'), ('Td Doses', 'G1 Td')]),
-                (hpv_view, [('HPV Dose 1', 'G4 HPV1'), ('HPV Dose 2', 'G4 HPV2')]),
-                (g7_view, [('MR Doses', 'G7 MR'), ('Td Doses', 'G7 Td')]),
-            ]:
-                if frame is None or frame.empty or 'Municipality' not in frame.columns:
-                    continue
-                grouped = frame.groupby('Municipality', dropna=False)[[col for col, _ in series]].sum().reset_index()
-                for column, label in series:
-                    part = grouped[['Municipality', column]].rename(columns={column: 'Vaccinated'}).copy()
-                    part['Indicator'] = label
-                    municipality_parts.append(part)
-
-            if municipality_parts:
-                municipality_chart = pd.concat(municipality_parts, ignore_index=True)
-                municipality_chart['Vaccinated'] = pd.to_numeric(
-                    municipality_chart['Vaccinated'], errors='coerce'
-                ).fillna(0)
-                municipality_chart = municipality_chart.loc[
-                    municipality_chart['Vaccinated'].gt(0)
-                ].copy()
-                if not municipality_chart.empty:
-                    st.markdown('#### Vaccination Accomplishments by Municipality')
-                    fig_muni = px.bar(
-                        municipality_chart,
-                        x='Vaccinated',
-                        y='Municipality',
-                        color='Indicator',
-                        orientation='h',
-                        barmode='group',
-                        text_auto='.0f',
-                    )
-                    fig_muni.update_layout(
-                        dragmode=False,
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        xaxis_title='Vaccinated',
-                        yaxis_title='',
-                        height=max(460, len(ABRA_MUNIS) * 30),
-                        legend=dict(
-                            orientation='h', yanchor='top', y=-0.08,
-                            xanchor='center', x=0.5,
-                        ),
-                        legend_title_text='',
-                    )
-                    st.plotly_chart(
-                        fig_muni,
-                        width='stretch',
-                        key='sbi_vacctrack_muni_accomplishments_chart',
-                    )
-
-        daily_parts = []
-        for frame, series in [
-            (g1_view, [('MR Doses', 'G1 MR'), ('Td Doses', 'G1 Td')]),
-            (hpv_view, [('HPV Dose 1', 'G4 HPV1'), ('HPV Dose 2', 'G4 HPV2')]),
-            (g7_view, [('MR Doses', 'G7 MR'), ('Td Doses', 'G7 Td')]),
-        ]:
-            if frame is None or frame.empty or 'Report Date' not in frame.columns:
-                continue
-            valid_cols = [col for col, _ in series if col in frame.columns]
-            if not valid_cols:
-                continue
-            part = frame[['Report Date', *valid_cols]].copy()
-            part['Report Date'] = pd.to_datetime(part['Report Date'], errors='coerce')
-            part = part.dropna(subset=['Report Date'])
-            for column in valid_cols:
-                part[column] = pd.to_numeric(part[column], errors='coerce').fillna(0)
-            part = part.groupby('Report Date', as_index=False)[valid_cols].sum()
-            rename_map = {col: label for col, label in series if col in valid_cols}
-            part = part.rename(columns=rename_map).melt(
-                id_vars=['Report Date'],
-                value_vars=list(rename_map.values()),
-                var_name='Indicator',
-                value_name='Vaccinated',
-            )
-            daily_parts.append(part)
-
-        if daily_parts:
-            daily_chart = pd.concat(daily_parts, ignore_index=True)
-            daily_chart = (
-                daily_chart.groupby(['Report Date', 'Indicator'], as_index=False)['Vaccinated']
-                .sum()
-                .sort_values('Report Date')
-            )
-            if not daily_chart.empty:
-                st.markdown('#### Daily Activity Trend')
-                fig_daily = px.line(
-                    daily_chart,
-                    x='Report Date',
-                    y='Vaccinated',
-                    color='Indicator',
-                    markers=True,
-                )
-                fig_daily.update_layout(
-                    dragmode=False,
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis_title='Report Date',
-                    yaxis_title='Vaccinated',
-                    legend=dict(
-                        orientation='h', yanchor='top', y=-0.12,
-                        xanchor='center', x=0.5,
-                    ),
-                    legend_title_text='',
-                )
-                st.plotly_chart(
-                    fig_daily,
-                    width='stretch',
-                    key='sbi_vacctrack_daily_activity_overview_chart',
-                )
 
     # --- DASHBOARD TABS ---
     sbi_tabs = st.tabs([
@@ -2297,10 +2169,29 @@ def render_sbi_dashboard(supabase) -> None:
 
     # 6. VACC TRACK DASHBOARD — official/final source
     with tab_sbi_vacctrack:
+        st.markdown("### VaccTrack Data Dashboard")
         st.caption(
             "Official/final SBI accomplishments from the latest available VaccTrack data."
         )
-        _render_vacctrack_activity_overview()
+        render_source_kpi_summary(
+            g1_view,
+            g7_view,
+            hpv_view,
+            target_view,
+            all_municipalities=view_mode == "All Municipalities (Abra)",
+            key_prefix="sbi_vacctrack",
+            row_label="Report Rows",
+            latest_label="Latest Report",
+        )
+        st.divider()
+        render_activity_overview(
+            g1_view,
+            g7_view,
+            hpv_view,
+            all_municipalities=view_mode == "All Municipalities (Abra)",
+            key_prefix="sbi_vacctrack",
+            date_axis_title="Report Date",
+        )
         st.divider()
 
         vacc_mr_tab, vacc_hpv_tab, vacc_def_tab = st.tabs([
@@ -2359,20 +2250,6 @@ def render_sbi_dashboard(supabase) -> None:
                 st.info("No Grade 4 HPV VaccTrack records are available for this selection and reporting period.")
             else:
                 hpv_target = pd.to_numeric(target_view.get('G4 Target', 0), errors='coerce').fillna(0).sum() if not target_view.empty else 0
-                dose1 = pd.to_numeric(hpv_view['HPV Dose 1'], errors='coerce').fillna(0).sum()
-                dose2 = pd.to_numeric(hpv_view['HPV Dose 2'], errors='coerce').fillna(0).sum()
-                cov1 = (dose1 / hpv_target * 100) if hpv_target > 0 else 0
-                cov2 = (dose2 / hpv_target * 100) if hpv_target > 0 else 0
-                schools_reporting = hpv_view.loc[hpv_view['School ID'].astype(str).str.strip().ne(''), 'School ID'].nunique()
-
-                h1, h2, h3, h4 = st.columns(4)
-                h1.metric("Grade 4 Female Target", f"{hpv_target:,.0f}")
-                h2.metric("HPV 1st Dose", f"{dose1:,.0f}", f"{cov1:.1f}% coverage", delta_color="off")
-                h3.metric("HPV 2nd Dose", f"{dose2:,.0f}", f"{cov2:.1f}% coverage", delta_color="off")
-                h4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(hpv_view):,} report rows", delta_color="off")
-
-                st.divider()
-
                 hpv_school = _build_hpv_school_summary(hpv_view, target_view)
 
                 if view_mode == "All Municipalities (Abra)":
@@ -2574,14 +2451,6 @@ def render_sbi_dashboard(supabase) -> None:
             total_refused = total_mr_refused + total_td_refused + total_hpv_refused
             reasons_df = reason_summary(g1_view, g7_view, hpv_view)
             total_reason_records = pd.to_numeric(reasons_df['Count'], errors='coerce').fillna(0).sum() if not reasons_df.empty else 0
-
-            d1, d2, d3, d4 = st.columns(4)
-            d1.metric("Total Deferred", f"{total_deferred:,.0f}")
-            d2.metric("Total Refused", f"{total_refused:,.0f}")
-            d3.metric("Recorded Missed-Vaccination Reasons", f"{total_reason_records:,.0f}")
-            d4.metric("VaccTrack Report Rows", f"{len(g1_view) + len(g7_view) + len(hpv_view):,}")
-
-            st.divider()
 
             st.markdown(
                 '''<h4 style="margin-bottom:0.25rem;">

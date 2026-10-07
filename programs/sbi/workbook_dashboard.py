@@ -19,6 +19,7 @@ import streamlit as st
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.analytics import REASON_LABELS, build_effective_targets, reason_summary
+from programs.sbi.source_dashboard_layout import render_activity_overview, render_source_kpi_summary
 from programs.sbi.reporting import (
     render_daily_trend,
     render_municipality_choropleth,
@@ -366,142 +367,28 @@ def render_workbook_dashboard(
     )
     target_view = _filter_targets(effective_targets, selected_muni)
 
-    # Workbook overview retained from v5.22.3. These source-overview visuals
-    # are mirrored into the VaccTrack Dashboard as well.
-    summary = build_workbook_summary(entries_view)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("RHUs Reporting", f"{summary['reporting_rhus']:,}" + (" / 27" if all_municipalities else ""))
-    c2.metric("Schools with Data", f"{summary['schools']:,}")
-    c3.metric("Activity Rows", f"{summary['rows']:,}")
-    latest = summary["latest_activity"]
-    c4.metric("Latest Activity", latest.strftime("%b %d, %Y") if latest else "—")
-
-    st.markdown("#### Vaccination Accomplishments")
-    totals = pd.DataFrame([{column: summary[column] for column in VACCINE_COLUMNS}])
-    st.dataframe(totals, width="stretch", hide_index=True)
-
-    totals_long = totals.melt(var_name="Indicator", value_name="Vaccinated")
-    totals_long = totals_long.loc[totals_long["Vaccinated"].gt(0)].copy()
-    if not totals_long.empty:
-        fig_totals = px.bar(totals_long, x="Indicator", y="Vaccinated", text="Vaccinated")
-        fig_totals.update_layout(
-            dragmode=False,
-            plot_bgcolor="rgba(0,0,0,0)",
-            xaxis_title="",
-            yaxis_title="Vaccinated",
-            height=390,
-            margin=dict(l=20, r=20, t=20, b=35),
-            showlegend=False,
-        )
-        st.plotly_chart(fig_totals, width="stretch", key="sbi_workbook_indicator_totals_chart")
-
-    target_totals = _target_totals(target_view)
-    if any(target_totals.values()):
-        coverage = pd.DataFrame([
-            {"Indicator": "G1 MR", "Target": int(target_totals["G1"]), "Vaccinated": summary["G1 MR"]},
-            {"Indicator": "G1 Td", "Target": int(target_totals["G1"]), "Vaccinated": summary["G1 Td"]},
-            {"Indicator": "G4 HPV Dose 1", "Target": int(target_totals["G4"]), "Vaccinated": summary["G4 HPV1"]},
-            {"Indicator": "G4 HPV Dose 2", "Target": int(target_totals["G4"]), "Vaccinated": summary["G4 HPV2"]},
-            {"Indicator": "G7 MR", "Target": int(target_totals["G7"]), "Vaccinated": summary["G7 MR"]},
-            {"Indicator": "G7 Td", "Target": int(target_totals["G7"]), "Vaccinated": summary["G7 Td"]},
-        ])
-        coverage["Coverage %"] = coverage.apply(
-            lambda row: (row["Vaccinated"] / row["Target"] * 100) if row["Target"] else 0.0,
-            axis=1,
-        )
-        st.markdown("#### Workbook Coverage Against Current Effective Targets")
-        fig_coverage = px.bar(coverage, x="Indicator", y="Coverage %", text_auto=".1f")
-        fig_coverage.update_layout(
-            dragmode=False,
-            plot_bgcolor="rgba(0,0,0,0)",
-            xaxis_title="",
-            yaxis_title="Coverage (%)",
-            height=390,
-            margin=dict(l=20, r=20, t=20, b=35),
-            showlegend=False,
-        )
-        st.plotly_chart(fig_coverage, width="stretch", key="sbi_workbook_coverage_chart")
-        with st.expander("View coverage values", expanded=False):
-            st.dataframe(
-                coverage,
-                width="stretch",
-                hide_index=True,
-                column_config={"Coverage %": st.column_config.NumberColumn("Coverage %", format="%.1f%%")},
-            )
-
-    if all_municipalities:
-        st.markdown("#### Municipality Summary")
-        municipality = build_municipality_summary(entries_view)
-        display = municipality.copy()
-        display["Latest Activity"] = display["Latest Activity"].map(
-            lambda value: value.strftime("%b %d, %Y") if hasattr(value, "strftime") else ""
-        )
-        st.dataframe(display, width="stretch", hide_index=True)
-        st.download_button(
-            "Download Workbook Municipality Summary (CSV)",
-            data=municipality.to_csv(index=False).encode("utf-8-sig"),
-            file_name="SBI_RHU_Workbook_Municipality_Summary.csv",
-            mime="text/csv",
-            width="stretch",
-            key="sbi_workbook_muni_csv",
-        )
-
-        chart = municipality[VACCINE_COLUMNS + ["Municipality"]].melt(
-            id_vars=["Municipality"],
-            value_vars=VACCINE_COLUMNS,
-            var_name="Indicator",
-            value_name="Vaccinated",
-        )
-        chart = chart.loc[chart["Vaccinated"].gt(0)].copy()
-        if not chart.empty:
-            fig = px.bar(
-                chart,
-                x="Vaccinated",
-                y="Municipality",
-                color="Indicator",
-                orientation="h",
-                barmode="group",
-                text_auto=".0f",
-            )
-            fig.update_layout(
-                dragmode=False,
-                plot_bgcolor="rgba(0,0,0,0)",
-                xaxis_title="Vaccinated",
-                yaxis_title="",
-                height=max(460, len(ABRA_MUNIS) * 30),
-                legend=dict(orientation="h", yanchor="top", y=-0.08, xanchor="center", x=0.5),
-                legend_title_text="",
-            )
-            st.plotly_chart(fig, width="stretch", key="sbi_workbook_muni_chart")
-
-    daily = build_daily_summary(entries_view)
-    if not daily.empty:
-        st.markdown("#### Daily Activity Trend")
-        daily_long = daily.melt(
-            id_vars=["Activity Date"],
-            value_vars=VACCINE_COLUMNS,
-            var_name="Indicator",
-            value_name="Vaccinated",
-        )
-        fig_daily = px.line(
-            daily_long,
-            x="Activity Date",
-            y="Vaccinated",
-            color="Indicator",
-            markers=True,
-        )
-        fig_daily.update_layout(
-            dragmode=False,
-            plot_bgcolor="rgba(0,0,0,0)",
-            xaxis_title="Activity Date",
-            yaxis_title="Vaccinated",
-            legend=dict(orientation="h", yanchor="top", y=-0.12, xanchor="center", x=0.5),
-            legend_title_text="",
-        )
-        st.plotly_chart(fig_daily, width="stretch", key="sbi_workbook_daily_chart")
-
-    st.divider()
     g1_view, g7_view, hpv_view = build_workbook_event_frames(entries_view)
+
+    render_source_kpi_summary(
+        g1_view,
+        g7_view,
+        hpv_view,
+        target_view,
+        all_municipalities=all_municipalities,
+        key_prefix="sbi_workbook",
+        row_label="Activity Rows",
+        latest_label="Latest Activity",
+    )
+    st.divider()
+    render_activity_overview(
+        g1_view,
+        g7_view,
+        hpv_view,
+        all_municipalities=all_municipalities,
+        key_prefix="sbi_workbook",
+        date_axis_title="Activity Date",
+    )
+    st.divider()
 
     def _build_mr_td_school_summary(events: pd.DataFrame, targets: pd.DataFrame, target_col: str) -> pd.DataFrame:
         if events is None or events.empty:
@@ -734,20 +621,7 @@ def render_workbook_dashboard(
             return
 
         target_total = pd.to_numeric(targets.get(target_col, 0), errors="coerce").fillna(0).sum() if targets is not None and not targets.empty else 0
-        mr_doses = pd.to_numeric(events["MR Doses"], errors="coerce").fillna(0).sum()
-        td_doses = pd.to_numeric(events["Td Doses"], errors="coerce").fillna(0).sum()
-        mr_cov = (mr_doses / target_total * 100) if target_total > 0 else 0
-        td_cov = (td_doses / target_total * 100) if target_total > 0 else 0
-        schools_reporting = events.loc[events["School ID"].astype(str).str.strip().ne(""), "School ID"].nunique()
-
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Target", f"{target_total:,.0f}", f"{len(targets):,} target school rows" if targets is not None and not targets.empty else "No target data")
-        m2.metric("MR Vaccinated", f"{mr_doses:,.0f}", f"{mr_cov:.1f}% coverage", delta_color="off")
-        m3.metric("Td Vaccinated", f"{td_doses:,.0f}", f"{td_cov:.1f}% coverage", delta_color="off")
-        m4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(events):,} activity rows", delta_color="off")
-
         school = _build_mr_td_school_summary(events, targets, target_col)
-        st.divider()
 
         if all_municipalities:
             geo_col = "Municipality"
@@ -972,19 +846,6 @@ def render_workbook_dashboard(
             st.info("No Grade 4 HPV RHU workbook records are available for this selection and reporting period.")
         else:
             hpv_target = pd.to_numeric(target_view.get("G4 Target", 0), errors="coerce").fillna(0).sum() if not target_view.empty else 0
-            dose1 = pd.to_numeric(hpv_view["HPV Dose 1"], errors="coerce").fillna(0).sum()
-            dose2 = pd.to_numeric(hpv_view["HPV Dose 2"], errors="coerce").fillna(0).sum()
-            cov1 = (dose1 / hpv_target * 100) if hpv_target > 0 else 0
-            cov2 = (dose2 / hpv_target * 100) if hpv_target > 0 else 0
-            schools_reporting = hpv_view.loc[hpv_view["School ID"].astype(str).str.strip().ne(""), "School ID"].nunique()
-
-            h1, h2, h3, h4 = st.columns(4)
-            h1.metric("Grade 4 Female Target", f"{hpv_target:,.0f}")
-            h2.metric("HPV 1st Dose", f"{dose1:,.0f}", f"{cov1:.1f}% coverage", delta_color="off")
-            h3.metric("HPV 2nd Dose", f"{dose2:,.0f}", f"{cov2:.1f}% coverage", delta_color="off")
-            h4.metric("Schools Reporting", f"{schools_reporting:,}", f"{len(hpv_view):,} activity rows", delta_color="off")
-
-            st.divider()
             hpv_school = _build_hpv_school_summary(hpv_view, target_view)
 
             if all_municipalities:
@@ -1094,7 +955,7 @@ def render_workbook_dashboard(
             st.markdown(
                 '''<h4 style="margin-bottom:0.25rem;">
                 <i class="fa-solid fa-chart-line" style="color:#0033A0; margin-right:8px;"></i>
-                Cumulative HPV Vaccinations Over Time
+                Cumulative HPV Doses Over Time
                 </h4>''',
                 unsafe_allow_html=True,
             )
@@ -1193,13 +1054,6 @@ def render_workbook_dashboard(
         reasons_df = reason_summary(g1_view, g7_view, hpv_view)
         total_reason_records = pd.to_numeric(reasons_df["Count"], errors="coerce").fillna(0).sum() if not reasons_df.empty else 0
 
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Total Deferred", f"{total_deferred:,.0f}")
-        d2.metric("Total Refused", f"{total_refused:,.0f}")
-        d3.metric("Recorded Missed-Vaccination Reasons", f"{total_reason_records:,.0f}")
-        d4.metric("Workbook Activity Rows", f"{len(g1_view) + len(g7_view) + len(hpv_view):,}")
-
-        st.divider()
         st.markdown(
             '''<h4 style="margin-bottom:0.25rem;">
             <i class="fa-solid fa-chart-column" style="color:#0033A0; margin-right:8px;"></i>
