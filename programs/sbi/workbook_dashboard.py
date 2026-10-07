@@ -270,6 +270,26 @@ def render_workbook_dashboard(
     )
     st.dataframe(totals, width="stretch", hide_index=True)
 
+    totals_long = totals.melt(var_name="Indicator", value_name="Vaccinated")
+    totals_long = totals_long.loc[totals_long["Vaccinated"].gt(0)].copy()
+    if not totals_long.empty:
+        fig_totals = px.bar(
+            totals_long,
+            x="Indicator",
+            y="Vaccinated",
+            text="Vaccinated",
+        )
+        fig_totals.update_layout(
+            dragmode=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="",
+            yaxis_title="Vaccinated",
+            height=390,
+            margin=dict(l=20, r=20, t=20, b=35),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_totals, width="stretch", key="sbi_workbook_indicator_totals_chart")
+
     effective_targets = build_effective_targets(
         baseline_targets if baseline_targets is not None else pd.DataFrame(),
         actual_targets if actual_targets is not None else pd.DataFrame(),
@@ -314,7 +334,24 @@ def render_workbook_dashboard(
             lambda row: (row["Vaccinated"] / row["Target"] * 100) if row["Target"] else 0.0,
             axis=1,
         )
-        with st.expander("View workbook coverage against current effective targets", expanded=False):
+        st.markdown("#### Workbook Coverage Against Current Effective Targets")
+        fig_coverage = px.bar(
+            coverage,
+            x="Indicator",
+            y="Coverage %",
+            text_auto=".1f",
+        )
+        fig_coverage.update_layout(
+            dragmode=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="",
+            yaxis_title="Coverage (%)",
+            height=390,
+            margin=dict(l=20, r=20, t=20, b=35),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_coverage, width="stretch", key="sbi_workbook_coverage_chart")
+        with st.expander("View coverage values", expanded=False):
             st.dataframe(
                 coverage,
                 width="stretch",
@@ -407,6 +444,48 @@ def render_workbook_dashboard(
                 schools = schools.loc[
                     schools["Municipality"].map(normalize_municipality_key).eq(normalize_municipality_key(school_muni))
                 ].copy()
+        if selected_muni is not None:
+            schools_for_chart = schools.copy()
+            schools_for_chart["Total Vaccinations"] = schools_for_chart[VACCINE_COLUMNS].sum(axis=1)
+            chart_scope = st.selectbox(
+                "Schools shown in workbook chart",
+                ["Top 15 by vaccinations", "Top 25 by vaccinations", "All schools"],
+                key="sbi_workbook_school_chart_scope",
+            )
+            schools_for_chart = schools_for_chart.sort_values("Total Vaccinations", ascending=False)
+            if chart_scope.startswith("Top 15"):
+                schools_for_chart = schools_for_chart.head(15)
+            elif chart_scope.startswith("Top 25"):
+                schools_for_chart = schools_for_chart.head(25)
+            school_long = schools_for_chart.melt(
+                id_vars=["School Name"],
+                value_vars=VACCINE_COLUMNS,
+                var_name="Indicator",
+                value_name="Vaccinated",
+            )
+            school_long = school_long.loc[school_long["Vaccinated"].gt(0)].copy()
+            if not school_long.empty:
+                fig_school = px.bar(
+                    school_long,
+                    x="Vaccinated",
+                    y="School Name",
+                    color="Indicator",
+                    orientation="h",
+                    barmode="group",
+                    text_auto=".0f",
+                )
+                fig_school.update_layout(
+                    dragmode=False,
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    xaxis_title="Vaccinated",
+                    yaxis_title="",
+                    height=max(430, len(schools_for_chart) * 38),
+                    margin=dict(l=10, r=20, t=20, b=60),
+                    legend=dict(orientation="h", yanchor="top", y=-0.10, xanchor="center", x=0.5),
+                    legend_title_text="",
+                )
+                st.plotly_chart(fig_school, width="stretch", key="sbi_workbook_school_chart")
+
         st.dataframe(schools, width="stretch", hide_index=True)
         st.download_button(
             "Download School Workbook Totals (CSV)",

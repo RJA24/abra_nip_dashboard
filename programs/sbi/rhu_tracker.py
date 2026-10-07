@@ -1059,7 +1059,7 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
           <div style="font-size:1.02rem;font-weight:700;color:#0f172a;margin-bottom:0.8rem;">
             <i class="fa-solid fa-route" style="color:#0033A0;margin-right:7px;"></i>RHU Encoder Process — {assigned_muni}
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.7rem;">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0.7rem;">
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
               <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">1. Maintain One Offline Workbook</div>
               <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Download your RHU workbook once, then encode every activity date and school in Excel even when internet is unavailable.</div>
@@ -1069,8 +1069,12 @@ def _render_rhu_encoder_process_guide(assigned_muni: str) -> None:
               <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Use the workbook's VaccTrack sheets for daily encoding, then upload the complete current workbook when internet is available.</div>
             </div>
             <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
-              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Refresh & Check</div>
-              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the latest VaccTrack extract is uploaded by the NIP coordinator, refresh and check for matched, pending, or discrepant records.</div>
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">3. Review Workbook Dashboard</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">Review your uploaded workbook totals, coverage, daily trend, and school-level accomplishment charts.</div>
+            </div>
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:12px;padding:0.85rem;">
+              <div style="font-weight:800;color:#0033A0;font-size:1.05rem;">4. Reconcile with VaccTrack</div>
+              <div style="color:#475569;font-size:0.9rem;margin-top:0.35rem;">After the latest VaccTrack extract is uploaded by the NIP coordinator, refresh and check matched, pending, or discrepant records.</div>
             </div>
           </div>
         </div>
@@ -1152,10 +1156,11 @@ def render_rhu_accomplishments(
 
         upload_label = "2. QA Validate Workbook" if is_qa_encoder else "2. Upload Current Workbook"
         mine_label = "Production RHU Accomplishments" if is_qa_encoder else "My Accomplishments"
-        download_tab, upload_tab, check_tab, mine_tab = st.tabs([
+        download_tab, upload_tab, dashboard_tab, reconciliation_tab, mine_tab = st.tabs([
             "1. Offline Workbook",
             upload_label,
-            "3. VaccTrack Check",
+            "3. Workbook Dashboard",
+            "4. VaccTrack Reconciliation",
             mine_label,
         ])
         workbook_targets = actual_targets if actual_targets is not None and not actual_targets.empty else targets
@@ -1169,8 +1174,44 @@ def render_rhu_accomplishments(
                 username,
                 dry_run=is_qa_encoder,
             )
-        with check_tab:
-            _render_check(supabase, canonical, g1_events, g7_events, hpv_events, report_start, report_end)
+
+        try:
+            rhu_entries = _fetch_entries(supabase, canonical)
+        except Exception as exc:
+            rhu_entries = pd.DataFrame()
+            st.warning(f"Unable to load current RHU workbook data for dashboard/reconciliation: {exc}")
+
+        workbook_entries, _ = prepare_workbook_entries(
+            rhu_entries,
+            municipality=canonical,
+        )
+
+        with dashboard_tab:
+            if is_qa_encoder:
+                st.info(
+                    f"QA view of the current production workbook data for {canonical} RHU. "
+                    "Your QA dry-run upload is not included because it is never saved to production."
+                )
+            render_workbook_dashboard(
+                entries=workbook_entries,
+                baseline_targets=targets,
+                actual_targets=actual_targets,
+                start_date=report_start,
+                end_date=report_end,
+                selected_muni=canonical,
+            )
+
+        with reconciliation_tab:
+            _render_check(
+                supabase,
+                canonical,
+                g1_events,
+                g7_events,
+                hpv_events,
+                report_start,
+                report_end,
+            )
+
         with mine_tab:
             _render_my_accomplishments(supabase, canonical)
     else:
