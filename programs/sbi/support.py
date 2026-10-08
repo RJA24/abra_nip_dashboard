@@ -8,7 +8,7 @@ import streamlit as st
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
 FEEDBACK_TABLE = "sbi_user_feedback"
-APP_VERSION = "v5.22.6"
+APP_VERSION = "v5.22.7"
 
 
 def feedback_schema_available(supabase) -> bool:

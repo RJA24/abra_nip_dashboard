@@ -40,6 +40,7 @@ from programs.sbi.workbook_dashboard import (
     prepare_workbook_entries,
     render_workbook_dashboard,
 )
+from programs.sbi.g5_dashboard import render_g5_dashboard
 from programs.sbi.source_dashboard_layout import (
     render_actual_target_gap_notice,
     render_source_kpi_summary,
@@ -641,6 +642,7 @@ def render_sbi_dashboard(supabase) -> None:
         "Targets Overview",
         "RHU Accomplishments",
         "Workbook Dashboard",
+        "G5 Dashboard",
         "VaccTrack Dashboard",
         "VaccTrack vs Workbook",
     ])
@@ -649,6 +651,7 @@ def render_sbi_dashboard(supabase) -> None:
         tab_sbi_target,
         tab_sbi_rhu,
         tab_sbi_workbook,
+        tab_sbi_g5,
         tab_sbi_vacctrack,
         tab_sbi_reconciliation,
     ) = sbi_tabs
@@ -2234,7 +2237,23 @@ def render_sbi_dashboard(supabase) -> None:
             selected_muni=selected_muni if view_mode == "Specific Municipality" else None,
         )
 
-    # 5. VACC TRACK VS WORKBOOK — province-wide read-only reconciliation
+    # 5. G5 DASHBOARD — separate RHU workbook catch-up view (no VaccTrack G5 sheet)
+    with tab_sbi_g5:
+        try:
+            g5_entries = fetch_workbook_dashboard_entries(supabase)
+        except Exception as exc:
+            g5_entries = pd.DataFrame()
+            st.error(f"Unable to load Grade 5 RHU workbook accomplishment data: {exc}")
+
+        render_g5_dashboard(
+            entries=g5_entries,
+            actual_targets=df_sbi_actual_targets,
+            start_date=report_start,
+            end_date=report_end,
+            selected_muni=selected_muni if view_mode == "Specific Municipality" else None,
+        )
+
+    # 6. VACC TRACK VS WORKBOOK — province-wide read-only reconciliation
     with tab_sbi_reconciliation:
         try:
             reconciliation_entries = fetch_workbook_dashboard_entries(supabase)
@@ -2253,7 +2272,7 @@ def render_sbi_dashboard(supabase) -> None:
             workbook_entries=reconciliation_entries,
         )
 
-    # 6. VACC TRACK DASHBOARD — official/final source
+    # 7. VACC TRACK DASHBOARD — official/final source
     with tab_sbi_vacctrack:
         st.markdown("### VaccTrack Data Dashboard")
         st.caption(

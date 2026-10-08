@@ -16,7 +16,8 @@ from programs.sbi.campaign_control import activity_date_issues, get_campaign_con
 MANILA_TZ = pytz.timezone("Asia/Manila")
 TABLE_NAME = "sbi_rhu_accomplishments"
 SUBMISSION_TABLE = "sbi_rhu_workbook_submissions"
-WORKBOOK_VERSION = "SBI-AGGREGATE-2026-v1"
+WORKBOOK_VERSION = "SBI-AGGREGATE-2026-v2"
+SUPPORTED_WORKBOOK_VERSIONS = {"SBI-AGGREGATE-2026-v1", WORKBOOK_VERSION}
 MAX_INPUT_ROWS = 1200
 PROTECTION_PASSWORD = "AbraNIPSBI2026"
 
@@ -48,7 +49,6 @@ BASE_COLUMNS = [
     "School ID",
     "Grade Level",
     "Barangay",
-    "Actual Target",
     "MR Male",
     "MR Female",
     "Td Male",
@@ -83,7 +83,12 @@ INPUT_COUNT_COLUMNS = [
     "HPV2 Refused",
 ] + REASON_COLUMNS
 
-GRADE_TO_CODE = {"Grade 1": "G1", "G1": "G1", "Grade 4": "G4", "G4": "G4", "Grade 7": "G7", "G7": "G7"}
+GRADE_TO_CODE = {
+    "Grade 1": "G1", "G1": "G1",
+    "Grade 4": "G4", "G4": "G4",
+    "Grade 5": "G5", "G5": "G5",
+    "Grade 7": "G7", "G7": "G7",
+}
 
 
 
@@ -117,33 +122,31 @@ def _same_muni(value: object, municipality: str) -> bool:
 
 
 def _roster(targets: pd.DataFrame, municipality: str) -> pd.DataFrame:
-    columns = ["Municipality", "Barangay", "School ID", "School Name", "G1 Total", "G4 Female", "G7 Total"]
+    """Build the municipality school roster used by the offline workbook.
+
+    Targets deliberately stay in the monitoring system.  The workbook carries
+    only school reference data so an RHU file never becomes a stale source of
+    target denominators.
+    """
+    columns = ["Municipality", "Barangay", "School ID", "School Name"]
+    output_columns = ["School ID", "School Name", "Barangay"]
     if targets is None or targets.empty:
-        return pd.DataFrame(columns=["School ID", "School Name", "Barangay", "G1 Target", "G4 Female Target", "G7 Target"])
+        return pd.DataFrame(columns=output_columns)
 
     work = targets.copy()
     if "Municipality" not in work.columns:
-        return pd.DataFrame(columns=["School ID", "School Name", "Barangay", "G1 Target", "G4 Female Target", "G7 Target"])
+        return pd.DataFrame(columns=output_columns)
     work = work.loc[work["Municipality"].map(lambda value: _same_muni(value, municipality))].copy()
     for column in columns:
         if column not in work.columns:
-            work[column] = 0 if column in {"G1 Total", "G4 Female", "G7 Total"} else ""
+            work[column] = ""
     work["School ID"] = work["School ID"].map(_clean_school_id)
     work["School Name"] = work["School Name"].fillna("").astype(str).str.strip()
     work["Barangay"] = work["Barangay"].fillna("").astype(str).str.strip()
-    for column in ["G1 Total", "G4 Female", "G7 Total"]:
-        work[column] = pd.to_numeric(work[column], errors="coerce").fillna(0)
     work = work.loc[work["School ID"].ne("")].copy()
     work = (
         work.groupby("School ID", as_index=False)
-        .agg({
-            "School Name": "first",
-            "Barangay": "first",
-            "G1 Total": "sum",
-            "G4 Female": "sum",
-            "G7 Total": "sum",
-        })
-        .rename(columns={"G1 Total": "G1 Target", "G4 Female": "G4 Female Target", "G7 Total": "G7 Target"})
+        .agg({"School Name": "first", "Barangay": "first"})
         .sort_values("School Name")
         .reset_index(drop=True)
     )
@@ -362,13 +365,13 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         (
             "1",
             "ENCODE OFFLINE",
-            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, select School Name from the dropdown, choose Grade Level, then enter the applicable counts. School ID and Barangay fill automatically; the Actual Target is kept hidden for internal reference.",
+            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, select School Name from the dropdown, choose Grade Level, then enter the applicable counts. School ID and Barangay fill automatically. Coverage targets stay in the monitoring system and are not stored in the workbook.",
             "A9:C11",
         ),
         (
             "2",
             "PREPARE VACC TRACK",
-            "Open VaccTrack G1, G4 or G7. Set the Report Date at the top. Only schools with accomplishments for that selected date and grade are shown; encode the displayed values into VaccTrack.",
+            "Open VaccTrack G1, G4 or G7. Set the Report Date at the top. Only schools with accomplishments for that selected date and grade are shown; encode the displayed values into VaccTrack. Grade 5 is tracked separately in the Abra system and does not change these VaccTrack sheets.",
             "D9:F11",
         ),
         (
@@ -456,17 +459,19 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     setup.protect(PROTECTION_PASSWORD)
 
     reference = workbook.add_worksheet("Reference")
-    reference_headers = ["School ID", "School Name", "Barangay", "G1 Target", "G4 Female Target", "G7 Target"]
+    reference_headers = ["School ID", "School Name", "Barangay"]
     for col, header in enumerate(reference_headers):
         reference.write(0, col, header, header_fmt)
     for row_idx, row in roster.iterrows():
         values = [row.get(header, "") for header in reference_headers]
         for col_idx, value in enumerate(values):
-            reference.write(row_idx + 1, col_idx, value)
+            if value is None or pd.isna(value):
+                reference.write_blank(row_idx + 1, col_idx, None)
+            else:
+                reference.write(row_idx + 1, col_idx, value)
     reference.set_column("A:A", 16)
     reference.set_column("B:B", 36)
     reference.set_column("C:C", 24)
-    reference.set_column("D:F", 14)
     reference.protect(PROTECTION_PASSWORD)
     reference.hide()
     last_ref_row = max(2, len(roster) + 1)
@@ -484,15 +489,13 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.set_column("C:C", 14)
     sheet.set_column("D:D", 12)
     sheet.set_column("E:E", 22)
-    sheet.set_column("F:F", 13, None, {"hidden": True})
-    sheet.set_column("G:T", 12)
+    sheet.set_column("F:S", 12)
     reason_start_col = BASE_COLUMNS.index("HPV2 Refused") + 1
     sheet.set_column(reason_start_col, reason_start_col + len(REASON_COLUMNS) - 1, 10)
     sheet.set_column(len(ALL_COLUMNS) - 1, len(ALL_COLUMNS) - 1, 14)
 
     school_name_col = BASE_COLUMNS.index("School Name")
     barangay_col = BASE_COLUMNS.index("Barangay")
-    target_col = BASE_COLUMNS.index("Actual Target")
     grade_col = BASE_COLUMNS.index("Grade Level")
     school_id_col = BASE_COLUMNS.index("School ID")
     date_col = BASE_COLUMNS.index("Activity Date")
@@ -508,12 +511,6 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         sheet.write_formula(row, school_id_col, f'=IFERROR(INDEX(Reference!$A$2:$A${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
         sheet.write_formula(row, barangay_col, f'=IFERROR(INDEX(Reference!$C$2:$C${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
         sheet.write_blank(row, grade_col, None, input_fmt)
-        sheet.write_formula(
-            row,
-            target_col,
-            f'=IF({school_id_cell}="","",IF({grade_cell}="G1",IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},4,FALSE),""),IF({grade_cell}="G4",IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},5,FALSE),""),IF({grade_cell}="G7",IFERROR(VLOOKUP({school_id_cell},Reference!$A$2:$F${last_ref_row},6,FALSE),""),""))))',
-            formula_fmt,
-        )
         for col_name in INPUT_COUNT_COLUMNS:
             col = ALL_COLUMNS.index(col_name)
             sheet.write_blank(row, col, None, input_count_fmt)
@@ -533,7 +530,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         check_formula = (
             f'=IF(AND(${date_letter}{excel_row}="",${school_name_letter}{excel_row}="",${grade_letter}{excel_row}=""),"",'
             f'IF(OR(${date_letter}{excel_row}="",${school_name_letter}{excel_row}="",${grade_letter}{excel_row}=""),"CHECK KEY",'
-            f'IF(AND(${grade_letter}{excel_row}="G4",SUM(${mr_start_letter}{excel_row}:${td_refused_letter}{excel_row})>0),"CHECK G4 FIELDS",'
+            f'IF(AND(OR(${grade_letter}{excel_row}="G4",${grade_letter}{excel_row}="G5"),SUM(${mr_start_letter}{excel_row}:${td_refused_letter}{excel_row})>0),"CHECK HPV FIELDS",'
             f'IF(AND(OR(${grade_letter}{excel_row}="G1",${grade_letter}{excel_row}="G7"),SUM(${hpv_start_letter}{excel_row}:${hpv_refused_letter}{excel_row})>0),"CHECK GRADE FIELDS",'
             f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM({",".join(missed_parts)}),"CHECK REASONS","OK")))))'
         )
@@ -542,7 +539,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.data_validation(1, date_col, MAX_INPUT_ROWS, date_col, {"validate": "date", "criteria": "between", "minimum": date(2026, 1, 1), "maximum": date(2027, 12, 31), "input_title": "Activity Date", "input_message": "Enter the date the school vaccination activity was conducted."})
     if not roster.empty:
         sheet.data_validation(1, school_name_col, MAX_INPUT_ROWS, school_name_col, {"validate": "list", "source": "=School_Names", "input_title": "School Name", "input_message": "Select a school assigned to this RHU. The School ID fills automatically."})
-    sheet.data_validation(1, grade_col, MAX_INPUT_ROWS, grade_col, {"validate": "list", "source": ["G1", "G4", "G7"]})
+    sheet.data_validation(1, grade_col, MAX_INPUT_ROWS, grade_col, {"validate": "list", "source": ["G1", "G4", "G5", "G7"]})
     for col_name in INPUT_COUNT_COLUMNS:
         col = ALL_COLUMNS.index(col_name)
         sheet.data_validation(1, col, MAX_INPUT_ROWS, col, {"validate": "integer", "criteria": ">=", "value": 0, "error_title": "Invalid count", "error_message": "Enter a whole number of 0 or higher."})
@@ -550,7 +547,7 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.conditional_format(1, row_check_col, MAX_INPUT_ROWS, row_check_col, {"type": "text", "criteria": "containing", "value": "OK", "format": ok_fmt})
     sheet.conditional_format(1, row_check_col, MAX_INPUT_ROWS, row_check_col, {"type": "text", "criteria": "containing", "value": "CHECK", "format": bad_fmt})
     grade_letter = _column_letter(grade_col)
-    sheet.conditional_format(1, ALL_COLUMNS.index("MR Male"), MAX_INPUT_ROWS, ALL_COLUMNS.index("Td Refused"), {"type": "formula", "criteria": f"=${grade_letter}2=\"G4\"", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
+    sheet.conditional_format(1, ALL_COLUMNS.index("MR Male"), MAX_INPUT_ROWS, ALL_COLUMNS.index("Td Refused"), {"type": "formula", "criteria": f"=OR(${grade_letter}2=\"G4\",${grade_letter}2=\"G5\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
     sheet.conditional_format(1, ALL_COLUMNS.index("HPV Dose 1"), MAX_INPUT_ROWS, ALL_COLUMNS.index("HPV2 Refused"), {"type": "formula", "criteria": f"=OR(${grade_letter}2=\"G1\",${grade_letter}2=\"G7\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
 
     reason_comments = {f"Reason {code}": f"{code} {label}" for code, label in REASON_LABELS.items()}
@@ -793,7 +790,7 @@ def validate_workbook(raw: bytes, targets: pd.DataFrame, municipality: str) -> t
         elif school_id not in roster_map:
             errors.append(f"Row {excel_row}: School ID {school_id} is not assigned to {municipality}.")
         if not grade:
-            errors.append(f"Row {excel_row}: Grade Level must be G1, G4, or G7.")
+            errors.append(f"Row {excel_row}: Grade Level must be G1, G4, G5, or G7.")
 
         counts: dict[str, int] = {}
         invalid_count = False
@@ -807,8 +804,8 @@ def validate_workbook(raw: bytes, targets: pd.DataFrame, municipality: str) -> t
         if invalid_count or activity_date is None or school_id not in roster_map or not grade:
             continue
 
-        if grade == "G4" and sum(counts[column] for column in ["MR Male", "MR Female", "Td Male", "Td Female", "MR Deferred", "Td Deferred", "MR Refused", "Td Refused"]) > 0:
-            errors.append(f"Row {excel_row}: G4 rows must use HPV fields, not MR/Td fields.")
+        if grade in {"G4", "G5"} and sum(counts[column] for column in ["MR Male", "MR Female", "Td Male", "Td Female", "MR Deferred", "Td Deferred", "MR Refused", "Td Refused"]) > 0:
+            errors.append(f"Row {excel_row}: {grade} rows must use HPV fields, not MR/Td fields.")
             continue
         if grade in {"G1", "G7"} and sum(counts[column] for column in ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"]) > 0:
             errors.append(f"Row {excel_row}: G1/G7 rows must use MR/Td fields, not HPV fields.")
@@ -868,8 +865,8 @@ def _to_db_record(row: pd.Series, municipality: str, username: str, batch_id: st
         "mr_female": int(row["MR Female"]) if grade in {"G1", "G7"} else None,
         "td_male": int(row["Td Male"]) if grade in {"G1", "G7"} else None,
         "td_female": int(row["Td Female"]) if grade in {"G1", "G7"} else None,
-        "hpv_dose1": int(row["HPV Dose 1"]) if grade == "G4" else None,
-        "hpv_dose2": int(row["HPV Dose 2"]) if grade == "G4" else None,
+        "hpv_dose1": int(row["HPV Dose 1"]) if grade in {"G4", "G5"} else None,
+        "hpv_dose2": int(row["HPV Dose 2"]) if grade in {"G4", "G5"} else None,
         "mr_deferred": extra["mr_deferred"],
         "td_deferred": extra["td_deferred"],
         "mr_refused": extra["mr_refused"],
@@ -990,6 +987,7 @@ def _record_submission(
     removed: int,
     unchanged: int,
     restored_from_submission_id: int | None = None,
+    workbook_version: str | None = None,
 ) -> int:
     canonical = canonical_municipality_name(municipality)
     supabase.table(SUBMISSION_TABLE).update({"is_current": False}).eq("municipality", canonical).eq("is_current", True).execute()
@@ -998,7 +996,7 @@ def _record_submission(
         "municipality": canonical,
         "batch_id": batch_id,
         "file_name": file_name,
-        "workbook_version": WORKBOOK_VERSION,
+        "workbook_version": workbook_version or WORKBOOK_VERSION,
         "uploaded_by": username,
         "uploaded_at": datetime.now(MANILA_TZ).isoformat(),
         "row_count": int(len(incoming)),
@@ -1270,7 +1268,7 @@ def render_workbook_upload(
         if normalize_municipality_key(workbook_muni) != normalize_municipality_key(municipality):
             st.error(f"This workbook belongs to {workbook_muni or 'another RHU'}, not {municipality}.")
             return
-        if workbook_version != WORKBOOK_VERSION:
+        if workbook_version not in SUPPORTED_WORKBOOK_VERSIONS:
             st.error(
                 f"This workbook uses an unsupported template version ({workbook_version or 'unknown'}). "
                 "Download a fresh SBI Offline Accomplishment Workbook from Step 1, then transfer the current accomplishment rows into it."
@@ -1346,6 +1344,7 @@ def render_workbook_upload(
                     modified=modified,
                     removed=removed,
                     unchanged=unchanged,
+                    workbook_version=workbook_version,
                 )
             except Exception as exc:
                 st.error(f"The workbook could not be saved: {exc}")

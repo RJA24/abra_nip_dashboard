@@ -32,7 +32,7 @@ from programs.sbi.production_readiness import render_all_rhu_workbook_package, r
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.22.6"
+APP_VERSION = "v5.22.7"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -926,7 +926,3 @@ def render_operations(supabase, audit_callback=None, read_only: bool = False) ->
         render_feedback_inbox(supabase, audit_callback=audit_callback, read_only=read_only)
     with backup_tab:
         render_backup(supabase, audit_callback=audit_callback if not read_only else None)
-
-
-
-        

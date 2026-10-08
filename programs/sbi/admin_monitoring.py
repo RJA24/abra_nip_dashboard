@@ -8,7 +8,7 @@ import pytz
 import streamlit as st
 
 from core.config import ABRA_MUNIS
-from core.data import fetch_sbi_targets, fetch_sbi_vacctrack
+from core.data import fetch_sbi_actual_targets, fetch_sbi_targets, fetch_sbi_vacctrack
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.aggregate_workbook import fetch_submission_history
 from programs.sbi.analytics import prepare_hpv_events, prepare_mr_td_events
@@ -30,6 +30,7 @@ METRICS = {
 GRADE_TARGET_COLUMN = {
     "G1": "G1 Total",
     "G4": "G4 Female",
+    "G5": "Unvaccinated G5 Female",
     "G7": "G7 Total",
 }
 
@@ -108,6 +109,7 @@ def _fetch_all_entries(supabase) -> pd.DataFrame:
 def _prepare_targets() -> pd.DataFrame:
     try:
         targets = fetch_sbi_targets()
+        actual = fetch_sbi_actual_targets()
     except Exception:
         return pd.DataFrame()
     if targets is None or targets.empty:
@@ -123,7 +125,7 @@ def _prepare_targets() -> pd.DataFrame:
     for column in ["G1 Total", "G4 Female", "G7 Total"]:
         out[column] = pd.to_numeric(out[column], errors="coerce").fillna(0)
     out = out[out["School ID"].ne("")].copy()
-    return (
+    out = (
         out.groupby(["Municipality", "School ID"], as_index=False)
         .agg({
             "School Name": "first",
@@ -132,6 +134,25 @@ def _prepare_targets() -> pd.DataFrame:
             "G7 Total": "sum",
         })
     )
+
+    # G5 has no baseline target. Merge only the independent Actual Targets value
+    # used by the Grade 5 catch-up workflow. Missing entries remain NaN.
+    out["Unvaccinated G5 Female"] = pd.NA
+    if actual is not None and not actual.empty and "Unvaccinated G5 Female" in actual.columns:
+        g5 = actual.copy()
+        for column in ["Municipality", "School ID"]:
+            if column not in g5.columns:
+                g5[column] = ""
+        g5["Municipality"] = g5["Municipality"].map(lambda value: canonical_municipality_name(str(value or "").strip()))
+        g5["School ID"] = g5["School ID"].map(_clean_school_id)
+        g5["Unvaccinated G5 Female"] = pd.to_numeric(g5["Unvaccinated G5 Female"], errors="coerce")
+        g5 = (
+            g5.loc[g5["School ID"].ne("")]
+            .groupby(["Municipality", "School ID"], as_index=False)["Unvaccinated G5 Female"]
+            .sum(min_count=1)
+        )
+        out = out.drop(columns=["Unvaccinated G5 Female"]).merge(g5, on=["Municipality", "School ID"], how="left")
+    return out
 
 
 def _reason_total(value: object) -> int:
@@ -224,7 +245,7 @@ def build_data_quality_report(
             grade = str(row.get("grade_level") or "").strip()
             activity_date = row.get("activity_date")
 
-            if not municipality or not school_id or activity_date is None or grade not in {"G1", "G4", "G7"}:
+            if not municipality or not school_id or activity_date is None or grade not in {"G1", "G4", "G5", "G7"}:
                 issues.append(_issue(
                     "Critical",
                     municipality,
@@ -284,7 +305,7 @@ def build_data_quality_report(
                         school=school_name, activity_date=activity_date, grade=grade,
                     ))
 
-            if grade == "G4":
+            if grade in {"G4", "G5"}:
                 mr_td_total = sum(_number(row, column) for column in [
                     "mr_male", "mr_female", "td_male", "td_female",
                     "mr_deferred", "td_deferred", "mr_refused", "td_refused",
@@ -292,7 +313,7 @@ def build_data_quality_report(
                 if mr_td_total > 0:
                     issues.append(_issue(
                         "Critical", municipality, "Wrong vaccine fields for grade",
-                        "A Grade 4 row contains MR/Td counts. Grade 4 should use HPV fields only.",
+                        f"A {grade} row contains MR/Td counts. Grade 4 and Grade 5 should use HPV fields only.",
                         school=school_name, activity_date=activity_date, grade=grade,
                     ))
             elif grade in {"G1", "G7"}:
@@ -351,7 +372,7 @@ def build_data_quality_report(
                         ("MR", sum(pd.to_numeric(group.get(col), errors="coerce").fillna(0).sum() for col in ["mr_male", "mr_female"])),
                         ("Td", sum(pd.to_numeric(group.get(col), errors="coerce").fillna(0).sum() for col in ["td_male", "td_female"])),
                     ]
-                elif grade == "G4":
+                elif grade in {"G4", "G5"}:
                     checks = [
                         ("HPV Dose 1", pd.to_numeric(group.get("hpv_dose1"), errors="coerce").fillna(0).sum()),
                         ("HPV Dose 2", pd.to_numeric(group.get("hpv_dose2"), errors="coerce").fillna(0).sum()),

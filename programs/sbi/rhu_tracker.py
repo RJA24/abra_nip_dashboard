@@ -38,6 +38,11 @@ GRADE_CONFIG = {
         "target": "G4 Female",
         "fields": ["HPV Dose 1", "HPV Dose 2"],
     },
+    "Grade 5": {
+        "code": "G5",
+        "target": "Unvaccinated G5 Female",
+        "fields": ["HPV Dose 1", "HPV Dose 2"],
+    },
     "Grade 7": {
         "code": "G7",
         "target": "G7 Total",
@@ -840,9 +845,9 @@ def _render_my_accomplishments(supabase, assigned_muni: str) -> None:
 
     work = entries.copy()
     if "grade_level" in work.columns:
-        work = work[work["grade_level"].astype(str).isin(["G1", "G4", "G7"])].copy()
+        work = work[work["grade_level"].astype(str).isin(["G1", "G4", "G5", "G7"])].copy()
     if work.empty:
-        st.write("No Grade 1, Grade 4, or Grade 7 accomplishment records are available yet.")
+        st.write("No Grade 1, Grade 4, Grade 5, or Grade 7 accomplishment records are available yet.")
         return
     for col in ["mr_male", "mr_female", "td_male", "td_female", "hpv_dose1", "hpv_dose2"]:
         if col not in work.columns:

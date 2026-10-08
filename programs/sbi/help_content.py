@@ -2,7 +2,7 @@
 
 RHU_FULL_GUIDE_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder Guide
 
-Version: v5.22.6
+Version: v5.22.7
 
 ## 1. Reporting workflow
 
@@ -31,14 +31,14 @@ For every activity entry, provide:
 
 - Activity Date
 - School Name — choose from the dropdown
-- Grade Level — G1, G4, or G7
+- Grade Level — G1, G4, G5, or G7
 - applicable vaccination counts
 - deferred/refused counts when applicable
 - Reason 01–19 counts when applicable
 
 After selecting School Name, **School ID and Barangay fill automatically**. You do not need to memorize or type the School ID.
 
-Formula/reference cells are locked. The Actual Target is retained internally and is not an RHU input field.
+Formula/reference cells are locked. Coverage targets are not stored in the RHU workbook; the monitoring system uses its current target data when calculating dashboards and coverage.
 
 If the same school and grade have more than one session on the same date, you may use more than one row. The workbook/dashboard consolidate those rows for reporting.
 
@@ -57,7 +57,7 @@ Use the MR/Td fields:
 
 Leave HPV fields blank.
 
-### Grade 4
+### Grade 4 and Grade 5
 
 Use the HPV fields:
 
@@ -67,6 +67,8 @@ Use the HPV fields:
 - HPV2 Deferred / Refused
 
 Leave MR/Td fields blank.
+
+For Grade 5, the system uses **Unvaccinated G5 Female** from the connected Actual Targets worksheet as the dashboard denominator. That target is not copied into the RHU workbook. Grade 5 is monitored in the separate G5 Dashboard and is not added to the VaccTrack G1/G4/G7 sheets.
 
 ### Reason codes
 
@@ -84,7 +86,7 @@ Set the **Report Date** in the editable light-yellow cell. The workbook automati
 
 The calculated rows are locked. Region, Province, Municipality, Barangay, Facility Name, and School ID are not shown because the sheets are only an encoding aid for the values you enter into VaccTrack.
 
-For Grade 4, the RHU-facing workbook does not show G4.A Actual Total Female Students; the target remains internal to the workbook/system.
+For Grade 4, the RHU-facing workbook does not show G4.A Actual Total Female Students; target denominators remain in the monitoring system rather than the workbook. Grade 5 does not create a new VaccTrack sheet; its HPV1/HPV2 accomplishments remain in the workbook and the separate G5 Dashboard.
 
 ## 6. Upload Current Workbook
 
@@ -167,7 +169,7 @@ Use **Send Feedback / Report a Problem** for workbook, upload, reconciliation, i
 
 RHU_FAQ_MD = """# Abra NIP Monitoring Information System — SBI RHU Encoder FAQs
 
-Version: v5.22.6
+Version: v5.22.7
 
 ## 1. Do I need internet while encoding accomplishments?
 
@@ -199,11 +201,15 @@ Use the **light-yellow input cells**. Formula/reference cells are protected. On 
 
 ## 8. Why is Actual Target not visible in Accomplishments?
 
-It is kept internally for validation/reference and is not something the RHU needs to encode.
+Targets are intentionally not stored in the RHU workbook. The monitoring system already maintains the current targets and uses them for dashboard coverage and target-based analysis, which avoids stale target values in previously downloaded workbooks.
 
 ## 9. Why is G4.A not shown in the VaccTrack G4 sheet?
 
-The workbook keeps target information internally. The RHU-facing VaccTrack G4 sheet focuses on the accomplishment/deferral/refusal values needed for encoding.
+Target information is kept in the monitoring system, not in the RHU workbook. The RHU-facing VaccTrack G4 sheet focuses on the accomplishment/deferral/refusal values needed for encoding.
+
+## 9A. Where do Grade 5 accomplishments go?
+
+Choose **G5** in the Accomplishments Grade Level dropdown and use the HPV Dose 1 / HPV Dose 2 fields. Grade 5 is shown in the separate **G5 Dashboard**. The existing VaccTrack G1, G4, and G7 worksheets are unchanged; there is no added VaccTrack G5 worksheet.
 
 ## 10. How do I correct a wrong accomplishment?
 

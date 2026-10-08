@@ -359,6 +359,10 @@ def render_workbook_dashboard(
         end_date=end_date,
         municipality=selected_muni,
     )
+    # Grade 5 HPV catch-up is intentionally isolated in the standalone G5 Dashboard.
+    # Keep the existing Workbook Dashboard strictly comparable with VaccTrack G1/G4/G7.
+    if not entries_view.empty and "grade_level" in entries_view.columns:
+        entries_view = entries_view.loc[entries_view["grade_level"].isin(["G1", "G4", "G7"])].copy()
     if legacy_count:
         st.info(
             f"{legacy_count:,} legacy/manual accomplishment row(s) are excluded from this workbook dashboard. "

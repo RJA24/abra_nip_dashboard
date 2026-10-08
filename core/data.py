@@ -343,9 +343,12 @@ def _fetch_sbi_actual_targets_cached():
         'G1 Male', 'G1 Female', 'G1 Total', 'G4 Female',
         'G7 Male', 'G7 Female', 'G7 Total', 'Total Eligible'
     ]
+    g5_target_col = 'Unvaccinated G5 Female'
 
     # Preserve a stable schema even when an entire target column is still blank.
-    for col in identity_cols + target_cols:
+    # Grade 5 is tracked separately and must not change the existing G1/G4/G7
+    # Actual Target completeness status or Total Eligible denominator.
+    for col in identity_cols + target_cols + [g5_target_col]:
         if col not in df.columns:
             df[col] = pd.NA
 
@@ -380,10 +383,21 @@ def _fetch_sbi_actual_targets_cached():
     df.loc[entered_count.eq(len(target_cols)), 'Target Entry Status'] = 'Complete'
     df['Actual Target Updated'] = entered_count.gt(0)
 
+    # Grade 5 target entry is intentionally independent. A blank means not yet
+    # provided; an entered zero is a valid confirmed zero. This status is used by
+    # the standalone G5 dashboard and workbook without affecting G1/G4/G7 coverage.
+    raw_g5 = df[g5_target_col].astype('string').replace(r'^\s*$', pd.NA, regex=True)
+    df['G5 Target Entry Status'] = 'Pending'
+    df.loc[raw_g5.notna(), 'G5 Target Entry Status'] = 'Complete'
+    df['G5 Target Updated'] = raw_g5.notna()
+
     # Convert entered targets to numbers. Pending blanks become zero only after the
-    # reporting status has been recorded.
+    # reporting status has been recorded for the existing G1/G4/G7 target model.
     for col in target_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    # Keep missing Grade 5 values as NaN so the G5 denominator can distinguish
+    # "not yet entered" from a genuine confirmed zero.
+    df[g5_target_col] = pd.to_numeric(raw_g5, errors='coerce')
 
     # Recalculate totals when detailed sex-disaggregated values were supplied.
     g1_detail_entered = entered_mask['G1 Male'] & entered_mask['G1 Female']
