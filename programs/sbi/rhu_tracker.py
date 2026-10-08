@@ -1246,18 +1246,29 @@ def render_rhu_accomplishments(
             _render_my_accomplishments(supabase, canonical)
         return
 
-    # Coordinator/admin accounts do not get a duplicate province-wide dashboard here.
-    # This tab stays RHU-specific; choose a municipality in the sidebar to inspect it.
-    if selected_muni:
-        canonical = _canonical_muni(selected_muni)
-        st.markdown(f"### RHU Accomplishments — {canonical}")
-        st.caption(
-            "RHU-specific uploaded workbook records. Province-wide analytics are available in "
-            "Workbook Dashboard and VaccTrack vs Workbook."
-        )
-        _render_my_accomplishments(supabase, canonical)
-    else:
-        st.info(
-            "RHU Accomplishments is an RHU-specific workspace. Select **Specific Municipality** "
-            "in Dashboard Filters to inspect one RHU, or use **Workbook Dashboard** for province-wide data."
-        )
+    # System Admin / QA Admin can inspect the complete RHU accomplishment view
+    # directly in this tab. Respect the sidebar scope: All Municipalities shows
+    # the Abra-wide reconciliation and municipality drill-down; Specific
+    # Municipality shows the full reconciliation for that RHU. Keep the view
+    # read-only here so administrative inspection cannot overwrite RHU data.
+    try:
+        all_entries = _fetch_entries(supabase)
+        workbook_entries, _ = prepare_workbook_entries(all_entries)
+    except Exception as exc:
+        st.error(f"Unable to load current RHU workbook data: {exc}")
+        return
+
+    canonical_selected = _canonical_muni(selected_muni) if selected_muni else None
+    if canonical_selected not in ABRA_MUNIS:
+        canonical_selected = None
+
+    _render_coordinator_view(
+        supabase,
+        g1_events,
+        g7_events,
+        hpv_events,
+        report_start,
+        report_end,
+        canonical_selected,
+        all_entries=workbook_entries,
+    )
