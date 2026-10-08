@@ -12,4 +12,5 @@ ABRA_MUNIS = [
 
 SIA_SHEET_URL = "https://docs.google.com/spreadsheets/d/1hM0yhzLY5uCh-bxFRPV7u6MYAzimfG0f4uluUGkLogU"
 SBI_SHEET_URL = "https://docs.google.com/spreadsheets/d/1-DYD0s9wwyb_8fwid3h-AT9wPVMf4p2rDlX9ofyANwU"
+FLU_SHEET_URL = "https://docs.google.com/spreadsheets/d/1ja89t5IpAs3PDW2UmU18Nlr2bFuLn25_Wiz30X4XaRk"
 BARANGAY_GEOJSON_PATH = "abra_barangays.geojson"

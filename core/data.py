@@ -11,7 +11,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 from supabase import create_client
 
-from .config import SIA_SHEET_URL, SBI_SHEET_URL
+from .config import SIA_SHEET_URL, SBI_SHEET_URL, FLU_SHEET_URL
 from .geo import standardize_geo_names
 
 logger = logging.getLogger("abra_nip_dashboard.data")
@@ -638,3 +638,20 @@ def fetch_opt_data():
         logger.exception("Failed to fetch OPT data; failure was not cached")
         return pd.DataFrame()
 
+
+
+@st.cache_data(ttl="2m", show_spinner=False)
+def _fetch_flu_masterlist_cached():
+    """Read the shared Abra FLU masterlist used as vaccination denominators."""
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    return conn.read(spreadsheet=FLU_SHEET_URL, worksheet="Masterlist", ttl="2m")
+
+
+def fetch_flu_masterlist():
+    """Return the current FLU masterlist sheet, or an empty frame on a transient read failure."""
+    try:
+        frame = _fetch_flu_masterlist_cached()
+        return frame if frame is not None else pd.DataFrame()
+    except Exception:
+        logger.exception("Failed to fetch Abra FLU masterlist; failure was not cached")
+        return pd.DataFrame()

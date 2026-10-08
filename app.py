@@ -10,6 +10,7 @@ from auth_utils import authenticate_user, hash_password, verify_password
 from core.data import init_supabase
 from programs.sbi import render_sbi_dashboard
 from programs.sia import render_sia_dashboard
+from programs.flu import render_flu_dashboard
 from admin import render_admin_dashboard
 
 logger = logging.getLogger("abra_nip_dashboard")
@@ -653,7 +654,14 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         )
         st.markdown(notice_html, unsafe_allow_html=True)
 
-    left_pad, mr_col, gap_one, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
+    can_open_flu = st.session_state.get("user_role") in {"System Admin", "QA Admin", "RHU Encoder"}
+    if can_open_flu:
+        left_pad, mr_col, gap_one, sbi_col, gap_two, flu_col, right_pad = st.columns(
+            [0.65, 2.6, 0.35, 2.6, 0.35, 2.6, 0.65]
+        )
+    else:
+        left_pad, mr_col, gap_one, sbi_col, right_pad = st.columns([1.0, 3.25, 0.45, 3.25, 1.0])
+        flu_col = None
 
     with mr_col:
         st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
@@ -666,6 +674,13 @@ if st.session_state.get('logged_in', False) and st.session_state.get('active_pro
         if st.button("SBI", key="open_sbi", width="stretch"):
             st.session_state['active_program'] = 'SBI'
             st.rerun()
+
+    if flu_col is not None:
+        with flu_col:
+            st.markdown('<span class="program-btn-marker"></span>', unsafe_allow_html=True)
+            if st.button("FLU", key="open_flu", width="stretch"):
+                st.session_state['active_program'] = 'FLU'
+                st.rerun()
 
     st.markdown('<div class="admin-button-spacer"></div>', unsafe_allow_html=True)
 
@@ -705,6 +720,10 @@ if active_program == "SBI":
 
 if active_program == "SIA":
     render_sia_dashboard(supabase)
+    st.stop()
+
+if active_program == "FLU":
+    render_flu_dashboard(supabase)
     st.stop()
 
 if active_program == "ACCOUNT":

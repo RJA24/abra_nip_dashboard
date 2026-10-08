@@ -32,7 +32,7 @@ from programs.sbi.production_readiness import render_all_rhu_workbook_package, r
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.22.7"
+APP_VERSION = "v5.23.0"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -86,6 +86,7 @@ def render_system_health(supabase, audit_callback=None, read_only: bool = False)
         ("RHU Feedback", FEEDBACK_TABLE, "id"),
         ("SBI Settings", SBI_SETTINGS_TABLE, "setting_key"),
         ("SBI Workbook Submissions", SUBMISSION_TABLE, "id"),
+        ("FLU Vaccination Entries", "flu_vaccination_entries", "id"),
     ]
     legacy_checks = [
         ("Legacy Learner Records", "sbi_linelist_records", "id"),
