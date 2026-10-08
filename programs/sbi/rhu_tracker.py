@@ -1272,3 +1272,6 @@ def render_rhu_accomplishments(
         canonical_selected,
         all_entries=workbook_entries,
     )
+
+
+
