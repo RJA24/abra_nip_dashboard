@@ -983,6 +983,8 @@ def _render_coordinator_view(
     end_date: date | None,
     selected_muni: str | None,
     all_entries: pd.DataFrame | None = None,
+    *,
+    key_prefix: str = "rhu_coord",
 ) -> None:
     st.markdown(
         '<h3><i class="fa-solid fa-scale-balanced" style="color:#0033A0;margin-right:8px;"></i>RHU Workbook vs VaccTrack</h3>',
@@ -1023,7 +1025,7 @@ def _render_coordinator_view(
         if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
             st.info("Some RHU workbook values are newer than their corresponding VaccTrack report date and are pending verification.")
 
-        metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key="rhu_coord_metric")
+        metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key=f"{key_prefix}_metric")
         muni_rows = []
         for muni in ABRA_MUNIS:
             muni_entries = _entries_for_muni_period(all_entries, muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
@@ -1036,7 +1038,7 @@ def _render_coordinator_view(
         st.dataframe(muni_table, width="stretch", hide_index=True)
 
         drill_index = 0
-        drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key="rhu_coord_drill_muni")
+        drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key=f"{key_prefix}_drill_muni")
     drill_entries = _entries_for_muni_period(all_entries, drill_muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
     drill_events = _events_for_muni_period(g1_events, g7_events, hpv_events, drill_muni, start_date, end_date)
     drill_cutoff = _safe_school_cutoff(drill_events)
@@ -1046,7 +1048,7 @@ def _render_coordinator_view(
     _render_daily_discrepancy_tally(
         drill_entries,
         drill_events,
-        key_prefix="rhu_coord",
+        key_prefix=key_prefix,
         filename_prefix=f"SBI_RHU_vs_VaccTrack_{drill_muni.replace(' ', '_')}",
     )
 
@@ -1055,7 +1057,7 @@ def _render_coordinator_view(
     if school.empty:
         st.write(f"No RHU Workbook or VaccTrack school data is available for {drill_muni} in this period.")
         return
-    show_all = st.toggle("Show matched schools too", value=False, key="rhu_coord_show_all")
+    show_all = st.toggle("Show matched schools too", value=False, key=f"{key_prefix}_show_all")
     if not show_all:
         school = school[school["Status"].ne("Matched")].copy()
     st.markdown(f"#### School-Level Reconciliation: {drill_muni}")
@@ -1065,7 +1067,7 @@ def _render_coordinator_view(
         data=school.to_csv(index=False).encode("utf-8-sig"),
         file_name=f"SBI_RHU_vs_VaccTrack_{drill_muni.replace(' ', '_')}.csv",
         mime="text/csv",
-        key="rhu_coord_recon_csv",
+        key=f"{key_prefix}_recon_csv",
     )
 
 
@@ -1156,6 +1158,7 @@ def render_vacctrack_vs_workbook(
         report_end,
         selected_muni,
         all_entries=workbook_entries,
+        key_prefix="rhu_vtw",
     )
 
 
@@ -1276,4 +1279,5 @@ def render_rhu_accomplishments(
         report_end,
         canonical_selected,
         all_entries=workbook_entries,
+        key_prefix="rhu_admin_accomp",
     )
