@@ -18,7 +18,7 @@ import streamlit as st
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.aggregate_workbook import REASON_LABELS
-from programs.sbi.reporting import render_barangay_choropleth, render_daily_trend, render_municipality_choropleth
+from programs.sbi.reporting import render_daily_trend, render_municipality_choropleth
 from programs.sbi.workbook_dashboard import prepare_workbook_entries
 
 
@@ -256,45 +256,7 @@ def render_g5_dashboard(
             show_zero_target_as_na=True,
         )
     else:
-        brgy_targets = (
-            target_view.groupby("Barangay", dropna=False)["G5 Target"]
-            .sum()
-            .reset_index()
-        ) if not target_view.empty else pd.DataFrame(columns=["Barangay", "G5 Target"])
-        if coverage_entries.empty:
-            brgy_events = pd.DataFrame(columns=["Barangay", "HPV Dose 1", "HPV Dose 2"])
-        else:
-            brgy_events = (
-                coverage_entries.groupby("barangay", dropna=False)[["hpv_dose1", "hpv_dose2"]]
-                .sum()
-                .reset_index()
-                .rename(columns={"barangay": "Barangay", "hpv_dose1": "HPV Dose 1", "hpv_dose2": "HPV Dose 2"})
-            )
-        brgy = brgy_targets.merge(brgy_events, on="Barangay", how="outer").fillna(0)
-        for col in ["G5 Target", "HPV Dose 1", "HPV Dose 2"]:
-            brgy[col] = pd.to_numeric(brgy[col], errors="coerce").fillna(0)
-        brgy["HPV1 Coverage %"] = np.where(brgy["G5 Target"].gt(0), brgy["HPV Dose 1"] / brgy["G5 Target"] * 100, np.nan)
-        brgy["HPV2 Coverage %"] = np.where(brgy["G5 Target"].gt(0), brgy["HPV Dose 2"] / brgy["G5 Target"] * 100, np.nan)
-        brgy["HPV1 Remaining"] = np.maximum(brgy["G5 Target"] - brgy["HPV Dose 1"], 0)
-        brgy["HPV2 Remaining"] = np.maximum(brgy["G5 Target"] - brgy["HPV Dose 2"], 0)
-
-        metric = st.selectbox(
-            "G5 barangay map metric:",
-            ["HPV2 Coverage %", "HPV1 Coverage %"],
-            key="sbi_g5_brgy_map_metric",
-        )
-        is_hpv2 = metric.startswith("HPV2")
-        render_barangay_choropleth(
-            brgy,
-            municipality=selected_muni,
-            coverage_col=metric,
-            title=f"Grade 5 {metric.replace(' %', '')} by Barangay: {selected_muni}",
-            key=f"sbi_g5_brgy_map_{metric.lower().replace(' ', '_').replace('%', 'pct')}",
-            target_col="G5 Target",
-            vaccinated_col="HPV Dose 2" if is_hpv2 else "HPV Dose 1",
-            remaining_col="HPV2 Remaining" if is_hpv2 else "HPV1 Remaining",
-            show_zero_target_as_na=True,
-        )
+        st.caption("SBI Grade 5 monitoring is school-based. For a specific municipality, performance is shown by school rather than by barangay.")
 
     trend = g5.rename(columns={"activity_date": "Report Date", "hpv_dose1": "HPV Dose 1", "hpv_dose2": "HPV Dose 2"})
     render_daily_trend(
