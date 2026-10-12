@@ -49,6 +49,7 @@ from programs.sbi.source_dashboard_layout import (
 from programs.sbi.reporting import (
     render_campaign_burnup,
     render_daily_trend,
+    render_barangay_choropleth,
     render_municipality_choropleth,
     render_raw_export,
     render_tally_tabs,
@@ -557,6 +558,50 @@ def render_sbi_dashboard(supabase) -> None:
                     remaining_col='Td Remaining to 95%',
                 )
         else:
+            brgy_col = 'Barangay'
+            event_brgy = coverage_events.groupby(brgy_col, dropna=False)[['MR Doses', 'Td Doses']].sum().reset_index()
+            if not targets.empty:
+                target_brgy = targets.groupby(brgy_col, dropna=False)[target_col].sum().reset_index().rename(columns={target_col: 'Target'})
+                brgy = target_brgy.merge(event_brgy, on=brgy_col, how='outer').fillna(0)
+            else:
+                brgy = event_brgy.copy()
+                brgy['Target'] = 0
+
+            brgy['MR Coverage %'] = _safe_pct(brgy['MR Doses'], brgy['Target'])
+            brgy['Td Coverage %'] = _safe_pct(brgy['Td Doses'], brgy['Target'])
+            brgy['MR Remaining to 95%'] = np.maximum(np.ceil(brgy['Target'] * 0.95 - brgy['MR Doses']), 0)
+            brgy['Td Remaining to 95%'] = np.maximum(np.ceil(brgy['Target'] * 0.95 - brgy['Td Doses']), 0)
+
+            brgy_map_choice = st.selectbox(
+                'Barangay coverage map:',
+                ['MR Coverage', 'Td Coverage'],
+                key=f'{key_prefix}_brgy_map_choice',
+            )
+            if brgy_map_choice == 'MR Coverage':
+                render_barangay_choropleth(
+                    brgy,
+                    municipality=selected_muni,
+                    coverage_col='MR Coverage %',
+                    title=f'{panel_label} - MR Coverage by Barangay: {selected_muni}',
+                    key=f'{key_prefix}_mr_brgy_map',
+                    target_col='Target',
+                    vaccinated_col='MR Doses',
+                    remaining_col='MR Remaining to 95%',
+                    show_zero_target_as_na=True,
+                )
+            else:
+                render_barangay_choropleth(
+                    brgy,
+                    municipality=selected_muni,
+                    coverage_col='Td Coverage %',
+                    title=f'{panel_label} - Td Coverage by Barangay: {selected_muni}',
+                    key=f'{key_prefix}_td_brgy_map',
+                    target_col='Target',
+                    vaccinated_col='Td Doses',
+                    remaining_col='Td Remaining to 95%',
+                    show_zero_target_as_na=True,
+                )
+
             _render_mr_td_school_coverage(school, key_prefix, heading='Coverage by School')
 
         st.divider()
@@ -2456,6 +2501,48 @@ def render_sbi_dashboard(supabase) -> None:
                             remaining_col='2nd Dose Remaining to 90%',
                         )
                 else:
+                    hpv_brgy = hpv_vac_cov.groupby('Barangay', dropna=False)[['HPV Dose 1', 'HPV Dose 2']].sum().reset_index()
+                    if not vac_target_view.empty:
+                        hpv_target_brgy = vac_target_view.groupby('Barangay', dropna=False)['G4 Target'].sum().reset_index().rename(columns={'G4 Target': 'Target'})
+                        hpv_brgy = hpv_target_brgy.merge(hpv_brgy, on='Barangay', how='outer').fillna(0)
+                    else:
+                        hpv_brgy['Target'] = 0
+
+                    hpv_brgy['1st Dose Coverage %'] = _safe_pct(hpv_brgy['HPV Dose 1'], hpv_brgy['Target'])
+                    hpv_brgy['2nd Dose Coverage %'] = _safe_pct(hpv_brgy['HPV Dose 2'], hpv_brgy['Target'])
+                    hpv_brgy['1st Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_brgy['Target'] * 0.90 - hpv_brgy['HPV Dose 1']), 0)
+                    hpv_brgy['2nd Dose Remaining to 90%'] = np.maximum(np.ceil(hpv_brgy['Target'] * 0.90 - hpv_brgy['HPV Dose 2']), 0)
+
+                    hpv_brgy_map_choice = st.selectbox(
+                        'Barangay coverage map:',
+                        ['HPV 1st Dose', 'HPV 2nd Dose'],
+                        key='sbi_hpv_brgy_map_choice',
+                    )
+                    if hpv_brgy_map_choice == 'HPV 1st Dose':
+                        render_barangay_choropleth(
+                            hpv_brgy,
+                            municipality=selected_muni,
+                            coverage_col='1st Dose Coverage %',
+                            title=f'HPV 1st Dose Coverage by Barangay: {selected_muni}',
+                            key='sbi_hpv_dose1_brgy_map',
+                            target_col='Target',
+                            vaccinated_col='HPV Dose 1',
+                            remaining_col='1st Dose Remaining to 90%',
+                            show_zero_target_as_na=True,
+                        )
+                    else:
+                        render_barangay_choropleth(
+                            hpv_brgy,
+                            municipality=selected_muni,
+                            coverage_col='2nd Dose Coverage %',
+                            title=f'HPV 2nd Dose Coverage by Barangay: {selected_muni}',
+                            key='sbi_hpv_dose2_brgy_map',
+                            target_col='Target',
+                            vaccinated_col='HPV Dose 2',
+                            remaining_col='2nd Dose Remaining to 90%',
+                            show_zero_target_as_na=True,
+                        )
+
                     _render_hpv_school_coverage(hpv_school, heading='Coverage by School')
 
                 st.divider()
