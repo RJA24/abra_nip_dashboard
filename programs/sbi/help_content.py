@@ -57,18 +57,17 @@ Use the MR/Td fields:
 
 Leave HPV fields blank.
 
-### Grade 4 and Grade 5
+### Grade 4
 
-Use the HPV fields:
+Keep using the existing HPV Dose 1 / HPV Dose 2 and corresponding deferred/refused fields **as required by the current VaccTrack G4 form**. Leave MR/Td fields blank. The Grade 4 worksheet and VaccTrack layout have not been changed.
 
-- HPV Dose 1
-- HPV Dose 2
-- HPV1 Deferred / Refused
-- HPV2 Deferred / Refused
+### Grade 5 — single-dose HPV
 
-Leave MR/Td fields blank.
+For **G5**, enter the vaccinated count in **HPV Dose 1** (the field used for **HPV1** on the Central Office Grade 5 Google reporting platform). Use **HPV1 Deferred / Refused** when applicable. Leave **HPV Dose 2**, **HPV2 Deferred**, and **HPV2 Refused** blank or zero for G5. Do not add Dose 1 and Dose 2 together.
 
-For Grade 5, the system uses **Unvaccinated G5 Female** from the connected Actual Targets worksheet as the dashboard denominator. That target is not copied into the RHU workbook. Grade 5 is monitored in the separate G5 Dashboard and is not added to the VaccTrack G1/G4/G7 sheets.
+The system uses **Unvaccinated G5 Female** from the connected Actual Targets worksheet as the separate G5 dashboard denominator. Grade 5 does not feed the VaccTrack G1/G4/G7 sheets.
+
+**Daily reporting:** upload the complete RHU workbook to the Abra NIP MIS, encode G1/G4/G7 in VaccTrack, and report **Grade 5 HPV1** through the Central Office's separate Google reporting platform. Make sure the G5 HPV1 totals agree between NIP MIS and the central submission.
 
 ### Reason codes
 
@@ -86,7 +85,7 @@ Set the **Report Date** in the editable light-yellow cell. The workbook automati
 
 The calculated rows are locked. Region, Province, Municipality, Barangay, Facility Name, and School ID are not shown because the sheets are only an encoding aid for the values you enter into VaccTrack.
 
-For Grade 4, the RHU-facing workbook does not show G4.A Actual Total Female Students; target denominators remain in the monitoring system rather than the workbook. Grade 5 does not create a new VaccTrack sheet; its HPV1/HPV2 accomplishments remain in the workbook and the separate G5 Dashboard.
+For Grade 4, the RHU-facing workbook does not show G4.A Actual Total Female Students; target denominators remain in the monitoring system rather than the workbook. Grade 5 does not create a VaccTrack sheet; its **single-dose HPV accomplishment uses the HPV Dose 1 field** and is monitored separately in the G5 Dashboard and submitted via the Central Office Grade 5 HPV1 Google reporting platform.
 
 ## 6. Upload Current Workbook
 
@@ -209,7 +208,7 @@ Target information is kept in the monitoring system, not in the RHU workbook. Th
 
 ## 9A. Where do Grade 5 accomplishments go?
 
-Choose **G5** in the Accomplishments Grade Level dropdown and use the HPV Dose 1 / HPV Dose 2 fields. Grade 5 is shown in the separate **G5 Dashboard**. The existing VaccTrack G1, G4, and G7 worksheets are unchanged; there is no added VaccTrack G5 worksheet.
+Choose **G5** in the Accomplishments Grade Level dropdown and enter the single HPV dose under **HPV Dose 1 only**. Leave G5 HPV Dose 2 / HPV2 deferred / HPV2 refused blank or 0. This HPV Dose 1 value is the **HPV1** number reported to the Central Office's Grade 5 Google reporting platform. The G5 Dashboard shows it as **HPV Vaccinated**; the existing VaccTrack G1/G4/G7 worksheets stay unchanged.
 
 ## 10. How do I correct a wrong accomplishment?
 

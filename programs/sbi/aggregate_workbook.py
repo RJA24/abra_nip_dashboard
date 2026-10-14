@@ -365,13 +365,13 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         (
             "1",
             "ENCODE OFFLINE",
-            "Open Accomplishments. Use one row per activity entry. Enter Activity Date, select School Name from the dropdown, choose Grade Level, then enter the applicable counts. School ID and Barangay fill automatically. Coverage targets stay in the monitoring system and are not stored in the workbook.",
+            "Open Accomplishments. Enter Activity Date, School Name, Grade Level and applicable counts. For G5, the current single HPV dose is entered under HPV Dose 1 ONLY (for Central G5 HPV1 reporting); leave G5 HPV Dose 2 and HPV2 deferred/refused blank or 0. School ID and Barangay fill automatically. Targets remain in the monitoring system.",
             "A9:C11",
         ),
         (
             "2",
             "PREPARE VACC TRACK",
-            "Open VaccTrack G1, G4 or G7. Set the Report Date at the top. Only schools with accomplishments for that selected date and grade are shown; encode the displayed values into VaccTrack. Grade 5 is tracked separately in the Abra system and does not change these VaccTrack sheets.",
+            "Open VaccTrack G1, G4 or G7. Set the Report Date. Encode those grade-specific values into VaccTrack. G5 uses HPV Dose 1 in the workbook and is submitted separately through the Central Office Grade 5 HPV1 Google reporting platform; G5 does not change the VaccTrack sheets.",
             "D9:F11",
         ),
         (
@@ -521,6 +521,9 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
         td_refused_letter = _column_letter(ALL_COLUMNS.index("Td Refused"))
         hpv_start_letter = _column_letter(ALL_COLUMNS.index("HPV Dose 1"))
         hpv_refused_letter = _column_letter(ALL_COLUMNS.index("HPV2 Refused"))
+        hpv2_letter = _column_letter(ALL_COLUMNS.index("HPV Dose 2"))
+        hpv2_deferred_letter = _column_letter(ALL_COLUMNS.index("HPV2 Deferred"))
+        hpv2_refused_letter = _column_letter(ALL_COLUMNS.index("HPV2 Refused"))
         missed_parts = [
             f'${_column_letter(ALL_COLUMNS.index(name))}{excel_row}'
             for name in ["MR Deferred", "Td Deferred", "MR Refused", "Td Refused", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"]
@@ -532,7 +535,8 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
             f'IF(OR(${date_letter}{excel_row}="",${school_name_letter}{excel_row}="",${grade_letter}{excel_row}=""),"CHECK KEY",'
             f'IF(AND(OR(${grade_letter}{excel_row}="G4",${grade_letter}{excel_row}="G5"),SUM(${mr_start_letter}{excel_row}:${td_refused_letter}{excel_row})>0),"CHECK HPV FIELDS",'
             f'IF(AND(OR(${grade_letter}{excel_row}="G1",${grade_letter}{excel_row}="G7"),SUM(${hpv_start_letter}{excel_row}:${hpv_refused_letter}{excel_row})>0),"CHECK GRADE FIELDS",'
-            f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM({",".join(missed_parts)}),"CHECK REASONS","OK")))))'
+            f'IF(AND(${grade_letter}{excel_row}="G5",SUM(${hpv2_letter}{excel_row},${hpv2_deferred_letter}{excel_row},${hpv2_refused_letter}{excel_row})>0),"CHECK G5 HPV1 ONLY",'
+            f'IF(SUM(${first_reason_letter}{excel_row}:${last_reason_letter}{excel_row})>SUM({",".join(missed_parts)}),"CHECK REASONS","OK"))))))'
         )
         sheet.write_formula(row, row_check_col, check_formula, helper_fmt)
 
@@ -550,6 +554,17 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     sheet.conditional_format(1, ALL_COLUMNS.index("MR Male"), MAX_INPUT_ROWS, ALL_COLUMNS.index("Td Refused"), {"type": "formula", "criteria": f"=OR(${grade_letter}2=\"G4\",${grade_letter}2=\"G5\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
     sheet.conditional_format(1, ALL_COLUMNS.index("HPV Dose 1"), MAX_INPUT_ROWS, ALL_COLUMNS.index("HPV2 Refused"), {"type": "formula", "criteria": f"=OR(${grade_letter}2=\"G1\",${grade_letter}2=\"G7\")", "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"})})
 
+    for hpv2_field in ["HPV Dose 2", "HPV2 Deferred", "HPV2 Refused"]:
+        g5_legacy_col = ALL_COLUMNS.index(hpv2_field)
+        sheet.conditional_format(1, g5_legacy_col, MAX_INPUT_ROWS, g5_legacy_col, {
+            "type": "formula", "criteria": f'=${grade_letter}2="G5"',
+            "format": workbook.add_format({"bg_color": "#E5E7EB", "font_color": "#9CA3AF"}),
+        })
+    sheet.write_comment(0, ALL_COLUMNS.index("HPV Dose 1"),
+        "For Grade 5 only: enter the SINGLE HPV vaccination dose here (HPV1 in the Central Office G5 Google reporting form).", {"author": "Abra NIP"})
+    for hpv2_field in ["HPV Dose 2", "HPV2 Deferred", "HPV2 Refused"]:
+        sheet.write_comment(0, ALL_COLUMNS.index(hpv2_field),
+            "For G5, leave this field blank or 0. Grade 5 is single-dose HPV1 reporting. Retained for Grade 4 / VaccTrack compatibility.", {"author": "Abra NIP"})
     reason_comments = {f"Reason {code}": f"{code} {label}" for code, label in REASON_LABELS.items()}
     for header, comment in reason_comments.items():
         sheet.write_comment(0, ALL_COLUMNS.index(header), comment, {"author": "Abra NIP"})
@@ -809,6 +824,14 @@ def validate_workbook(raw: bytes, targets: pd.DataFrame, municipality: str) -> t
             continue
         if grade in {"G1", "G7"} and sum(counts[column] for column in ["HPV Dose 1", "HPV Dose 2", "HPV1 Deferred", "HPV2 Deferred", "HPV1 Refused", "HPV2 Refused"]) > 0:
             errors.append(f"Row {excel_row}: G1/G7 rows must use MR/Td fields, not HPV fields.")
+            continue
+
+        if grade == "G5" and any(counts[column] > 0 for column in ["HPV Dose 2", "HPV2 Deferred", "HPV2 Refused"]):
+            errors.append(
+                f"Row {excel_row}: Grade 5 uses single-dose HPV reporting. "
+                "Enter G5 vaccination under HPV Dose 1 (Central Office HPV1), "
+                "and leave HPV Dose 2 / HPV2 Deferred / HPV2 Refused at 0."
+            )
             continue
 
         total_missed = (
@@ -1169,7 +1192,9 @@ def render_workbook_download(targets: pd.DataFrame, municipality: str) -> None:
     )
     st.info(
         "Keep this workbook as your RHU working file. Encode all activity dates and schools in it. "
-        "For corrections, edit the workbook itself and upload the complete current version again."
+        "For corrections, edit the workbook itself and upload the complete current version again. "
+        "For Grade 5, enter the single HPV dose under HPV Dose 1 (Central Office HPV1 reporting), "
+        "not HPV Dose 2."
     )
 
 
