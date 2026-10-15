@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from io import BytesIO
+import hashlib
 import json
 import re
 import zipfile
@@ -515,6 +516,228 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
         st.rerun()
 
 
+
+def _load_sbi_bulk_cleanup_snapshot(supabase) -> dict:
+    """Read only the two current SBI workbook-related datasets for the 27 RHUs."""
+    accomplishment_rows = _fetch_all(
+        lambda: supabase.table(ACCOMPLISHMENT_TABLE)
+        .select("*")
+        .eq("source_type", "workbook")
+        .in_("municipality", ABRA_MUNIS),
+        page_size=1000,
+    )
+    submission_rows = _fetch_all(
+        lambda: supabase.table(SUBMISSION_TABLE)
+        .select("*")
+        .in_("municipality", ABRA_MUNIS),
+        page_size=1000,
+    )
+    return {"accomplishments": accomplishment_rows, "submissions": submission_rows}
+
+
+def _sbi_bulk_cleanup_fingerprint(snapshot: dict) -> str:
+    """Detect uploads/edits that happened after the cleanup preview was prepared."""
+    encoded = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _sbi_bulk_cleanup_summary(snapshot: dict) -> pd.DataFrame:
+    rows = []
+    for municipality in ABRA_MUNIS:
+        accomplishments = sum(
+            str(row.get("municipality") or "") == municipality
+            for row in snapshot["accomplishments"]
+        )
+        submissions = sum(
+            str(row.get("municipality") or "") == municipality
+            for row in snapshot["submissions"]
+        )
+        rows.append({
+            "Municipality": municipality,
+            "Workbook Accomplishment Rows": accomplishments,
+            "Workbook History Entries": submissions,
+        })
+    return pd.DataFrame(rows)
+
+
+def _sbi_bulk_cleanup_backup(snapshot: dict, summary: pd.DataFrame) -> bytes:
+    """Complete record-level backup, including restorable aggregate upload snapshots."""
+    data = BytesIO()
+    with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for label in ("accomplishments", "submissions"):
+            archive.writestr(
+                f"sbi_{label}.json",
+                json.dumps(snapshot[label], ensure_ascii=False, indent=2, default=str),
+            )
+        archive.writestr("sbi_cleanup_preview.csv", summary.to_csv(index=False))
+        archive.writestr(
+            "README.txt",
+            "SBI pre-implementation workbook test-data backup.\n"
+            "Contains full aggregate workbook accomplishments and upload history before deletion.\n"
+            "This is an archival backup, NOT an automatic one-click restore file.\n"
+            "Store securely and confirm it is downloaded before running cleanup.\n"
+            "No RHU accounts, targets, VaccTrack, or FLU records are included.\n",
+        )
+    return data.getvalue()
+
+
+def _sbi_bulk_cleanup_delete_ids(supabase, table: str, rows: list[dict]) -> None:
+    """Delete exact previewed IDs, not newly uploaded data that appeared later."""
+    ids = [row.get("id") for row in rows]
+    if len(ids) != len(set(ids)) or any(value is None for value in ids):
+        raise ValueError(f"Unsafe deletion: invalid or repeated IDs in {table}.")
+    for start in range(0, len(ids), 200):
+        supabase.table(table).delete().in_("id", ids[start:start + 200]).execute()
+
+
+def _render_sbi_bulk_test_cleanup(supabase, audit_callback=None, read_only: bool = False) -> None:
+    """Deliberate two-stage province-wide wipe; never enabled for a live campaign."""
+    with st.expander("Pre-Implementation Cleanup — All 27 RHUs", expanded=False):
+        st.warning(
+            "Permanent deletion of SBI **workbook-derived accomplishments** and "
+            "**workbook submission history** for all 27 RHUs. "
+            "Use only when every affected record is TEST/DUMMY data. "
+            "Real vaccination accomplishments must never be cleared."
+        )
+        st.caption(
+            "Excluded: RHU accounts, school targets, VaccTrack snapshots, FLU data, "
+            "and non-workbook/legacy SBI records. Admin audit logs are retained."
+        )
+        current_status = str(get_campaign_config(supabase).get("status") or "Pre-Implementation")
+        if read_only:
+            st.info("QA Admin is read-only. Only System Admin can clear test data.")
+            return
+        if current_status != "Pre-Implementation":
+            st.error(
+                f"Bulk cleanup is LOCKED: SBI status is {current_status}. "
+                "This tool cannot delete records while implementation is Live "
+                "or during post-activity correction/closure. "
+                "Do not switch a live campaign back just to wipe records."
+            )
+            st.session_state.pop("sbi_bulk_cleanup_snapshot", None)
+            return
+
+        st.info(
+            "Before proceeding: stop all RHU workbook uploads and confirm there are "
+            "no genuine vaccination records in the system. "
+            "First review and download the backup, then confirm the deletion."
+        )
+        if st.button(
+            "Review all RHU test data and prepare backup",
+            key="sbi_bulk_cleanup_prepare",
+            width="stretch",
+        ):
+            # Any renewed review requires a fresh, explicit confirmation.
+            st.session_state["sbi_bulk_cleanup_backup_confirmed"] = False
+            st.session_state["sbi_bulk_cleanup_actual_confirmed"] = False
+            st.session_state["sbi_bulk_cleanup_typed"] = ""
+            try:
+                st.session_state["sbi_bulk_cleanup_snapshot"] = _load_sbi_bulk_cleanup_snapshot(supabase)
+            except Exception as exc:
+                st.session_state.pop("sbi_bulk_cleanup_snapshot", None)
+                st.error(f"Unable to read workbook data. Nothing was deleted: {exc}")
+
+        snapshot = st.session_state.get("sbi_bulk_cleanup_snapshot")
+        if snapshot is None:
+            return
+        summary = _sbi_bulk_cleanup_summary(snapshot)
+        accomplishment_count = len(snapshot["accomplishments"])
+        submission_count = len(snapshot["submissions"])
+        a, b, c = st.columns(3)
+        a.metric("RHUs With Records", int(((summary.iloc[:, 1] + summary.iloc[:, 2]) > 0).sum()))
+        b.metric("Workbook Rows", accomplishment_count)
+        c.metric("Upload History Entries", submission_count)
+        st.dataframe(summary, width="stretch", hide_index=True)
+
+        if accomplishment_count + submission_count == 0:
+            st.success("No SBI workbook test data remains to be cleared.")
+            return
+
+        archive = _sbi_bulk_cleanup_backup(snapshot, summary)
+        timestamp = datetime.now(MANILA_TZ).strftime("%Y%m%d_%H%M")
+        st.download_button(
+            "Download PRE-DELETION backup (ZIP)",
+            data=archive,
+            file_name=f"SBI_27_RHU_Test_Data_Backup_{timestamp}.zip",
+            mime="application/zip",
+            key="sbi_bulk_cleanup_download_backup",
+            width="stretch",
+        )
+        backup_confirmed = st.checkbox(
+            "I downloaded and securely saved the backup ZIP.",
+            key="sbi_bulk_cleanup_backup_confirmed",
+        )
+        actual_data_confirmed = st.checkbox(
+            "I personally verified that ALL listed records are test/dummy data "
+            "and no RHU has uploaded actual vaccination accomplishments.",
+            key="sbi_bulk_cleanup_actual_confirmed",
+        )
+        typed = st.text_input(
+            "Type CLEAR ALL SBI TEST DATA to confirm",
+            key="sbi_bulk_cleanup_typed",
+        )
+        confirmed = (
+            backup_confirmed and actual_data_confirmed
+            and typed.strip() == "CLEAR ALL SBI TEST DATA"
+        )
+        if st.button(
+            "Permanently clear all 27 RHUs' test workbook data",
+            type="primary",
+            disabled=not confirmed,
+            key="sbi_bulk_cleanup_execute",
+            width="stretch",
+        ):
+            # Re-check both status and snapshot immediately before destructive operations.
+            # An upload/restore since review must invalidate this confirmation.
+            if str(get_campaign_config(supabase).get("status") or "") != "Pre-Implementation":
+                st.error("SBI campaign status changed. Cleanup cancelled; no records deleted.")
+                return
+            try:
+                fresh = _load_sbi_bulk_cleanup_snapshot(supabase)
+            except Exception as exc:
+                st.error(f"Unable to re-check data. Nothing deleted: {exc}")
+                return
+            if _sbi_bulk_cleanup_fingerprint(fresh) != _sbi_bulk_cleanup_fingerprint(snapshot):
+                st.session_state.pop("sbi_bulk_cleanup_snapshot", None)
+                st.error(
+                    "Data changed after your preview (new upload, edit or restore). "
+                    "Nothing was deleted. Review and back up the new data again."
+                )
+                return
+            try:
+                # Matches the existing per-RHU cleanup order.
+                _sbi_bulk_cleanup_delete_ids(supabase, SUBMISSION_TABLE, snapshot["submissions"])
+                _sbi_bulk_cleanup_delete_ids(supabase, ACCOMPLISHMENT_TABLE, snapshot["accomplishments"])
+                remaining = _load_sbi_bulk_cleanup_snapshot(supabase)
+                if remaining["submissions"] or remaining["accomplishments"]:
+                    raise RuntimeError("Cleanup did not remove every previewed record.")
+            except Exception as exc:
+                st.error(
+                    "Cleanup may have PARTIALLY completed. Keep the backup ZIP. "
+                    "Review the RHU submission table before doing anything else. "
+                    f"Details: {exc}"
+                )
+                return
+
+            if audit_callback:
+                try:
+                    audit_callback(
+                        supabase,
+                        "SBI province-wide pre-implementation workbook TEST data cleared "
+                        f"| RHUs={len(ABRA_MUNIS)} "
+                        f"| accomplishment_rows={accomplishment_count} "
+                        f"| submission_history={submission_count}",
+                    )
+                except Exception as exc:
+                    st.warning(f"Data cleared, but audit logging failed: {exc}")
+            st.session_state.pop("sbi_bulk_cleanup_snapshot", None)
+            st.session_state["sbi_bulk_cleanup_success"] = (
+                f"All 27 RHUs cleaned: {accomplishment_count:,} workbook row(s) "
+                f"and {submission_count:,} submission history entry/entries deleted."
+            )
+            st.cache_data.clear()
+            st.rerun()
+
 def render_submission_status(supabase, audit_callback=None, read_only: bool = False) -> None:
     st.markdown("### RHU Workbook Submissions")
     ready, _ = _table_exists(supabase, SUBMISSION_TABLE, "id")
@@ -568,6 +791,10 @@ def render_submission_status(supabase, audit_callback=None, read_only: bool = Fa
         mime="text/csv",
         key="ops_submission_status_download",
     )
+
+    if st.session_state.get("sbi_bulk_cleanup_success"):
+        st.success(st.session_state.pop("sbi_bulk_cleanup_success"))
+    _render_sbi_bulk_test_cleanup(supabase, audit_callback=audit_callback, read_only=read_only)
 
     st.divider()
     municipality = st.selectbox("Manage RHU submission", ABRA_MUNIS, key="ops_submission_muni")
