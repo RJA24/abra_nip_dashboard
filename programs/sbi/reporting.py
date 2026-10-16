@@ -304,8 +304,16 @@ def render_daily_tally(
     total_row.update({col: int(tally[col].sum()) for col in numeric_cols})
     export = pd.concat([pd.DataFrame([total_row]), tally], ignore_index=True)
 
+    # Display-only formatting: blank all numeric zeroes, including TOTAL cells.
+    # Keep the original numeric `export` intact for accurate totals and CSV output.
+    tally_display = export.copy()
+    for col in numeric_cols:
+        tally_display[col] = tally_display[col].map(
+            lambda value: "" if value == 0 else str(value)
+        )
+
     st.dataframe(
-        export,
+        tally_display,
         width="stretch",
         hide_index=True,
         height=min(720, 95 + max(len(export), 5) * 35),
@@ -781,7 +789,4 @@ def render_raw_export(
             mime="text/csv",
             key=key,
         )
-        
-
-
         

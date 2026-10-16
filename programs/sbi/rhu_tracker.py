@@ -8,6 +8,7 @@ encoding gaps between RHU-reported accomplishments and VaccTrack.
 from __future__ import annotations
 
 from datetime import date, datetime
+from html import escape
 from typing import Iterable
 
 import numpy as np
@@ -442,6 +443,195 @@ def _fresh_summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame],
             "VaccTrack Through": cutoff,
         })
     return pd.DataFrame(rows)
+
+
+# Side-by-side overview: all five SBI VaccTrack reporting groups at once.
+# G4 uses Dose 1 by default for single-dose reporting; Dose 2 remains selectable
+# because the official VaccTrack extract still contains the legacy HPV2 field.
+RECON_GROUP_METRICS = (
+    ("G1 MR", "G1 MR"),
+    ("G1 Td", "G1 Td"),
+    ("G4 HPV", "G4 HPV Dose 1"),
+    ("G7 MR", "G7 MR"),
+    ("G7 Td", "G7 Td"),
+)
+
+
+def _grouped_reconciliation_rows(
+    entries: pd.DataFrame,
+    g1_events: pd.DataFrame,
+    g7_events: pd.DataFrame,
+    hpv_events: pd.DataFrame,
+    municipalities: list[str],
+    start_date: date | None,
+    end_date: date | None,
+    g4_metric: str = "G4 HPV Dose 1",
+) -> tuple[pd.DataFrame, dict[tuple[str, str], dict]]:
+    """Create a five-group display, preserving metric-specific VaccTrack freshness.
+
+    Workbook columns count doses on dates covered by the latest matching
+    VaccTrack extract; newer dates remain pending and do NOT enter differences.
+    """
+    groups = [
+        (label, g4_metric if label == "G4 HPV" else metric)
+        for label, metric in RECON_GROUP_METRICS
+    ]
+    rows: list[dict] = []
+    context: dict[tuple[str, str], dict] = {}
+    for municipality in municipalities:
+        muni_entries = (
+            _entries_for_muni_period(entries, municipality, start_date, end_date)
+            if entries is not None and not entries.empty else pd.DataFrame()
+        )
+        muni_events = _events_for_muni_period(
+            g1_events, g7_events, hpv_events, municipality, start_date, end_date
+        )
+        summary = _fresh_summary_table(
+            muni_entries, muni_events, [metric for _, metric in groups]
+        ).set_index("Metric")
+        row: dict = {"Municipality": municipality}
+        for label, metric in groups:
+            result = summary.loc[metric]
+            cutoff = result["VaccTrack Through"]
+            pending = int(result["Pending RHU"] or 0)
+            # The absence of a report-date cutoff must not masquerade as a
+            # valid zero / matching VaccTrack report.
+            has_vacctrack = cutoff is not None and not pd.isna(cutoff)
+            row[f"{label} | Workbook"] = int(result["RHU Workbook"])
+            row[f"{label} | VaccTrack"] = int(result["VaccTrack"]) if has_vacctrack else None
+            row[f"{label} | Discrepancy"] = int(result["Difference"]) if has_vacctrack else None
+            context[(municipality, label)] = {
+                "pending": pending,
+                "cutoff": cutoff if has_vacctrack else None,
+                "status": str(result["Status"]),
+                "metric": metric,
+                "no_vacctrack": not has_vacctrack,
+            }
+        rows.append(row)
+    return pd.DataFrame(rows), context
+
+
+def _render_grouped_reconciliation(
+    entries: pd.DataFrame,
+    g1_events: pd.DataFrame,
+    g7_events: pd.DataFrame,
+    hpv_events: pd.DataFrame,
+    municipalities: list[str],
+    start_date: date | None,
+    end_date: date | None,
+    *,
+    key_prefix: str,
+) -> None:
+    """Render the user's requested Municipality / 5 x (Workbook, VT, Diff) grid."""
+    if not municipalities:
+        return
+    st.markdown("#### Municipality Reconciliation")
+    g4_field = st.selectbox(
+        "Grade 4 HPV VaccTrack field",
+        ("HPV Dose 1", "HPV Dose 2"),
+        key=f"{key_prefix}_g4_recon_field",
+        help="Current single-dose HPV accomplishments use HPV Dose 1. "
+             "The older HPV Dose 2 field remains available for historical reconciliation.",
+    )
+    g4_metric = "G4 HPV Dose 1" if g4_field == "HPV Dose 1" else "G4 HPV Dose 2"
+    frame, context = _grouped_reconciliation_rows(
+        entries, g1_events, g7_events, hpv_events,
+        municipalities, start_date, end_date, g4_metric,
+    )
+    st.caption(
+        "Discrepancy = RHU Workbook − VaccTrack. Workbook figures in this table "
+        "include only activity dates covered by the latest matching VaccTrack "
+        "report; newer workbook records are pending, not discrepancies. "
+        "Grade 5 is reported separately and is not included here."
+    )
+
+    th_top = (
+        'style="padding:9px 11px;border:1px solid #b9cad2;'
+        'background:#124f61;color:white;text-align:center;white-space:nowrap;"'
+    )
+    th_sub = (
+        'style="padding:7px 10px;border:1px solid #b9cad2;'
+        'background:#dcebf0;color:#173b4a;text-align:center;white-space:nowrap;"'
+    )
+    html = [
+        '<div style="overflow-x:auto;max-width:100%;border:1px solid #cbd5e1;'
+        'border-radius:6px;margin-bottom:0.5rem;">',
+        '<table aria-label="SBI grouped municipality reconciliation" '
+        'style="border-collapse:collapse;width:max-content;min-width:100%;font-size:0.85rem;">',
+        '<thead><tr>',
+        f'<th rowspan="2" {th_top}>Municipality</th>',
+    ]
+    for label, _ in RECON_GROUP_METRICS:
+        html.append(f'<th colspan="3" {th_top}>{escape(label)}</th>')
+    html.append('</tr><tr>')
+    for _ in RECON_GROUP_METRICS:
+        for title in ("Workbook", "VaccTrack", "Discrepancy"):
+            html.append(f'<th {th_sub}>{title}</th>')
+    html.append('</tr></thead><tbody>')
+
+    pending_total = 0
+    for ri, (_, row) in enumerate(frame.iterrows()):
+        municipality = str(row["Municipality"])
+        shade = '#fff' if ri % 2 == 0 else '#f6f9fb'
+        html.append(f'<tr style="background:{shade};">')
+        html.append(
+            f'<th scope="row" style="padding:7px 10px;border:1px solid #d1dce2;'
+            f'text-align:left;white-space:nowrap;font-weight:600;">{escape(municipality)}</th>'
+        )
+        for label, _ in RECON_GROUP_METRICS:
+            meta = context[(municipality, label)]
+            pending = meta["pending"]
+            pending_total += pending
+            cutoff = meta["cutoff"]
+            cutoff_text = cutoff.strftime("%b %d, %Y") if cutoff else "No current VaccTrack report"
+            tip = escape(
+                f'{label}: {meta["metric"]}; VaccTrack through {cutoff_text}; '
+                f'{pending} workbook dose(s) pending verification; status {meta["status"]}',
+                quote=True,
+            )
+            wb = int(row[f"{label} | Workbook"])
+            pending_marker = (
+                '<span style="font-size:0.7em;color:#9a6700;"> *</span>' if pending else ''
+            )
+            html.append(
+                f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
+                f'text-align:right;white-space:nowrap;">{wb:,}{pending_marker}</td>'
+            )
+            vt = row[f"{label} | VaccTrack"]
+            diff = row[f"{label} | Discrepancy"]
+            if pd.isna(vt):
+                vt_text, diff_text = '—', 'Pending' if pending else 'N/A'
+                diff_color = '#8a6500' if pending else '#64748b'
+            else:
+                vt_text = f'{int(vt):,}'
+                value = int(diff)
+                diff_text = f'+{value:,}' if value > 0 else f'{value:,}'
+                diff_color = '#b42318' if value else '#475569'
+            html.append(
+                f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
+                f'text-align:right;white-space:nowrap;">{vt_text}</td>'
+            )
+            html.append(
+                f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
+                f'text-align:right;white-space:nowrap;font-weight:600;color:{diff_color};">'
+                f'{diff_text}</td>'
+            )
+        html.append('</tr>')
+    html.append('</tbody></table></div>')
+    st.markdown(''.join(html), unsafe_allow_html=True)
+    if pending_total:
+        st.caption(
+            f"* {pending_total:,} pending workbook dose(s) are excluded from differences "
+            "until the corresponding VaccTrack reporting date is available. "
+            "Hover over a value to see its verification cutoff."
+        )
+    st.download_button(
+        "Download Municipality Reconciliation (CSV)",
+        frame.to_csv(index=False).encode("utf-8-sig"),
+        file_name="SBI_Municipality_Reconciliation.csv",
+        mime="text/csv",
+        key=f"{key_prefix}_grouped_recon_csv",
+    )
 
 
 def _verified_entries(entries: pd.DataFrame, latest_vacctrack_date: date | None) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -940,7 +1130,13 @@ def _render_check(
     entries = _entries_for_muni_period(all_entries, assigned_muni, start_date, end_date)
     events = _events_for_muni_period(g1_events, g7_events, hpv_events, assigned_muni, start_date, end_date)
     summary = _fresh_summary_table(entries, events)
-    st.dataframe(summary, width="stretch", hide_index=True)
+    _render_grouped_reconciliation(
+        all_entries, g1_events, g7_events, hpv_events,
+        [assigned_muni], start_date, end_date,
+        key_prefix="rhu_check",
+    )
+    with st.expander("View detailed reconciliation status", expanded=False):
+        st.dataframe(summary, width="stretch", hide_index=True)
     g1_cutoff = _metric_vacctrack_report_date(events, "G1 MR")
     g4_cutoff = _metric_vacctrack_report_date(events, "G4 HPV Dose 1")
     g7_cutoff = _metric_vacctrack_report_date(events, "G7 MR")
@@ -1011,6 +1207,11 @@ def _render_coordinator_view(
         st.dataframe(scope_summary, width="stretch", hide_index=True)
         if pd.to_numeric(scope_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
             st.info("Some RHU workbook values are newer than the corresponding VaccTrack report date and are pending verification.")
+        _render_grouped_reconciliation(
+            all_entries, g1_events, g7_events, hpv_events,
+            [selected_muni], start_date, end_date,
+            key_prefix=key_prefix,
+        )
         drill_muni = selected_muni
     else:
         province_entries = _filter_period(all_entries, "activity_date", start_date, end_date) if not all_entries.empty else all_entries
@@ -1025,17 +1226,11 @@ def _render_coordinator_view(
         if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
             st.info("Some RHU workbook values are newer than their corresponding VaccTrack report date and are pending verification.")
 
-        metric = st.selectbox("Municipality reconciliation metric", list(METRICS.keys()), key=f"{key_prefix}_metric")
-        muni_rows = []
-        for muni in ABRA_MUNIS:
-            muni_entries = _entries_for_muni_period(all_entries, muni, start_date, end_date) if not all_entries.empty else pd.DataFrame()
-            muni_events = _events_for_muni_period(g1_events, g7_events, hpv_events, muni, start_date, end_date)
-            row = _fresh_summary_table(muni_entries, muni_events, [metric]).iloc[0].to_dict()
-            row["Municipality"] = muni
-            muni_rows.append(row)
-        muni_table = pd.DataFrame(muni_rows)[["Municipality", "RHU Workbook", "VaccTrack", "Difference", "Status", "Pending RHU", "VaccTrack Through"]]
-        st.markdown("#### Municipality Reconciliation")
-        st.dataframe(muni_table, width="stretch", hide_index=True)
+        _render_grouped_reconciliation(
+            all_entries, g1_events, g7_events, hpv_events,
+            list(ABRA_MUNIS), start_date, end_date,
+            key_prefix=key_prefix,
+        )
 
         drill_index = 0
         drill_muni = st.selectbox("School discrepancy municipality", ABRA_MUNIS, index=drill_index, key=f"{key_prefix}_drill_muni")
