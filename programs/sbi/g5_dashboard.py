@@ -245,6 +245,7 @@ def render_g5_dashboard(
             vaccinated_col="HPV Vaccinated",
             remaining_col="Remaining",
             show_zero_target_as_na=True,
+            export_context="Target basis: Actual Targets (Unvaccinated G5 Female)",
         )
     else:
         st.caption("SBI Grade 5 monitoring is school-based. For a specific municipality, performance is shown by school rather than by barangay.")

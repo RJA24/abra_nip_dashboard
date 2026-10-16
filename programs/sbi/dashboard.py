@@ -47,6 +47,7 @@ from programs.sbi.source_dashboard_layout import (
     render_target_basis_selector,
 )
 from programs.sbi.reporting import (
+    add_coverage_export_caption,
     render_campaign_burnup,
     render_daily_trend,
     render_municipality_choropleth,
@@ -513,6 +514,7 @@ def render_sbi_dashboard(supabase) -> None:
                 legend_title_text='',
             )
             fig_geo.update_traces(textposition='outside', cliponaxis=False)
+            add_coverage_export_caption(fig_geo, target_basis=vac_target_basis)
             st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov')
 
             st.dataframe(
@@ -545,6 +547,7 @@ def render_sbi_dashboard(supabase) -> None:
                     target_col='Target',
                     vaccinated_col='MR Doses',
                     remaining_col='MR Remaining to 95%',
+                    export_context=f"Target basis: {vac_target_basis}",
                 )
             else:
                 render_municipality_choropleth(
@@ -555,6 +558,7 @@ def render_sbi_dashboard(supabase) -> None:
                     target_col='Target',
                     vaccinated_col='Td Doses',
                     remaining_col='Td Remaining to 95%',
+                    export_context=f"Target basis: {vac_target_basis}",
                 )
         else:
             st.caption('SBI is school-based. For a specific municipality, coverage is shown by school rather than by barangay.')
@@ -889,6 +893,9 @@ def render_sbi_dashboard(supabase) -> None:
                     legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
                     legend_title_text='',
                 )
+                add_coverage_export_caption(
+                    fig_exec_geo, target_basis=exec_target_basis, data_source=exec_data_source
+                )
                 st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage')
 
                 with st.expander('View full municipality coverage table', expanded=False):
@@ -917,6 +924,7 @@ def render_sbi_dashboard(supabase) -> None:
                         target_col='MR/Td Target',
                         vaccinated_col='MR Doses',
                         remaining_col='MR Remaining to 95%',
+                    export_context=f"Accomplishment source: {exec_data_source} | Target basis: {exec_target_basis}",
                     )
                 elif exec_map_choice == 'Td Coverage':
                     render_municipality_choropleth(
@@ -927,6 +935,7 @@ def render_sbi_dashboard(supabase) -> None:
                         target_col='MR/Td Target',
                         vaccinated_col='Td Doses',
                         remaining_col='Td Remaining to 95%',
+                    export_context=f"Accomplishment source: {exec_data_source} | Target basis: {exec_target_basis}",
                     )
                 else:
                     render_municipality_choropleth(
@@ -937,6 +946,7 @@ def render_sbi_dashboard(supabase) -> None:
                         target_col='HPV Target',
                         vaccinated_col='HPV Dose 1',
                         remaining_col='HPV Remaining to 90%',
+                    export_context=f"Accomplishment source: {exec_data_source} | Target basis: {exec_target_basis}",
                     )
             else:
                 target_school = exec_targets[['School ID', 'School Name', 'MR/Td Target', 'HPV Target']].copy()
@@ -2413,6 +2423,7 @@ def render_sbi_dashboard(supabase) -> None:
                         legend_title_text='',
                     )
                     fig_hpv_geo.update_traces(textposition='outside', cliponaxis=False)
+                    add_coverage_export_caption(fig_hpv_geo, target_basis=vac_target_basis)
                     st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo')
 
                     st.dataframe(
@@ -2445,6 +2456,7 @@ def render_sbi_dashboard(supabase) -> None:
                             target_col='Target',
                             vaccinated_col='HPV Dose 1',
                             remaining_col='1st Dose Remaining to 90%',
+                        export_context=f"Target basis: {vac_target_basis}",
                         )
                     else:
                         render_municipality_choropleth(
@@ -2455,6 +2467,7 @@ def render_sbi_dashboard(supabase) -> None:
                             target_col='Target',
                             vaccinated_col='HPV Dose 2',
                             remaining_col='2nd Dose Remaining to 90%',
+                        export_context=f"Target basis: {vac_target_basis}",
                         )
                 else:
                     st.caption('SBI is school-based. For a specific municipality, HPV coverage is shown by school rather than by barangay.')

@@ -30,6 +30,7 @@ from programs.sbi.source_dashboard_layout import (
     render_target_basis_selector,
 )
 from programs.sbi.reporting import (
+    add_coverage_export_caption,
     render_daily_trend,
     render_municipality_choropleth,
     render_raw_export,
@@ -694,6 +695,7 @@ def render_workbook_dashboard(
                 legend_title_text="",
             )
             fig_geo.update_traces(textposition="outside", cliponaxis=False)
+            add_coverage_export_caption(fig_geo, target_basis=target_basis)
             st.plotly_chart(fig_geo, width="stretch", key=f"{key_prefix}_geo_cov")
 
             st.dataframe(
@@ -726,6 +728,7 @@ def render_workbook_dashboard(
                     target_col="Target",
                     vaccinated_col="MR Doses",
                     remaining_col="MR Remaining to 95%",
+                    export_context=f"Target basis: {target_basis}",
                 )
             else:
                 render_municipality_choropleth(
@@ -736,6 +739,7 @@ def render_workbook_dashboard(
                     target_col="Target",
                     vaccinated_col="Td Doses",
                     remaining_col="Td Remaining to 95%",
+                    export_context=f"Target basis: {target_basis}",
                 )
         else:
             st.caption("SBI is school-based. For a specific municipality, coverage is shown by school rather than by barangay.")
@@ -922,6 +926,7 @@ def render_workbook_dashboard(
                     legend_title_text="",
                 )
                 fig_hpv_geo.update_traces(textposition="outside", cliponaxis=False)
+                add_coverage_export_caption(fig_hpv_geo, target_basis=target_basis)
                 st.plotly_chart(fig_hpv_geo, width="stretch", key="sbi_workbook_hpv_geo")
 
                 st.dataframe(
@@ -954,6 +959,7 @@ def render_workbook_dashboard(
                         target_col="Target",
                         vaccinated_col="HPV Dose 1",
                         remaining_col="1st Dose Remaining to 90%",
+                        export_context=f"Target basis: {target_basis}",
                     )
                 else:
                     render_municipality_choropleth(
@@ -964,6 +970,7 @@ def render_workbook_dashboard(
                         target_col="Target",
                         vaccinated_col="HPV Dose 2",
                         remaining_col="2nd Dose Remaining to 90%",
+                        export_context=f"Target basis: {target_basis}",
                     )
             else:
                 st.caption("SBI is school-based. For a specific municipality, HPV coverage is shown by school rather than by barangay.")

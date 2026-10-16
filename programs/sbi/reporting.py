@@ -357,6 +357,24 @@ def render_tally_tabs(
             )
 
 
+def add_coverage_export_caption(fig, *, target_basis: str, data_source: str | None = None) -> None:
+    """Attach selected reporting metadata to a Plotly coverage chart/PNG.
+
+    A Streamlit caption or st.info is not part of the Plotly image export.
+    Keep the annotation in the figure's title and reserve adequate top margin.
+    """
+    subtitle = f"Target basis: {target_basis}"
+    if data_source:
+        subtitle = f"Accomplishment source: {data_source} | {subtitle}"
+    fig.update_layout(
+        title=dict(
+            text=f"Coverage by Municipality<br><sup>{subtitle}</sup>",
+            x=0.01, xanchor="left", font=dict(size=16),
+        ),
+        margin=dict(t=95),
+    )
+
+
 def render_municipality_choropleth(
     summary: pd.DataFrame,
     coverage_col: str,
@@ -373,6 +391,7 @@ def render_municipality_choropleth(
     colorbar_title: str = "Coverage %",
     map_opacity: float = 0.70,
     show_zero_target_as_na: bool = False,
+    export_context: str | None = None,
 ) -> None:
     """Render an Abra municipality choropleth with robust accent-insensitive joins.
 
@@ -517,6 +536,13 @@ def render_municipality_choropleth(
             ]
         ),
     )
+    if export_context:
+        # Unlike the external Streamlit heading, this is part of the PNG.
+        fig.update_layout(
+            title=dict(text=f"{title}<br><sup>{export_context}</sup>",
+                       x=0.01, xanchor="left", font=dict(size=16)),
+            margin=dict(t=90),
+        )
     st.markdown(
         f'''<h4 style="margin-bottom:0.25rem;">
         <i class="fa-solid fa-map" style="color:#0033A0; margin-right:8px;"></i>

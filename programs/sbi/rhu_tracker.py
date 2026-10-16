@@ -60,6 +60,22 @@ METRICS = {
     "G7 Td": {"grade": "G7", "tracker": ("td_male", "td_female"), "event": "g7", "event_col": "Td Doses"},
 }
 
+# Active reporting columns only; legacy HPV Dose 2 remains available in
+# the database and historical workbook records but not current reconciliation.
+ACTIVE_RECON_METRICS = (
+    "G1 MR", "G1 Td", "G4 HPV Dose 1", "G7 MR", "G7 Td",
+)
+
+def _display_active_recon_labels(frame: pd.DataFrame) -> pd.DataFrame:
+    """Show one current HPV dose without changing the historical data schema."""
+    view = frame.copy()
+    if "Metric" in view.columns:
+        view["Metric"] = view["Metric"].replace({"G4 HPV Dose 1": "G4 HPV"})
+    if "G4 HPV Dose 1" in view.columns:
+        view = view.rename(columns={"G4 HPV Dose 1": "G4 HPV"})
+    return view
+
+
 DB_TO_UI = {
     "mr_male": "MR Male",
     "mr_female": "MR Female",
@@ -345,7 +361,7 @@ def _status(diff: float, tracker_rows: int) -> str:
 
 def _summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metrics: Iterable[str] | None = None) -> pd.DataFrame:
     rows = []
-    for metric in metrics or METRICS.keys():
+    for metric in (metrics if metrics is not None else ACTIVE_RECON_METRICS):
         tracker_value, tracker_rows = _sum_tracker_metric(entries, metric)
         vacc_value = _sum_event_metric(events, metric)
         diff = tracker_value - vacc_value
@@ -414,7 +430,7 @@ def _safe_school_cutoff(events: dict[str, pd.DataFrame]) -> date | None:
 
 def _fresh_summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metrics: Iterable[str] | None = None) -> pd.DataFrame:
     rows = []
-    for metric in metrics or METRICS.keys():
+    for metric in (metrics if metrics is not None else ACTIVE_RECON_METRICS):
         cutoff = _metric_vacctrack_report_date(events, metric)
         if entries is None or entries.empty:
             verified = pd.DataFrame()
@@ -445,9 +461,10 @@ def _fresh_summary_table(entries: pd.DataFrame, events: dict[str, pd.DataFrame],
     return pd.DataFrame(rows)
 
 
-# Side-by-side overview: all five SBI VaccTrack reporting groups at once.
-# G4 uses Dose 1 by default for single-dose reporting; Dose 2 remains selectable
-# because the official VaccTrack extract still contains the legacy HPV2 field.
+# Side-by-side overview of the five active SBI VaccTrack reporting groups.
+# G4 comparison uses HPV Dose 1 for the current single-dose guideline. The
+# legacy HPV Dose 2 database/VaccTrack fields remain intact but are not offered
+# as a selectable active metric in this overview.
 RECON_GROUP_METRICS = (
     ("G1 MR", "G1 MR"),
     ("G1 Td", "G1 Td"),
@@ -526,14 +543,9 @@ def _render_grouped_reconciliation(
     if not municipalities:
         return
     st.markdown("#### Municipality Reconciliation")
-    g4_field = st.selectbox(
-        "Grade 4 HPV VaccTrack field",
-        ("HPV Dose 1", "HPV Dose 2"),
-        key=f"{key_prefix}_g4_recon_field",
-        help="Current single-dose HPV accomplishments use HPV Dose 1. "
-             "The older HPV Dose 2 field remains available for historical reconciliation.",
-    )
-    g4_metric = "G4 HPV Dose 1" if g4_field == "HPV Dose 1" else "G4 HPV Dose 2"
+    # Current SBI reporting has one HPV dose: compare only HPV Dose 1.
+    # Historical Dose 2 values are preserved in storage and legacy exports.
+    g4_metric = "G4 HPV Dose 1"
     frame, context = _grouped_reconciliation_rows(
         entries, g1_events, g7_events, hpv_events,
         municipalities, start_date, end_date, g4_metric,
@@ -672,7 +684,7 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
         day_entries = _entries_for_exact_date(entries, target_date)
         day_events = _events_for_exact_date(events, target_date)
 
-        for metric in METRICS.keys():
+        for metric in ACTIVE_RECON_METRICS:
             tracker_value, tracker_rows = _sum_tracker_metric(day_entries, metric)
             vacc_value = _sum_event_metric(day_events, metric)
 
@@ -712,14 +724,14 @@ def _daily_reconciliation(entries: pd.DataFrame, events: dict[str, pd.DataFrame]
 
 def _daily_difference_matrix(daily: pd.DataFrame) -> pd.DataFrame:
     if daily is None or daily.empty:
-        return pd.DataFrame(columns=["Date", *METRICS.keys(), "Issues"])
+        return pd.DataFrame(columns=["Date", *ACTIVE_RECON_METRICS, "Issues"])
 
     pivot = daily.pivot_table(
         index="Date",
         columns="Metric",
         values="Difference",
         aggfunc="sum",
-    ).reindex(columns=list(METRICS.keys()))
+    ).reindex(columns=list(ACTIVE_RECON_METRICS))
 
     issues = (
         daily.assign(_issue=(~daily["Status"].isin(["Matched", "Pending VaccTrack Verification"])).astype(int))
@@ -810,7 +822,7 @@ def _render_daily_discrepancy_tally(
         st.success("No daily discrepancies were found for this selection.")
     else:
         st.dataframe(
-            matrix,
+            _display_active_recon_labels(matrix),
             width="stretch",
             hide_index=True,
             column_config={
@@ -824,10 +836,10 @@ def _render_daily_discrepancy_tally(
             ["Date", "Status", "Metric"],
             ascending=[False, True, True],
         ).copy()
-        st.dataframe(detail, width="stretch", hide_index=True)
+        st.dataframe(_display_active_recon_labels(detail), width="stretch", hide_index=True)
         st.download_button(
             "Download Daily Discrepancy Tally (CSV)",
-            data=detail.to_csv(index=False).encode("utf-8-sig"),
+            data=_display_active_recon_labels(detail).to_csv(index=False).encode("utf-8-sig"),
             file_name=f"{filename_prefix}_Daily_Discrepancy_Tally.csv",
             mime="text/csv",
             key=f"{key_prefix}_daily_csv",
@@ -855,7 +867,7 @@ def _render_daily_discrepancy_tally(
 
     st.markdown(f"##### School-Level Discrepancies: {inspect_date.strftime('%b %d, %Y')}")
     st.dataframe(
-        school.sort_values(["Status", "Metric", "School Name"]),
+        _display_active_recon_labels(school).sort_values(["Status", "Metric", "School Name"]),
         width="stretch",
         hide_index=True,
     )
@@ -897,7 +909,7 @@ def _event_school_metric(events: dict[str, pd.DataFrame], metric: str) -> pd.Dat
 
 def _school_comparison(entries: pd.DataFrame, events: dict[str, pd.DataFrame], metrics: Iterable[str] | None = None) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for metric in metrics or METRICS.keys():
+    for metric in (metrics if metrics is not None else ACTIVE_RECON_METRICS):
         tracker = _tracker_school_metric(entries, metric)
         vacc = _event_school_metric(events, metric)
         merged = tracker.merge(vacc, on="School ID", how="outer")
@@ -1136,7 +1148,7 @@ def _render_check(
         key_prefix="rhu_check",
     )
     with st.expander("View detailed reconciliation status", expanded=False):
-        st.dataframe(summary, width="stretch", hide_index=True)
+        st.dataframe(_display_active_recon_labels(summary), width="stretch", hide_index=True)
     g1_cutoff = _metric_vacctrack_report_date(events, "G1 MR")
     g4_cutoff = _metric_vacctrack_report_date(events, "G4 HPV Dose 1")
     g7_cutoff = _metric_vacctrack_report_date(events, "G7 MR")
@@ -1167,7 +1179,7 @@ def _render_check(
     if only_issues:
         school = school[school["Status"].ne("Matched")].copy()
     st.markdown("#### School-Level Check")
-    st.dataframe(school.sort_values(["Status", "Metric", "School Name"]), width="stretch", hide_index=True)
+    st.dataframe(_display_active_recon_labels(school).sort_values(["Status", "Metric", "School Name"]), width="stretch", hide_index=True)
 
 
 def _render_coordinator_view(
@@ -1204,7 +1216,7 @@ def _render_coordinator_view(
         )
         scope_summary = _fresh_summary_table(scope_entries, scope_events)
         st.markdown(f"#### {selected_muni} Summary")
-        st.dataframe(scope_summary, width="stretch", hide_index=True)
+        st.dataframe(_display_active_recon_labels(scope_summary), width="stretch", hide_index=True)
         if pd.to_numeric(scope_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
             st.info("Some RHU workbook values are newer than the corresponding VaccTrack report date and are pending verification.")
         _render_grouped_reconciliation(
@@ -1222,7 +1234,7 @@ def _render_coordinator_view(
         }
         province_summary = _fresh_summary_table(province_entries, province_events)
         st.markdown("#### Abra Summary")
-        st.dataframe(province_summary, width="stretch", hide_index=True)
+        st.dataframe(_display_active_recon_labels(province_summary), width="stretch", hide_index=True)
         if pd.to_numeric(province_summary.get("Pending RHU"), errors="coerce").fillna(0).sum() > 0:
             st.info("Some RHU workbook values are newer than their corresponding VaccTrack report date and are pending verification.")
 
@@ -1256,10 +1268,10 @@ def _render_coordinator_view(
     if not show_all:
         school = school[school["Status"].ne("Matched")].copy()
     st.markdown(f"#### School-Level Reconciliation: {drill_muni}")
-    st.dataframe(school.sort_values(["Status", "Metric", "School Name"]), width="stretch", hide_index=True)
+    st.dataframe(_display_active_recon_labels(school).sort_values(["Status", "Metric", "School Name"]), width="stretch", hide_index=True)
     st.download_button(
         "Download Reconciliation (CSV)",
-        data=school.to_csv(index=False).encode("utf-8-sig"),
+        data=_display_active_recon_labels(school).to_csv(index=False).encode("utf-8-sig"),
         file_name=f"SBI_RHU_vs_VaccTrack_{drill_muni.replace(' ', '_')}.csv",
         mime="text/csv",
         key=f"{key_prefix}_recon_csv",
