@@ -12,6 +12,7 @@ import pytz
 import streamlit as st
 
 from core.config import ABRA_MUNIS
+from core.data import fetch_sbi_targets
 from core.data import (
     SBI_SETTINGS_TABLE,
     VACCTRACK_GOOGLE_FALLBACK_KEY,
@@ -26,6 +27,7 @@ from programs.sbi.aggregate_workbook import (
     get_current_submission,
     reopen_current_submission,
     restore_submission,
+    reconstruct_current_submission_workbook,
 )
 from programs.sbi.campaign_control import CAMPAIGN_STATUSES, get_campaign_config, save_campaign_config
 from programs.sbi.admin_monitoring import render_data_quality_center, render_reconciliation_monitor
@@ -738,6 +740,179 @@ def _render_sbi_bulk_test_cleanup(supabase, audit_callback=None, read_only: bool
             st.cache_data.clear()
             st.rerun()
 
+def _current_workbook_signature(current_by_muni: dict[str, dict]) -> str:
+    """Invalidate prepared exports as soon as the latest RHU upload changes."""
+    details = [
+        (
+            muni,
+            current_by_muni.get(muni, {}).get("id"),
+            current_by_muni.get(muni, {}).get("batch_id"),
+            current_by_muni.get(muni, {}).get("uploaded_at"),
+            current_by_muni.get(muni, {}).get("row_count"),
+        )
+        for muni in ABRA_MUNIS
+    ]
+    return hashlib.sha256(json.dumps(details, default=str).encode("utf-8")).hexdigest()
+
+
+def _submitted_workbook_filename(municipality: str, submission: dict) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", municipality).strip("_")
+    return f"SBI_Current_{safe}_Submission_{submission['id']}.xlsx"
+
+
+def _build_current_workbooks_zip(targets: pd.DataFrame, current_by_muni: dict[str, dict]) -> tuple[bytes, pd.DataFrame]:
+    """Include one reconstructed .xlsx per current RHU upload and a complete 27-RHU manifest."""
+    manifest_rows = []
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for municipality in ABRA_MUNIS:
+            current = current_by_muni.get(municipality)
+            if not current:
+                manifest_rows.append({
+                    "Municipality": municipality,
+                    "Status": "No current upload",
+                    "Submission ID": "",
+                    "Uploaded At": "",
+                    "Uploaded By": "",
+                    "Rows": 0,
+                    "Original File": "",
+                    "Reconstructed File": "",
+                })
+                continue
+            # Fail closed if any current snapshot cannot be faithfully rebuilt.
+            # Never silently put an empty or partially populated file in the ZIP.
+            try:
+                workbook = reconstruct_current_submission_workbook(targets, current)
+            except Exception as exc:
+                raise ValueError(f"{municipality}: {exc}") from exc
+            name = _submitted_workbook_filename(municipality, current)
+            archive.writestr(name, workbook)
+            manifest_rows.append({
+                "Municipality": municipality,
+                "Status": "Reconstructed current upload",
+                "Submission ID": current.get("id"),
+                "Uploaded At": current.get("uploaded_at") or "",
+                "Uploaded By": current.get("uploaded_by") or "",
+                "Rows": current.get("row_count") or 0,
+                "Original File": current.get("file_name") or "",
+                "Reconstructed File": name,
+            })
+        manifest = pd.DataFrame(manifest_rows)
+        archive.writestr("CURRENT_SUBMISSION_MANIFEST.csv", manifest.to_csv(index=False).encode("utf-8-sig"))
+        archive.writestr(
+            "README.txt",
+            (
+                "Abra NIP MIS - SBI Current RHU Submissions\n\n"
+                "Each .xlsx is reconstructed from its RHU's latest current SAVED "
+                "submission snapshot. These are NOT byte-for-byte copies of the "
+                "original uploaded files. No data was changed in the system.\n"
+                "The current offline workbook template is used, preserving "
+                "Setup, Reference, Accomplishments and VaccTrack G1/G4/G7.\n"
+                "RHUs with no current upload have no XLSX and are listed in the manifest.\n"
+                "Review the Accomplishments sheet before continuing offline encoding.\n"
+            ).encode("utf-8"),
+        )
+    return buffer.getvalue(), manifest
+
+
+def _render_current_workbook_downloads(current_by_muni: dict[str, dict]) -> None:
+    """Read-only Admin/QA Admin downloads from current, restorable snapshots."""
+    with st.expander("Current Uploaded Workbooks — Preview & Download", expanded=False):
+        st.caption(
+            "Inspect the current saved workbook for any RHU, reconstruct an Excel copy, "
+            "or download all current RHU submissions in one ZIP. "
+            "This is read-only and does not change submissions, finalization, or upload history."
+        )
+        st.info(
+            "These are reconstructed workbooks from the latest saved RHU submission snapshots, "
+            "NOT the original Excel files uploaded by the RHUs. "
+            "They include the current template and VaccTrack G1/G4/G7 worksheets."
+        )
+        signature = _current_workbook_signature(current_by_muni)
+        if st.session_state.get("ops_current_workbooks_signature") != signature:
+            for key in ("ops_current_one_workbook", "ops_current_one_id", "ops_current_all_zip", "ops_current_all_manifest"):
+                st.session_state.pop(key, None)
+            st.session_state["ops_current_workbooks_signature"] = signature
+
+        count = sum(bool(current_by_muni.get(muni)) for muni in ABRA_MUNIS)
+        st.metric("RHUs With Current Uploaded Workbooks", f"{count}/{len(ABRA_MUNIS)}")
+        if count == 0:
+            st.info("No RHUs have a current saved workbook upload yet.")
+            return
+
+        municipality = st.selectbox("Inspect RHU current workbook", ABRA_MUNIS, key="ops_current_workbook_muni")
+        current = current_by_muni.get(municipality)
+        if current:
+            st.caption(
+                f"Current submission #{current.get('id')} | "
+                f"Uploaded {_format_datetime(current.get('uploaded_at'))} | "
+                f"By {current.get('uploaded_by') or 'Unknown'} | "
+                f"{int(current.get('row_count') or 0):,} activity rows | "
+                f"{'Finalized' if current.get('is_finalized') else 'Not finalized'}"
+            )
+            snapshot = current.get("snapshot")
+            if isinstance(snapshot, list) and snapshot:
+                preview = pd.DataFrame(snapshot)
+                cols = ["activity_date", "school_name", "school_id", "barangay", "grade_level"]
+                cols += [c for c in ("MR Male", "MR Female", "Td Male", "Td Female", "HPV Dose 1") if c in preview.columns]
+                st.dataframe(preview[[c for c in cols if c in preview.columns]], width="stretch", hide_index=True)
+                if st.button("Prepare Current RHU Workbook", key="ops_prepare_current_one", width="stretch"):
+                    try:
+                        targets = fetch_sbi_targets()
+                        payload = reconstruct_current_submission_workbook(targets, current)
+                    except Exception as exc:
+                        st.session_state.pop("ops_current_one_workbook", None)
+                        st.error(f"Unable to reconstruct {municipality}: {exc}")
+                    else:
+                        st.session_state["ops_current_one_workbook"] = payload
+                        st.session_state["ops_current_one_id"] = current.get("id")
+                if st.session_state.get("ops_current_one_id") == current.get("id") and st.session_state.get("ops_current_one_workbook"):
+                    st.download_button(
+                        "Download Current RHU Workbook (.xlsx)",
+                        data=st.session_state["ops_current_one_workbook"],
+                        file_name=_submitted_workbook_filename(municipality, current),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="ops_download_current_one",
+                        width="stretch",
+                    )
+            else:
+                st.warning("The current submission has no saved snapshot to reconstruct.")
+        else:
+            st.info(f"{municipality} has no current uploaded workbook.")
+
+        st.divider()
+        st.markdown("#### Current Workbooks for All RHUs")
+        st.caption(
+            "Prepare a ZIP containing one current workbook for each RHU that has uploaded, "
+            "plus a 27-RHU manifest. RHUs without uploads are listed in the manifest "
+            "but no blank workbook is substituted."
+        )
+        if st.button("Prepare Current RHU Workbooks ZIP", key="ops_prepare_current_all", width="stretch"):
+            try:
+                targets = fetch_sbi_targets()
+                with st.spinner(f"Reconstructing {count} current RHU workbook(s)..."):
+                    archive, manifest = _build_current_workbooks_zip(targets, current_by_muni)
+            except Exception as exc:
+                st.session_state.pop("ops_current_all_zip", None)
+                st.session_state.pop("ops_current_all_manifest", None)
+                st.error(f"Unable to prepare current workbook package: {exc}")
+            else:
+                st.session_state["ops_current_all_zip"] = archive
+                st.session_state["ops_current_all_manifest"] = manifest
+                st.success(f"Prepared {count} current workbook(s); {len(ABRA_MUNIS) - count} RHU(s) have no current upload.")
+        payload = st.session_state.get("ops_current_all_zip")
+        if payload:
+            st.download_button(
+                "Download Current RHU Workbooks (ZIP)",
+                data=payload,
+                file_name="Abra_SBI_Current_RHU_Uploaded_Workbooks.zip",
+                mime="application/zip",
+                key="ops_download_current_all",
+                width="stretch",
+            )
+            st.dataframe(st.session_state["ops_current_all_manifest"], width="stretch", hide_index=True)
+
+
 def render_submission_status(supabase, audit_callback=None, read_only: bool = False) -> None:
     st.markdown("### RHU Workbook Submissions")
     ready, _ = _table_exists(supabase, SUBMISSION_TABLE, "id")
@@ -791,6 +966,8 @@ def render_submission_status(supabase, audit_callback=None, read_only: bool = Fa
         mime="text/csv",
         key="ops_submission_status_download",
     )
+
+    _render_current_workbook_downloads(current_by_muni)
 
     if st.session_state.get("sbi_bulk_cleanup_success"):
         st.success(st.session_state.pop("sbi_bulk_cleanup_success"))

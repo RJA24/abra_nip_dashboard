@@ -162,9 +162,62 @@ def _column_letter(index: int) -> str:
     return letters
 
 
-def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
+def build_offline_workbook(
+    targets: pd.DataFrame,
+    municipality: str,
+    *,
+    accomplishment_rows: pd.DataFrame | None = None,
+    reconstructed_note: str | None = None,
+) -> bytes:
+    """Build a blank RHU workbook, or safely prefill one from its saved snapshot.
+
+    Prefilling does not modify the saved submission; generated Excel formulas,
+    protected references and the three VaccTrack worksheets are unchanged.
+    """
     municipality = canonical_municipality_name(municipality)
     roster = _roster(targets, municipality)
+    saved_rows = pd.DataFrame() if accomplishment_rows is None else accomplishment_rows.copy()
+    if not saved_rows.empty:
+        if len(saved_rows) > MAX_INPUT_ROWS:
+            raise ValueError(
+                f"{municipality} has {len(saved_rows):,} saved rows, but the workbook supports "
+                f"only {MAX_INPUT_ROWS:,}. Cannot safely reconstruct without increasing workbook capacity."
+            )
+        required = {"activity_date", "school_id", "grade_level", *INPUT_COUNT_COLUMNS}
+        missing = sorted(required - set(saved_rows.columns))
+        if missing:
+            raise ValueError(f"Saved snapshot is missing columns: {', '.join(missing)}")
+        valid_school_ids = set(roster["School ID"].map(_clean_school_id))
+        missing_ids = sorted(set(saved_rows["school_id"].map(_clean_school_id)) - valid_school_ids)
+        if missing_ids:
+            raise ValueError(
+                f"Saved School ID(s) missing from the current {municipality} school roster: "
+                f"{', '.join(missing_ids[:8])}. Review roster changes before reconstruction."
+            )
+        # The offline template looks up School ID using School Name. Reject
+        # ambiguous names instead of silently assigning an incorrect School ID.
+        saved_ids = set(saved_rows["school_id"].map(_clean_school_id))
+        candidates = roster.loc[roster["School ID"].isin(saved_ids)]
+        dupe_names = set(roster.loc[roster["School Name"].duplicated(keep=False), "School Name"])
+        if candidates["School Name"].isin(dupe_names).any():
+            raise ValueError(
+                f"{municipality} has duplicate school names in its current roster. "
+                "Cannot reconstruct accurate School ID formulas until these names are disambiguated."
+            )
+        dates = pd.to_datetime(saved_rows["activity_date"], errors="coerce")
+        if dates.isna().any():
+            raise ValueError("A saved accomplishment row has an invalid Activity Date.")
+        saved_rows["activity_date"] = dates.dt.date
+        if not saved_rows["grade_level"].astype(str).isin({"G1", "G4", "G5", "G7"}).all():
+            raise ValueError("A saved accomplishment row has an unrecognized grade.")
+        for field in INPUT_COUNT_COLUMNS:
+            counts = pd.to_numeric(saved_rows[field], errors="coerce")
+            if counts.isna().any() or (counts < 0).any() or (counts % 1 != 0).any():
+                raise ValueError(f"Saved snapshot contains an invalid count in {field}.")
+            saved_rows[field] = counts.astype(int)
+        saved_rows = saved_rows.sort_values(
+            ["activity_date", "school_id", "grade_level"], kind="stable"
+        ).reset_index(drop=True)
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
     workbook.set_properties({
@@ -456,6 +509,15 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     )
     setup.set_row(34, 28)
     setup.set_row(35, 28)
+    if reconstructed_note:
+        setup.merge_range(
+            "A38:F40",
+            "ADMIN RECONSTRUCTION — not the originally uploaded Excel file. "
+            + str(reconstructed_note),
+            warning_fmt,
+        )
+        for row in (37, 38, 39):
+            setup.set_row(row, 23)
     setup.protect(PROTECTION_PASSWORD)
 
     reference = workbook.add_worksheet("Reference")
@@ -501,19 +563,36 @@ def build_offline_workbook(targets: pd.DataFrame, municipality: str) -> bytes:
     date_col = BASE_COLUMNS.index("Activity Date")
     row_check_col = len(ALL_COLUMNS) - 1
 
+    lookup = roster.set_index("School ID").to_dict("index") if not roster.empty else {}
     for excel_row in range(2, MAX_INPUT_ROWS + 2):
         row = excel_row - 1
+        saved = saved_rows.iloc[row - 1] if row <= len(saved_rows) else None
+        saved_id = _clean_school_id(saved["school_id"]) if saved is not None else ""
+        school_info = lookup.get(saved_id, {})
         school_name_cell = f"${_column_letter(school_name_col)}{excel_row}"
         school_id_cell = f"${_column_letter(school_id_col)}{excel_row}"
         grade_cell = f"${_column_letter(grade_col)}{excel_row}"
-        sheet.write_blank(row, date_col, None, input_date_fmt)
-        sheet.write_blank(row, school_name_col, None, input_fmt)
-        sheet.write_formula(row, school_id_col, f'=IFERROR(INDEX(Reference!$A$2:$A${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
-        sheet.write_formula(row, barangay_col, f'=IFERROR(INDEX(Reference!$C$2:$C${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")', formula_fmt)
-        sheet.write_blank(row, grade_col, None, input_fmt)
+        if saved is not None:
+            sheet.write_datetime(row, date_col, datetime.combine(saved["activity_date"], datetime.min.time()), input_date_fmt)
+            sheet.write_string(row, school_name_col, str(school_info["School Name"]), input_fmt)
+        else:
+            sheet.write_blank(row, date_col, None, input_date_fmt)
+            sheet.write_blank(row, school_name_col, None, input_fmt)
+        school_id_formula = f'=IFERROR(INDEX(Reference!$A$2:$A${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")'
+        barangay_formula = f'=IFERROR(INDEX(Reference!$C$2:$C${last_ref_row},MATCH({school_name_cell},Reference!$B$2:$B${last_ref_row},0)),"")'
+        # Cached values make the file readable before Excel first recalculates it.
+        sheet.write_formula(row, school_id_col, school_id_formula, formula_fmt, saved_id if saved is not None else "")
+        sheet.write_formula(row, barangay_col, barangay_formula, formula_fmt, str(school_info["Barangay"]) if saved is not None else "")
+        if saved is not None:
+            sheet.write_string(row, grade_col, str(saved["grade_level"]), input_fmt)
+        else:
+            sheet.write_blank(row, grade_col, None, input_fmt)
         for col_name in INPUT_COUNT_COLUMNS:
             col = ALL_COLUMNS.index(col_name)
-            sheet.write_blank(row, col, None, input_count_fmt)
+            if saved is not None:
+                sheet.write_number(row, col, int(saved[col_name]), input_count_fmt)
+            else:
+                sheet.write_blank(row, col, None, input_count_fmt)
         first_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[0]))
         last_reason_letter = _column_letter(ALL_COLUMNS.index(REASON_COLUMNS[-1]))
         grade_letter = _column_letter(grade_col)
@@ -964,6 +1043,29 @@ def fetch_submission_history(supabase, municipality: str | None = None) -> pd.Da
             break
         offset += limit
     return pd.DataFrame(rows)
+
+
+def reconstruct_current_submission_workbook(targets: pd.DataFrame, submission: dict) -> bytes:
+    """Rebuild a workbook from the current saved submission snapshot (read-only)."""
+    if not submission or not bool(submission.get("is_current")):
+        raise ValueError("There is no current RHU submission to reconstruct.")
+    snapshot = submission.get("snapshot")
+    if not isinstance(snapshot, list) or not snapshot:
+        raise ValueError("Current submission has no restorable accomplishment snapshot.")
+    entries = _snapshot_to_frame(snapshot)
+    if entries.empty or int(submission.get("row_count") or 0) != len(entries):
+        raise ValueError("Saved submission snapshot row count is inconsistent or empty.")
+    municipality = canonical_municipality_name(str(submission.get("municipality") or ""))
+    return build_offline_workbook(
+        targets,
+        municipality,
+        accomplishment_rows=entries,
+        reconstructed_note=(
+            f"Current saved submission #{submission.get('id')}, "
+            f"uploaded {submission.get('uploaded_at') or 'date unavailable'}. "
+            "Review current school roster labels if schools have changed."
+        ),
+    )
 
 
 def _snapshot_payload(incoming: pd.DataFrame) -> list[dict]:
