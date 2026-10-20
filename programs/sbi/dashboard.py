@@ -48,6 +48,7 @@ from programs.sbi.source_dashboard_layout import (
 )
 from programs.sbi.reporting import (
     add_coverage_export_caption,
+    plotly_export_config,
     render_campaign_burnup,
     render_daily_trend,
     render_municipality_choropleth,
@@ -1254,15 +1255,7 @@ def render_sbi_dashboard(supabase) -> None:
                     fig_tgt_school,
                     width="stretch",
                     key="sbi_tgt_school_bar",
-                    config={
-                        'scrollZoom': False,
-                        'displayModeBar': True,
-                        'toImageButtonOptions': {
-                            'format': 'png',
-                            'filename': f"SBI_School_Targets_{location_label.replace(', ', '_')}",
-                            'scale': 2
-                        }
-                    }
+                    config=plotly_export_config(f"SBI_School_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_chart_plot) * 55))
                 )
 
                 st.divider()
@@ -1638,15 +1631,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_actual_school,
                         width="stretch",
                         key='sbi_actual_school_chart',
-                        config={
-                            'scrollZoom': False,
-                            'displayModeBar': True,
-                            'toImageButtonOptions': {
-                                'format': 'png',
-                                'filename': f"SBI_Actual_Targets_{location_label.replace(', ', '_')}",
-                                'scale': 2
-                            }
-                        }
+                        config=plotly_export_config(f"SBI_Actual_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_actual_school_plot) * 55))
                     )
 
                 st.divider()
@@ -2142,15 +2127,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_school_compare,
                         width="stretch",
                         key='sbi_compare_school_chart',
-                        config={
-                            'scrollZoom': False,
-                            'displayModeBar': True,
-                            'toImageButtonOptions': {
-                                'format': 'png',
-                                'filename': f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}",
-                                'scale': 2
-                            }
-                        }
+                        config=plotly_export_config(f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_compare_plot) * 58))
                     )
 
                     st.divider()

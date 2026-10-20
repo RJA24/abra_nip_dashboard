@@ -18,7 +18,7 @@ import streamlit as st
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.aggregate_workbook import REASON_LABELS
-from programs.sbi.reporting import render_daily_trend, render_municipality_choropleth
+from programs.sbi.reporting import plotly_export_config, render_daily_trend, render_municipality_choropleth
 from programs.sbi.workbook_dashboard import prepare_workbook_entries
 
 
@@ -247,6 +247,52 @@ def render_g5_dashboard(
             show_zero_target_as_na=True,
             export_context="Target basis: Actual Targets (Unvaccinated G5 Female)",
         )
+
+        chart_rows = muni.copy()
+        chart_rows["HPV Coverage %"] = pd.to_numeric(chart_rows["HPV Coverage %"], errors="coerce")
+        chart_rows = chart_rows.sort_values(["HPV Coverage %", "Municipality"], ascending=[True, True], na_position="last")
+        st.markdown("#### Coverage by Municipality")
+        fig_muni = px.bar(
+            chart_rows,
+            x="HPV Coverage %",
+            y="Municipality",
+            orientation="h",
+            text=chart_rows["HPV Coverage %"].map(lambda v: "N/A" if pd.isna(v) else f"{float(v):.1f}%"),
+            custom_data=["G5 Target", "HPV Vaccinated", "Remaining"],
+        )
+        fig_muni.update_traces(
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{y}</b><br>Coverage: %{x:.1f}%<br>"
+                "Target: %{customdata[0]:,.0f}<br>"
+                "Vaccinated: %{customdata[1]:,.0f}<br>"
+                "Remaining: %{customdata[2]:,.0f}<extra></extra>"
+            ),
+            cliponaxis=False,
+        )
+        fig_muni.add_vline(
+            x=90,
+            line_dash="dash",
+            line_color="rgba(216,27,96,0.70)",
+            annotation_text="90% target",
+            annotation_position="top right",
+        )
+        fig_muni.update_layout(
+            dragmode=False,
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Coverage %",
+            yaxis_title="",
+            height=max(500, len(chart_rows) * 28),
+            margin=dict(l=10, r=35, t=15, b=60),
+            showlegend=False,
+        )
+        fig_muni.update_xaxes(range=[0, max(100, float(pd.to_numeric(chart_rows["HPV Coverage %"], errors="coerce").max() or 0) + 5)])
+        st.plotly_chart(
+            fig_muni,
+            width="stretch",
+            key="sbi_g5_coverage_by_municipality",
+            config=plotly_export_config("sbi_g5_coverage_by_municipality", height=max(1200, len(chart_rows) * 55)),
+        )
     else:
         st.caption("SBI Grade 5 monitoring is school-based. For a specific municipality, performance is shown by school rather than by barangay.")
 
@@ -279,7 +325,12 @@ def render_g5_dashboard(
             hovermode="x unified",
         )
         st.markdown("#### Cumulative Grade 5 HPV Progress")
-        st.plotly_chart(fig, width="stretch", key="sbi_g5_cumulative")
+        st.plotly_chart(
+            fig,
+            width="stretch",
+            key="sbi_g5_cumulative",
+            config=plotly_export_config("sbi_g5_cumulative", height=1200),
+        )
 
     st.divider()
     st.markdown("#### School-Level Grade 5 Performance")

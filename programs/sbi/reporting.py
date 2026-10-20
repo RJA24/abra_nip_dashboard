@@ -55,6 +55,27 @@ def _ordered_abra_names() -> list[str]:
     return names
 
 
+
+
+def plotly_export_config(
+    filename: str,
+    *,
+    scale: int = 5,
+    width: int | None = None,
+    height: int | None = None,
+) -> dict:
+    """Return consistent high-resolution Plotly export settings for SBI charts."""
+    options: dict[str, object] = {"format": "png", "filename": filename, "scale": scale}
+    if width is not None:
+        options["width"] = width
+    if height is not None:
+        options["height"] = height
+    return {
+        "scrollZoom": False,
+        "displayModeBar": True,
+        "toImageButtonOptions": options,
+    }
+
 def _daily_summary(events: pd.DataFrame, value_cols: list[str]) -> pd.DataFrame:
     if events is None or events.empty or "Report Date" not in events.columns:
         return pd.DataFrame()
@@ -134,11 +155,7 @@ def render_daily_trend(
         fig,
         width="stretch",
         key=key,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": True,
-            "toImageButtonOptions": {"format": "png", "filename": key, "scale": 2},
-        },
+        config=plotly_export_config(key, height=1100),
     )
     return daily
 
@@ -228,11 +245,7 @@ def render_campaign_burnup(
         fig,
         width="stretch",
         key=key,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": True,
-            "toImageButtonOptions": {"format": "png", "filename": key, "scale": 2},
-        },
+        config=plotly_export_config(key, height=1100),
     )
     return daily
 
@@ -554,11 +567,7 @@ def render_municipality_choropleth(
         fig,
         width="stretch",
         key=key,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": True,
-            "toImageButtonOptions": {"format": "png", "filename": key, "scale": 3},
-        },
+        config=plotly_export_config(key, height=1400),
     )
 
 
@@ -787,11 +796,7 @@ def render_barangay_choropleth(
         fig,
         width="stretch",
         key=key,
-        config={
-            "scrollZoom": False,
-            "displayModeBar": True,
-            "toImageButtonOptions": {"format": "png", "filename": key, "scale": 3},
-        },
+        config=plotly_export_config(key, height=1400),
     )
 
 def render_raw_export(
