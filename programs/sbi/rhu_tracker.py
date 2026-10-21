@@ -542,13 +542,42 @@ def _grouped_reconciliation_png(
     from io import BytesIO
     from PIL import Image, ImageDraw, ImageFont
 
-    # Pillow is included in Streamlit's dependencies. Use portable fonts and
-    # fall back gracefully on environments without DejaVu Sans installed.
+    # Important: Streamlit Cloud may not have the short DejaVu font names in
+    # Pillow's font search path. ImageFont.load_default() WITHOUT a size draws
+    # a fixed, tiny bitmap font even on a 4K export. Never use that fallback.
+    # Resolve common OS/Pillow font paths, then use Pillow's sized default.
     def font(size: int, bold: bool = False):
-        family = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+        from pathlib import Path
+        import PIL
+
+        face = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+        fallback_face = "LiberationSans-Bold.ttf" if bold else "LiberationSans-Regular.ttf"
+        pil_dir = Path(PIL.__file__).resolve().parent
+        candidates = (
+            face,
+            f"/usr/share/fonts/truetype/dejavu/{face}",
+            f"/usr/local/share/fonts/{face}",
+            str(pil_dir / "fonts" / face),
+            str(pil_dir / "Fonts" / face),
+            f"/usr/share/fonts/truetype/liberation2/{fallback_face}",
+            f"/usr/share/fonts/truetype/liberation/{fallback_face}",
+        )
+        for candidate in candidates:
+            try:
+                return ImageFont.truetype(candidate, size=size)
+            except (OSError, ValueError):
+                continue
+        # Pillow >= 10.1 embeds a scalable default font. This is essential
+        # for readable exports on systems without operating-system fonts.
         try:
-            return ImageFont.truetype(family, size)
-        except OSError:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            # Older Pillow: try a final family lookup before a bitmap fallback.
+            for family in ("LiberationSans-Regular.ttf", "Arial.ttf"):
+                try:
+                    return ImageFont.truetype(family, size=size)
+                except (OSError, ValueError):
+                    continue
             return ImageFont.load_default()
 
     # Draw vectors and text at native 2x size, instead of upscaling a low-res bitmap.
@@ -557,9 +586,9 @@ def _grouped_reconciliation_png(
     def s(value: int) -> int:
         return value * export_scale
 
-    title_font, info_font = font(s(31), True), font(s(16))
-    top_font, sub_font, cell_font = font(s(17), True), font(s(14), True), font(s(16))
-    body_bold_font = font(s(16), True)
+    title_font, info_font = font(s(32), True), font(s(17))
+    top_font, sub_font, cell_font = font(s(20), True), font(s(15), True), font(s(18))
+    body_bold_font = font(s(18), True)
     navy, pale, outline = "#124f61", "#dcebf0", "#d1dce2"
     ink, secondary = "#193849", "#475569"
     col_w, muni_w = s(115), s(220)
