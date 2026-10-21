@@ -250,7 +250,7 @@ def render_g5_dashboard(
 
         chart_rows = muni.copy()
         chart_rows["HPV Coverage %"] = pd.to_numeric(chart_rows["HPV Coverage %"], errors="coerce")
-        chart_rows = chart_rows.sort_values(["HPV Coverage %", "Municipality"], ascending=[True, True], na_position="last")
+        chart_rows = chart_rows.sort_values(["HPV Coverage %", "Municipality"], ascending=[True, False], na_position="first")
         st.markdown("#### Coverage by Municipality")
         fig_muni = px.bar(
             chart_rows,
@@ -285,6 +285,11 @@ def render_g5_dashboard(
             height=max(500, len(chart_rows) * 28),
             margin=dict(l=10, r=35, t=15, b=60),
             showlegend=False,
+        )
+        # Horizontal bar category order is bottom-to-top, so ascending values
+        # display the highest coverage at the top and N/A at the bottom.
+        fig_muni.update_yaxes(
+            categoryorder="array", categoryarray=chart_rows["Municipality"].tolist(),
         )
         fig_muni.update_xaxes(range=[0, max(100, float(pd.to_numeric(chart_rows["HPV Coverage %"], errors="coerce").max() or 0) + 5)])
         st.plotly_chart(

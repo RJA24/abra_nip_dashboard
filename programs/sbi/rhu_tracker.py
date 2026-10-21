@@ -528,6 +528,167 @@ def _grouped_reconciliation_rows(
     return pd.DataFrame(rows), context
 
 
+def _grouped_reconciliation_png(
+    frame: pd.DataFrame,
+    context: dict[tuple[str, str], dict],
+    start_date: date | None,
+    end_date: date | None,
+) -> bytes:
+    """Render the live grouped reconciliation layout as a shareable PNG.
+
+    Render only the in-memory filtered reconciliation results; never fetch
+    additional data or replace missing VaccTrack figures with zeroes.
+    """
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+
+    # Pillow is included in Streamlit's dependencies. Use portable fonts and
+    # fall back gracefully on environments without DejaVu Sans installed.
+    def font(size: int, bold: bool = False):
+        family = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+        try:
+            return ImageFont.truetype(family, size)
+        except OSError:
+            return ImageFont.load_default()
+
+    # Draw vectors and text at native 2x size, instead of upscaling a low-res bitmap.
+    export_scale = 2
+
+    def s(value: int) -> int:
+        return value * export_scale
+
+    title_font, info_font = font(s(31), True), font(s(16))
+    top_font, sub_font, cell_font = font(s(17), True), font(s(14), True), font(s(16))
+    body_bold_font = font(s(16), True)
+    navy, pale, outline = "#124f61", "#dcebf0", "#d1dce2"
+    ink, secondary = "#193849", "#475569"
+    col_w, muni_w = s(115), s(220)
+    left, right = s(38), s(38)
+    top = s(28)
+    table_width = muni_w + len(RECON_GROUP_METRICS) * 3 * col_w
+    width = left + table_width + right
+    row_h, top_header_h, sub_header_h = s(37), s(43), s(38)
+    gap = s(8)
+
+    def wrap_line(draw, message: str, draw_font, max_width: int) -> list[str]:
+        result: list[str] = []
+        line = ""
+        for word in message.split():
+            candidate = f"{line} {word}" if line else word
+            if line and draw.textbbox((0, 0), candidate, font=draw_font)[2] > max_width:
+                result.append(line)
+                line = word
+            else:
+                line = candidate
+        if line:
+            result.append(line)
+        return result
+
+    explanation = (
+        "Discrepancy = RHU Workbook - VaccTrack. Workbook figures in this table "
+        "include only activity dates covered by the latest matching VaccTrack "
+        "report; newer workbook records are pending, not discrepancies. "
+        "Grade 5 is reported separately and is not included here."
+    )
+    if start_date and end_date:
+        period_text = f"Reporting period: {start_date:%b %d, %Y} - {end_date:%b %d, %Y}"
+    elif start_date:
+        period_text = f"Reporting period: from {start_date:%b %d, %Y}"
+    elif end_date:
+        period_text = f"Reporting period: through {end_date:%b %d, %Y}"
+    else:
+        period_text = "Reporting period: All available dates"
+
+    scope = (
+        "All Municipalities (Abra)"
+        if len(frame) > 1
+        else (str(frame.iloc[0]["Municipality"]) if not frame.empty else "No municipalities")
+    )
+    # Height can vary when the note wraps; draw on a temporary canvas to
+    # measure the same text with the same font before allocating final image.
+    probe = ImageDraw.Draw(Image.new("RGB", (width, 50), "white"))
+    notes = wrap_line(probe, explanation, info_font, table_width)
+    notes_h = len(notes) * s(26)
+    table_y = top + s(46) + s(27) + s(27) + notes_h + s(28)
+    bottom_notes_y = table_y + top_header_h + sub_header_h + len(frame) * row_h + s(23)
+    footer_lines = [
+        "* Workbook doses marked with an asterisk are pending VaccTrack verification and excluded from discrepancies.",
+        "- means no VaccTrack report is available; N/A means a discrepancy cannot be calculated."
+    ]
+    footer_text = [line for item in footer_lines for line in wrap_line(probe, item, info_font, table_width)]
+    height = bottom_notes_y + len(footer_text) * s(25) + s(35)
+    im = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(im)
+    draw.text((left, top), "SBI 2026 | Municipality Reconciliation", fill=ink, font=title_font)
+    draw.text((left, top + s(47)), f"Scope: {scope}", fill=secondary, font=info_font)
+    draw.text((left, top + s(74)), period_text, fill=secondary, font=info_font)
+    notes_start_y = top + s(106)
+    for i, line in enumerate(notes):
+        draw.text((left, notes_start_y + i * s(26)), line, fill=secondary, font=info_font)
+
+    def rect(x0: int, y0: int, x1: int, y1: int, fill: str):
+        draw.rectangle((x0, y0, x1, y1), fill=fill, outline=outline, width=1)
+
+    def centered(value: str, x0: int, y0: int, w: int, h: int, current_font, fill: str):
+        bounds = draw.textbbox((0, 0), value, font=current_font)
+        text_width = bounds[2] - bounds[0]
+        text_height = bounds[3] - bounds[1]
+        draw.text((x0 + (w - text_width) / 2, y0 + (h - text_height) / 2 - bounds[1]),
+                  value, fill=fill, font=current_font)
+
+    y = table_y
+    rect(left, y, left + muni_w, y + top_header_h + sub_header_h, navy)
+    centered("Municipality", left, y, muni_w, top_header_h + sub_header_h, top_font, "#ffffff")
+    for g_idx, (group_label, _) in enumerate(RECON_GROUP_METRICS):
+        gx = left + muni_w + g_idx * 3 * col_w
+        rect(gx, y, gx + col_w * 3, y + top_header_h, navy)
+        centered(group_label, gx, y, col_w * 3, top_header_h, top_font, "#ffffff")
+        for j, label in enumerate(("Workbook", "VaccTrack", "Discrepancy")):
+            cx = gx + j * col_w
+            rect(cx, y + top_header_h, cx + col_w, y + top_header_h + sub_header_h, pale)
+            centered(label, cx, y + top_header_h, col_w, sub_header_h, sub_font, ink)
+
+    y += top_header_h + sub_header_h
+    for row_idx, (_, row) in enumerate(frame.iterrows()):
+        muni = str(row["Municipality"])
+        shade = "#ffffff" if row_idx % 2 == 0 else "#f6f9fb"
+        rect(left, y, left + muni_w, y + row_h, shade)
+        draw.text((left + s(10), y + s(8)), muni, font=body_bold_font, fill=ink)
+        for g_idx, (label, _) in enumerate(RECON_GROUP_METRICS):
+            info = context[(muni, label)]
+            wb = int(row[f"{label} | Workbook"])
+            pending = int(info.get("pending") or 0)
+            vt = row[f"{label} | VaccTrack"]
+            diff = row[f"{label} | Discrepancy"]
+            if pd.isna(vt):
+                vt_text, diff_text = "-", ("Pending" if pending else "N/A")
+                diff_color = "#9a6700" if pending else "#64748b"
+            else:
+                vt_text = f"{int(vt):,}"
+                delta = int(diff)
+                diff_text = f"+{delta:,}" if delta > 0 else f"{delta:,}"
+                diff_color = "#b42318" if delta else secondary
+            texts = (f"{wb:,}{'*' if pending else ''}", vt_text, diff_text)
+            for j, value in enumerate(texts):
+                cx = left + muni_w + (g_idx * 3 + j) * col_w
+                rect(cx, y, cx + col_w, y + row_h, shade)
+                f = body_bold_font if j == 2 else cell_font
+                fill = diff_color if j == 2 else ink
+                bounds = draw.textbbox((0, 0), value, font=f)
+                text_width = bounds[2] - bounds[0]
+                draw.text((cx + col_w - text_width - s(9), y + s(8)), value, font=f, fill=fill)
+        y += row_h
+
+    y += s(18)
+    for line in footer_text:
+        draw.text((left, y), line, font=info_font, fill=secondary)
+        y += s(25)
+
+    data = BytesIO()
+    im.save(data, format="PNG", optimize=True, dpi=(300, 300))
+    return data.getvalue()
+
+
 def _render_grouped_reconciliation(
     entries: pd.DataFrame,
     g1_events: pd.DataFrame,
@@ -637,6 +798,23 @@ def _render_grouped_reconciliation(
             "until the corresponding VaccTrack reporting date is available. "
             "Hover over a value to see its verification cutoff."
         )
+    # PNG preserves the on-screen grouped headers, status coloring and the
+    # explanation; CSV remains numeric for spreadsheet calculations.
+    try:
+        png_data = _grouped_reconciliation_png(frame, context, start_date, end_date)
+        st.download_button(
+            "Download Municipality Reconciliation (PNG)",
+            data=png_data,
+            file_name=(
+                "SBI_Municipality_Reconciliation_Abra.png" if len(municipalities) > 1
+                else f"SBI_Municipality_Reconciliation_{municipalities[0].replace(' ', '_')}.png"
+            ),
+            mime="image/png",
+            key=f"{key_prefix}_grouped_recon_png",
+        )
+    except Exception as exc:
+        st.warning(f"The image export could not be prepared: {exc}. CSV download is still available.")
+
     st.download_button(
         "Download Municipality Reconciliation (CSV)",
         frame.to_csv(index=False).encode("utf-8-sig"),
