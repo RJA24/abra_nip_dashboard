@@ -12,6 +12,7 @@ CAMPAIGN_STATUS_KEY = "sbi_campaign_status"
 CAMPAIGN_START_KEY = "sbi_campaign_start_date"
 CAMPAIGN_END_KEY = "sbi_campaign_end_date"
 CAMPAIGN_ANNOUNCEMENT_KEY = "sbi_campaign_announcement"
+FINALIZATION_ENABLED_KEY = "sbi_rhu_finalization_enabled"
 CAMPAIGN_STATUSES = ("Pre-Implementation", "Live", "Post-Activity Correction", "Closed")
 
 
@@ -31,6 +32,7 @@ def get_campaign_config(supabase) -> dict[str, object]:
         "start_date": None,
         "end_date": None,
         "announcement": "",
+        "finalization_enabled": False,
     }
     try:
         response = (
@@ -38,7 +40,7 @@ def get_campaign_config(supabase) -> dict[str, object]:
             .select("setting_key,setting_value")
             .in_(
                 "setting_key",
-                [CAMPAIGN_STATUS_KEY, CAMPAIGN_START_KEY, CAMPAIGN_END_KEY, CAMPAIGN_ANNOUNCEMENT_KEY],
+                [CAMPAIGN_STATUS_KEY, CAMPAIGN_START_KEY, CAMPAIGN_END_KEY, CAMPAIGN_ANNOUNCEMENT_KEY, FINALIZATION_ENABLED_KEY],
             )
             .execute()
         )
@@ -57,6 +59,7 @@ def get_campaign_config(supabase) -> dict[str, object]:
         "start_date": _parse_date(values.get(CAMPAIGN_START_KEY)),
         "end_date": _parse_date(values.get(CAMPAIGN_END_KEY)),
         "announcement": values.get(CAMPAIGN_ANNOUNCEMENT_KEY, "").strip(),
+        "finalization_enabled": values.get(FINALIZATION_ENABLED_KEY, "false").casefold() == "true",
     }
 
 
@@ -68,6 +71,7 @@ def save_campaign_config(
     end_date: date | None,
     announcement: str,
     actor: str,
+    finalization_enabled: bool = False,
 ) -> None:
     if status not in CAMPAIGN_STATUSES:
         raise ValueError("Invalid SBI campaign status.")
@@ -97,6 +101,12 @@ def save_campaign_config(
         {
             "setting_key": CAMPAIGN_ANNOUNCEMENT_KEY,
             "setting_value": announcement.strip(),
+            "updated_at": now,
+            "updated_by": actor,
+        },
+        {
+            "setting_key": FINALIZATION_ENABLED_KEY,
+            "setting_value": "true" if finalization_enabled else "false",
             "updated_at": now,
             "updated_by": actor,
         },

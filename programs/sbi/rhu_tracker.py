@@ -528,6 +528,44 @@ def _grouped_reconciliation_rows(
     return pd.DataFrame(rows), context
 
 
+
+def _with_reconciliation_total(
+    frame: pd.DataFrame, context: dict[tuple[str, str], dict],
+) -> tuple[pd.DataFrame, dict[tuple[str, str], dict]]:
+    """Prepend TOTAL using the exact visible municipality-level comparisons.
+
+    A missing VaccTrack value must remain missing, never be counted as zero.
+    Pending doses are omitted from discrepancy totals by upstream freshness logic.
+    """
+    # The TOTAL line is useful for province-wide reconciliation; for a single
+    # municipality it would only duplicate that municipality's row.
+    if frame is None or len(frame) <= 1:
+        return frame, context
+    total: dict[str, object] = {"Municipality": "TOTAL"}
+    joined_context = dict(context)
+    for label, metric in RECON_GROUP_METRICS:
+        work_col = f"{label} | Workbook"
+        vt_col = f"{label} | VaccTrack"
+        diff_col = f"{label} | Discrepancy"
+        vt_values = pd.to_numeric(frame[vt_col], errors="coerce")
+        diff_values = pd.to_numeric(frame[diff_col], errors="coerce")
+        # Workbook already contains only values covered by that RHU's
+        # corresponding VaccTrack reporting date.
+        total[work_col] = int(pd.to_numeric(frame[work_col], errors="coerce").fillna(0).sum())
+        total[vt_col] = int(vt_values.sum()) if vt_values.notna().any() else None
+        total[diff_col] = int(diff_values.sum()) if diff_values.notna().any() else None
+        pending = sum(int(context.get((str(m), label), {}).get("pending") or 0) for m in frame["Municipality"])
+        missing = int(vt_values.isna().sum())
+        joined_context[("TOTAL", label)] = {
+            "pending": pending,
+            "cutoff": None,
+            "status": f"Sum of municipality-level verified comparisons; {missing} RHU(s) lack this VaccTrack report",
+            "metric": metric,
+            "no_vacctrack": not vt_values.notna().any(),
+        }
+    return pd.concat([pd.DataFrame([total]), frame], ignore_index=True), joined_context
+
+
 def _grouped_reconciliation_png(
     frame: pd.DataFrame,
     context: dict[tuple[str, str], dict],
@@ -617,7 +655,8 @@ def _grouped_reconciliation_png(
         "Discrepancy = RHU Workbook - VaccTrack. Workbook figures in this table "
         "include only activity dates covered by the latest matching VaccTrack "
         "report; newer workbook records are pending, not discrepancies. "
-        "Grade 5 is reported separately and is not included here."
+        "Grade 5 is reported separately and is not included here. "
+        "TOTAL sums verified municipality figures; missing VaccTrack reports are not assumed to be zero."
     )
     if start_date and end_date:
         period_text = f"Reporting period: {start_date:%b %d, %Y} - {end_date:%b %d, %Y}"
@@ -628,10 +667,11 @@ def _grouped_reconciliation_png(
     else:
         period_text = "Reporting period: All available dates"
 
+    only_municipalities = frame.loc[frame["Municipality"].ne("TOTAL")]
     scope = (
         "All Municipalities (Abra)"
-        if len(frame) > 1
-        else (str(frame.iloc[0]["Municipality"]) if not frame.empty else "No municipalities")
+        if len(only_municipalities) > 1
+        else (str(only_municipalities.iloc[0]["Municipality"]) if not only_municipalities.empty else "No municipalities")
     )
     # Height can vary when the note wraps; draw on a temporary canvas to
     # measure the same text with the same font before allocating final image.
@@ -642,7 +682,8 @@ def _grouped_reconciliation_png(
     bottom_notes_y = table_y + top_header_h + sub_header_h + len(frame) * row_h + s(23)
     footer_lines = [
         "* Workbook doses marked with an asterisk are pending VaccTrack verification and excluded from discrepancies.",
-        "- means no VaccTrack report is available; N/A means a discrepancy cannot be calculated."
+        "- means no VaccTrack report is available; N/A means a discrepancy cannot be calculated.",
+        "TOTAL sums verified municipality comparisons only. Missing VaccTrack reports are not treated as zeros."
     ]
     footer_text = [line for item in footer_lines for line in wrap_line(probe, item, info_font, table_width)]
     height = bottom_notes_y + len(footer_text) * s(25) + s(35)
@@ -680,7 +721,8 @@ def _grouped_reconciliation_png(
     y += top_header_h + sub_header_h
     for row_idx, (_, row) in enumerate(frame.iterrows()):
         muni = str(row["Municipality"])
-        shade = "#ffffff" if row_idx % 2 == 0 else "#f6f9fb"
+        is_total = muni == "TOTAL"
+        shade = "#e7f0f6" if is_total else ("#ffffff" if row_idx % 2 == 0 else "#f6f9fb")
         rect(left, y, left + muni_w, y + row_h, shade)
         draw.text((left + s(10), y + s(8)), muni, font=body_bold_font, fill=ink)
         for g_idx, (label, _) in enumerate(RECON_GROUP_METRICS):
@@ -701,7 +743,7 @@ def _grouped_reconciliation_png(
             for j, value in enumerate(texts):
                 cx = left + muni_w + (g_idx * 3 + j) * col_w
                 rect(cx, y, cx + col_w, y + row_h, shade)
-                f = body_bold_font if j == 2 else cell_font
+                f = body_bold_font if is_total or j == 2 else cell_font
                 fill = diff_color if j == 2 else ink
                 bounds = draw.textbbox((0, 0), value, font=f)
                 text_width = bounds[2] - bounds[0]
@@ -740,11 +782,13 @@ def _render_grouped_reconciliation(
         entries, g1_events, g7_events, hpv_events,
         municipalities, start_date, end_date, g4_metric,
     )
+    frame, context = _with_reconciliation_total(frame, context)
     st.caption(
         "Discrepancy = RHU Workbook − VaccTrack. Workbook figures in this table "
         "include only activity dates covered by the latest matching VaccTrack "
         "report; newer workbook records are pending, not discrepancies. "
-        "Grade 5 is reported separately and is not included here."
+        "Grade 5 is reported separately and is not included here. "
+        "TOTAL sums verified municipality figures; missing VaccTrack reports are not assumed to be zero."
     )
 
     th_top = (
@@ -774,16 +818,18 @@ def _render_grouped_reconciliation(
     pending_total = 0
     for ri, (_, row) in enumerate(frame.iterrows()):
         municipality = str(row["Municipality"])
-        shade = '#fff' if ri % 2 == 0 else '#f6f9fb'
-        html.append(f'<tr style="background:{shade};">')
+        is_total = municipality == "TOTAL"
+        shade = '#e7f0f6' if is_total else ('#fff' if ri % 2 == 0 else '#f6f9fb')
+        html.append(f'<tr style="background:{shade};font-weight:{"800" if is_total else "normal"};">')
         html.append(
             f'<th scope="row" style="padding:7px 10px;border:1px solid #d1dce2;'
-            f'text-align:left;white-space:nowrap;font-weight:600;">{escape(municipality)}</th>'
+            f'text-align:left;white-space:nowrap;font-weight:{"800" if is_total else "600"};">{escape(municipality)}</th>'
         )
         for label, _ in RECON_GROUP_METRICS:
             meta = context[(municipality, label)]
             pending = meta["pending"]
-            pending_total += pending
+            if not is_total:
+                pending_total += pending
             cutoff = meta["cutoff"]
             cutoff_text = cutoff.strftime("%b %d, %Y") if cutoff else "No current VaccTrack report"
             tip = escape(
@@ -797,7 +843,7 @@ def _render_grouped_reconciliation(
             )
             html.append(
                 f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
-                f'text-align:right;white-space:nowrap;">{wb:,}{pending_marker}</td>'
+                f'text-align:right;white-space:nowrap;font-weight:{"800" if is_total else "400"};">{wb:,}{pending_marker}</td>'
             )
             vt = row[f"{label} | VaccTrack"]
             diff = row[f"{label} | Discrepancy"]
@@ -811,11 +857,11 @@ def _render_grouped_reconciliation(
                 diff_color = '#b42318' if value else '#475569'
             html.append(
                 f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
-                f'text-align:right;white-space:nowrap;">{vt_text}</td>'
+                f'text-align:right;white-space:nowrap;font-weight:{"800" if is_total else "400"};">{vt_text}</td>'
             )
             html.append(
                 f'<td title="{tip}" style="padding:7px 9px;border:1px solid #d1dce2;'
-                f'text-align:right;white-space:nowrap;font-weight:600;color:{diff_color};">'
+                f'text-align:right;white-space:nowrap;font-weight:{"800" if is_total else "600"};color:{diff_color};">'
                 f'{diff_text}</td>'
             )
         html.append('</tr>')

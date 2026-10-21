@@ -1142,6 +1142,10 @@ def _record_submission(
 
 
 def finalize_current_submission(supabase, municipality: str, username: str) -> bool:
+    # Recheck immediately before the write, not just when rendering the button.
+    config = get_campaign_config(supabase)
+    if config.get("status") not in {"Live", "Post-Activity Correction"} or not config.get("finalization_enabled", False):
+        raise ValueError("Final RHU submission is disabled by the System Admin.")
     current = get_current_submission(supabase, municipality)
     if not current or current.get("id") is None:
         return False
@@ -1151,7 +1155,7 @@ def finalize_current_submission(supabase, municipality: str, username: str) -> b
             "finalized_at": datetime.now(MANILA_TZ).isoformat(),
             "finalized_by": username,
         }
-    ).eq("id", int(current["id"])).execute()
+    ).eq("id", int(current["id"])).eq("is_current", True).eq("is_finalized", False).execute()
     return True
 
 
@@ -1490,7 +1494,9 @@ def render_workbook_upload(
 
     current = get_current_submission(supabase, municipality)
     finalization_status = str(campaign.get("status") or "Pre-Implementation")
-    if current and not current.get("is_finalized") and finalization_status in {"Live", "Post-Activity Correction"}:
+    if (current and not current.get("is_finalized")
+            and finalization_status in {"Live", "Post-Activity Correction"}
+            and campaign.get("finalization_enabled", False)):
         st.divider()
         expander_label = (
             "When corrections are complete — Submit Final RHU Report"
@@ -1512,7 +1518,8 @@ def render_workbook_upload(
                 "the System Administrator must reopen the RHU submission first."
             )
             final_confirm = st.checkbox(
-                "I confirm that our RHU has finished SBI reporting for the activity and this is our final workbook.",
+                "I confirm ALL SBI activities and reporting for our RHU are finished. "
+                "I understand this is NOT today's report and locks all future uploads unless an admin reopens it.",
                 key="sbi_finalize_confirm",
             )
             if st.button(

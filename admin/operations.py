@@ -35,7 +35,7 @@ from programs.sbi.production_readiness import render_all_rhu_workbook_package, r
 
 
 MANILA_TZ = pytz.timezone("Asia/Manila")
-APP_VERSION = "v5.23.0"
+APP_VERSION = "v5.23.1"
 FEEDBACK_TABLE = "sbi_user_feedback"
 
 
@@ -312,6 +312,7 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
     status = str(config.get("status") or "Pre-Implementation")
     start_config = config.get("start_date")
     end_config = config.get("end_date")
+    finalization_enabled = bool(config.get("finalization_enabled", False))
     if start_config and end_config:
         range_label = f"{start_config:%b %d} – {end_config:%b %d, %Y}"
     else:
@@ -364,7 +365,7 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
     if status == "Pre-Implementation":
         st.info("Testing and workbook uploads are allowed. Use this status while preparing RHUs and cleaning test data.")
     elif status == "Live":
-        st.success("SBI is live. RHU workbook uploads and final submission are enabled.")
+        st.success("SBI is live. RHUs may continue daily workbook uploads.")
         if end_config and today > end_config:
             st.warning(
                 f"The configured SBI activity end date was {end_config:%b %d, %Y}. "
@@ -373,7 +374,8 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
     elif status == "Post-Activity Correction":
         st.info(
             "Field implementation is finished, but RHUs may still upload corrected or late workbooks. "
-            "Activity dates must remain within the configured SBI activity date range. Final submission remains available."
+            "Activity dates must remain within the configured SBI activity date range. "
+            "Final submission is controlled separately by the System Admin."
         )
     else:
         st.warning("SBI is closed. RHUs can view their data and reconciliation, but workbook uploads are blocked.")
@@ -452,6 +454,18 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
                 disabled=read_only,
                 help="Used only when official activity date enforcement is enabled.",
             )
+        st.markdown("**RHU Final Report Submission**")
+        allow_finalization = st.checkbox(
+            "Enable final RHU submission (locks further uploads for an RHU)",
+            value=finalization_enabled,
+            disabled=read_only,
+            help="Disabled by default. While disabled, RHUs cannot finalize even when SBI is Live. "
+                 "Enable only once you are ready to accept final RHU reports after the activity.",
+        )
+        st.caption(
+            "Leave this OFF during daily SBI reporting. RHU finalization will be hidden until you explicitly enable it. "
+            "Turning it OFF does not reopen already finalized RHUs; reopen those individually under RHU Submissions."
+        )
         announcement = st.text_area(
             "RHU Announcement",
             value=str(config.get("announcement") or ""),
@@ -489,6 +503,7 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
                 end_date=end_date if enforce_dates else None,
                 announcement=announcement,
                 actor=str(actor),
+                finalization_enabled=bool(allow_finalization),
             )
         except Exception as exc:
             st.error(f"Campaign settings could not be saved: {exc}")
@@ -507,6 +522,8 @@ def render_sbi_control(supabase, audit_callback=None, read_only: bool = False) -
                 changes.append(f"activity_dates={old_start}..{old_end}->{new_start}..{new_end}")
             if str(announcement or "").strip() != str(config.get("announcement") or "").strip():
                 changes.append("announcement=updated")
+            if bool(allow_finalization) != finalization_enabled:
+                changes.append(f"rhu_finalization={'enabled' if allow_finalization else 'disabled'}")
             if going_live and not prelaunch_summary.empty and keep_prelaunch_data:
                 changes.append("prelaunch_data=reviewed_and_kept")
             audit_callback(
