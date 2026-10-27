@@ -95,6 +95,237 @@ def _filter_municipality_rows(df: pd.DataFrame, municipality: str) -> pd.DataFra
     return df.loc[row_keys.eq(target_key)].copy()
 
 
+# Current SBI vaccine reporting: G4 HPV uses the single HPV Dose 1 field.
+# Each option maps to the eligible grade target and its accomplishment column.
+_SBI_REMAINING_ANTIGENS = {
+    "MR (Grades 1 & 7)": (("G1 Target", "g1", "MR Doses"), ("G7 Target", "g7", "MR Doses")),
+    "Td (Grades 1 & 7)": (("G1 Target", "g1", "Td Doses"), ("G7 Target", "g7", "Td Doses")),
+    "HPV (Grade 4)": (("G4 Target", "g4", "HPV Dose 1"),),
+    "MR (Grade 1)": (("G1 Target", "g1", "MR Doses"),),
+    "MR (Grade 7)": (("G7 Target", "g7", "MR Doses"),),
+    "Td (Grade 1)": (("G1 Target", "g1", "Td Doses"),),
+    "Td (Grade 7)": (("G7 Target", "g7", "Td Doses"),),
+}
+
+
+def _exec_school_key(frame: pd.DataFrame) -> pd.Series:
+    """Match denominator and accomplishment school groups consistently."""
+    school_id = (
+        frame["School ID"].astype("string").fillna("").str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+    school_name = frame["School Name"].astype("string").fillna("").str.strip().str.casefold()
+    municipality = frame["Municipality"].map(canonical_municipality_name).astype("string").fillna("")
+    fallback = "NAME:" + municipality.str.casefold() + ":" + school_name
+    return school_id.where(school_id.eq(""), "ID:" + school_id).where(school_id.ne(""), fallback)
+
+
+def _build_exec_remaining_chart_rows(
+    targets: pd.DataFrame,
+    events: dict[str, pd.DataFrame],
+    antigen: str,
+    *,
+    municipality: str | None,
+) -> pd.DataFrame:
+    """Produce denominator-consistent vaccinated/remaining categories for one antigen.
+
+    Only target-eligible school/grade entries contribute to vaccinated counts,
+    as in the Executive Summary coverage metrics.  A missing/zero denominator
+    is labelled N/A rather than being reported as zero-percent coverage.
+    """
+    if antigen not in _SBI_REMAINING_ANTIGENS:
+        raise ValueError("Unknown SBI antigen selection")
+    school_scope = municipality is not None
+    target_frame = targets.copy() if isinstance(targets, pd.DataFrame) else pd.DataFrame()
+    if school_scope and not target_frame.empty:
+        target_frame = _filter_municipality_rows(target_frame, municipality)
+    target_sums: dict[str, float] = {}
+    vaccinated_sums: dict[str, float] = {}
+    display_names: dict[str, str] = {}
+
+    for target_column, grade, dose_column in _SBI_REMAINING_ANTIGENS[antigen]:
+        if target_frame.empty or target_column not in target_frame.columns:
+            continue
+        eligible = target_frame.copy()
+        eligible[target_column] = pd.to_numeric(eligible[target_column], errors="coerce")
+        eligible = eligible.loc[eligible[target_column].notna()].copy()
+        if eligible.empty:
+            continue
+        if school_scope:
+            eligible["_category"] = _exec_school_key(eligible)
+            eligible = eligible.loc[eligible["_category"].ne("NAME::")].copy()
+            for _, row in eligible.iterrows():
+                display_names.setdefault(row["_category"], str(row.get("School Name") or row["_category"]))
+        else:
+            eligible["_category"] = eligible["Municipality"].map(canonical_municipality_name)
+
+        for category, total in eligible.groupby("_category", dropna=False)[target_column].sum(min_count=1).items():
+            if pd.notna(total):
+                target_sums[str(category)] = target_sums.get(str(category), 0.0) + float(total)
+
+        source = events.get(grade)
+        if source is None or source.empty or dose_column not in source.columns:
+            continue
+        if school_scope:
+            source = _filter_municipality_rows(source, municipality)
+        # Apply the same eligibility filter used for other coverage visuals.
+        matched = filter_events_to_target_schools(source, eligible)
+        if matched.empty:
+            continue
+        matched = matched.copy()
+        matched[dose_column] = pd.to_numeric(matched[dose_column], errors="coerce").fillna(0)
+        matched["_category"] = (
+            _exec_school_key(matched)
+            if school_scope else matched["Municipality"].map(canonical_municipality_name)
+        )
+        for category, count in matched.groupby("_category", dropna=False)[dose_column].sum().items():
+            vaccinated_sums[str(category)] = vaccinated_sums.get(str(category), 0.0) + float(count)
+
+    # Province scope always displays all 27 RHUs; school scope shows schools
+    # with a selected-basis target, not every school in the raw VaccTrack feed.
+    categories = (
+        [canonical_municipality_name(name) for name in ABRA_MUNIS]
+        if not school_scope else sorted(target_sums, key=lambda key: display_names.get(key, key))
+    )
+    rows: list[dict[str, object]] = []
+    for category in categories:
+        target = target_sums.get(category)
+        vaccinated = vaccinated_sums.get(category, 0.0) if target is not None else 0.0
+        valid_target = target is not None and target > 0
+        raw_label = display_names.get(category, category)
+        rows.append({
+            "Category": raw_label,
+            "Category Key": category,
+            "Vaccinated": vaccinated,
+            "Remaining Target": max(float(target) - vaccinated, 0.0) if target is not None else 0.0,
+            "Total Target": float(target) if target is not None else np.nan,
+            "Coverage %": vaccinated / float(target) * 100 if valid_target else np.nan,
+            "Above Target": max(vaccinated - float(target), 0.0) if target is not None else 0.0,
+        })
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    # Avoid visually merging different schools with the same name.
+    if school_scope:
+        duplicates = result["Category"].duplicated(keep=False)
+        result.loc[duplicates, "Category"] = (
+            result.loc[duplicates, "Category"] + " [" +
+            result.loc[duplicates, "Category Key"].astype(str).str.removeprefix("ID:") + "]"
+        )
+    result.loc[result["Total Target"].isna() | result["Total Target"].le(0), "Category"] += " (N/A)"
+    return result.sort_values(["Vaccinated", "Coverage %", "Category"], ascending=[False, False, True], na_position="last").reset_index(drop=True)
+
+
+def _render_exec_vaccinated_remaining(
+    targets: pd.DataFrame,
+    g1: pd.DataFrame,
+    g7: pd.DataFrame,
+    hpv: pd.DataFrame,
+    *,
+    municipality: str | None,
+    source_label: str,
+    target_basis: str,
+    period_label: str,
+) -> None:
+    """Render a DMO-requested workload chart, including export metadata."""
+    st.markdown("#### Vaccinated vs Remaining Target")
+    antigen = st.selectbox(
+        "Select antigen:",
+        list(_SBI_REMAINING_ANTIGENS),
+        key="sbi_exec_remaining_antigen",
+        help="Choose combined MR/Td, an individual grade, or Grade 4 single-dose HPV.",
+    )
+    scope = "All Municipalities (Abra)" if municipality is None else f"{municipality}, Abra — by School"
+    frame = _build_exec_remaining_chart_rows(
+        targets, {"g1": g1, "g7": g7, "g4": hpv}, antigen,
+        municipality=municipality,
+    )
+    if frame.empty:
+        st.info("No school target data are available for this antigen and selection.")
+        return
+
+    no_target = int((frame["Total Target"].isna() | frame["Total Target"].le(0)).sum())
+    if no_target:
+        st.caption(
+            f"{no_target} row(s) without a positive target are marked N/A. "
+            "Accomplishments from schools without valid selected-basis targets are excluded from this coverage chart."
+        )
+    if frame["Above Target"].gt(0).any():
+        st.caption(
+            "A vaccinated count can exceed the selected target; vaccinated figures remain unchanged "
+            "and Remaining Target stays at zero."
+        )
+
+    max_count = pd.to_numeric(frame[["Total Target", "Vaccinated"]].stack(), errors="coerce").max()
+    max_count = max(float(max_count) if pd.notna(max_count) else 0.0, 1.0)
+    ylabels = frame["Category"].tolist()
+    fig = go.Figure()
+    for col, color in [("Vaccinated", "#17688b"), ("Remaining Target", "#ec722c")]:
+        values = frame[col].tolist()
+        fig.add_trace(go.Bar(
+            name=col,
+            x=values,
+            y=ylabels,
+            orientation="h",
+            marker_color=color,
+            text=[f"{v:,.0f}" if v >= max_count * 0.035 else "" for v in values],
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont=dict(color="white", size=12),
+            customdata=np.stack([
+                frame["Total Target"].fillna(-1).to_numpy(),
+                frame["Coverage %"].fillna(-1).to_numpy(),
+            ], axis=-1),
+            hovertemplate=(
+                "<b>%{y}</b><br>" + col + ": %{x:,.0f}<br>"
+                "Total Target: %{customdata[0]:,.0f}<br>"
+                "Coverage: %{customdata[1]:.1f}%<extra></extra>"
+            ),
+        ))
+    filename_antigen = antigen.replace(" ", "_").replace("(", "").replace(")", "").replace("&", "and")
+    subtitle = (
+        f"Antigen: {antigen} | Accomplishment source: {source_label} | Target basis: {target_basis}"
+        f"<br>Scope: {scope} | Reporting period: {period_label}"
+        "<br>Remaining Target = max(Total Target − Vaccinated, 0). "
+        "Grade 5 is monitored separately."
+    )
+    fig.update_layout(
+        title=dict(text=f"<b>SBI 2026 | Vaccinated vs Remaining Target</b><br><sup>{subtitle}</sup>", x=0, xanchor="left", font=dict(size=17)),
+        barmode="stack",
+        height=max(550, min(1700, len(frame) * 39 + 235)),
+        plot_bgcolor="rgba(0,0,0,0)",
+        dragmode=False,
+        xaxis_title="Number of students",
+        yaxis_title="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
+        margin=dict(l=15, r=50, t=132, b=52),
+        bargap=0.20,
+    )
+    fig.update_yaxes(categoryorder="array", categoryarray=list(reversed(ylabels)), automargin=True)
+    fig.update_xaxes(range=[0, max_count * 1.04])
+    st.plotly_chart(
+        fig,
+        width="stretch",
+        key="sbi_exec_vaccinated_vs_remaining",
+        config=plotly_export_config(
+            f"SBI_Vaccinated_vs_Remaining_{filename_antigen}",
+            scale=3,
+            width=1450,
+            height=max(730, min(1800, len(frame) * 45 + 240)),
+        ),
+    )
+    with st.expander("View and download vaccinated vs remaining target figures", expanded=False):
+        table = frame[["Category", "Vaccinated", "Remaining Target", "Total Target", "Coverage %", "Above Target"]].rename(columns={"Category": "Municipality" if municipality is None else "School"})
+        st.dataframe(table, width="stretch", hide_index=True)
+        st.download_button(
+            "Download Vaccinated vs Remaining Target (CSV)",
+            table.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"SBI_Vaccinated_vs_Remaining_{filename_antigen}.csv",
+            mime="text/csv",
+            key="sbi_exec_remaining_csv",
+        )
+
+
 def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -827,6 +1058,18 @@ def render_sbi_dashboard(supabase) -> None:
                         mime='text/csv',
                         key='sbi_exec_daily_summary_download'
                     )
+
+            st.divider()
+            _render_exec_vaccinated_remaining(
+                exec_target_view,
+                g1_exec_cov,
+                g7_exec_cov,
+                hpv_exec_cov,
+                municipality=selected_muni_filter,
+                source_label=exec_data_source,
+                target_basis=exec_target_basis,
+                period_label=period_label,
+            )
 
             st.divider()
             exec_targets = exec_target_view.copy()
