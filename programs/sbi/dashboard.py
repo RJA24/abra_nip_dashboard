@@ -391,26 +391,51 @@ def _render_exec_vaccinated_remaining(
             )
 
     filename_antigen = antigen.replace(" ", "_").replace("(", "").replace(")", "").replace("&", "and")
-    subtitle = (
-        f"Antigen: {antigen} | Display: {display_as}"
-        f"<br>Accomplishment source: {source_label} | Target basis: {target_basis}"
-        f"<br>Scope: {scope} | Reporting period: {period_label}"
-        f"<br>{display_explanation} Grade 5 is monitored separately."
+
+    # Keep the export context INSIDE the Plotly image, but outside the plot
+    # area. A multi-line layout.title previously overlapped the first bar when
+    # the browser or PNG renderer recalculated the title's line height.
+    # Reserve a fixed pixel-height header instead of relying on auto margins.
+    from html import escape as _html_escape
+
+    header_lines = (
+        f"<b>Antigen:</b> {_html_escape(antigen)}  |  "
+        f"<b>Display:</b> {_html_escape(display_as)}"
+        f"<br><b>Accomplishment source:</b> {_html_escape(source_label)}  |  "
+        f"<b>Target basis:</b> {_html_escape(target_basis)}"
+        f"<br><b>Scope:</b> {_html_escape(scope)}"
+        f"<br><b>Reporting period:</b> {_html_escape(period_label)}"
+        f"<br>{_html_escape(display_explanation)} Grade 5 is monitored separately."
     )
     fig.update_layout(
-        title=dict(
-            text=f"<b>SBI 2026 | Vaccinated vs Remaining Target</b><br><sup>{subtitle}</sup>",
-            x=0, xanchor="left", font=dict(size=17),
-        ),
+        title=None,
         barmode="stack",
-        height=max(550, min(1700, len(view) * 39 + 235)),
+        height=max(620, min(1800, len(view) * 39 + 330)),
         plot_bgcolor="rgba(0,0,0,0)",
         dragmode=False,
         xaxis_title=x_axis_title,
         yaxis_title="",
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
-        margin=dict(l=15, r=65, t=145, b=52),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.025,
+            xanchor="right", x=1,
+        ),
+        # 250px keeps five lines of context and the legend clear of the bars.
+        margin=dict(l=15, r=65, t=250, b=55),
         bargap=0.20,
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=216, xanchor="left", yanchor="top",
+        text="<b>SBI 2026 | Vaccinated vs Remaining Target</b>",
+        font=dict(size=19, color="#172e43"),
+        showarrow=False, align="left",
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=177, xanchor="left", yanchor="top",
+        text=header_lines,
+        font=dict(size=13, color="#334155"),
+        showarrow=False, align="left",
     )
     fig.update_yaxes(categoryorder="array", categoryarray=list(reversed(ylabels)), automargin=True)
     fig.update_xaxes(range=[0, chart_max * 1.09], ticksuffix="%" if coverage_view else "")
@@ -422,7 +447,7 @@ def _render_exec_vaccinated_remaining(
         config=plotly_export_config(
             f"SBI_Vaccinated_vs_Remaining_{filename_antigen}{suffix}",
             scale=3, width=1450,
-            height=max(730, min(1800, len(view) * 45 + 260)),
+            height=max(830, min(1900, len(view) * 45 + 350)),
         ),
     )
     with st.expander("View and download vaccinated vs remaining target figures", expanded=False):
