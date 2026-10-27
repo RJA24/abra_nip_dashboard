@@ -9,10 +9,12 @@ rows in the offline RHU workbook.
 from __future__ import annotations
 
 from datetime import date
+from html import escape
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from core.config import ABRA_MUNIS
@@ -139,6 +141,236 @@ def _reason_summary(entries: pd.DataFrame) -> pd.DataFrame:
     ])
 
 
+
+def _build_g5_remaining_rows(
+    entries: pd.DataFrame, targets: pd.DataFrame, selected_muni: str | None,
+) -> pd.DataFrame:
+    """Build current G5 HPV1/Actual Target figures, excluding un-targeted doses.
+
+    Municipal view includes all 27 RHUs; selecting an RHU switches to schools.
+    Missing or zero targets remain N/A, not a falsely reported 0% coverage.
+    """
+    if selected_muni is None:
+        summary = _municipality_summary(entries, targets)
+        rows = summary.rename(columns={
+            "Municipality": "Category", "G5 Target": "Total Target",
+            "HPV Vaccinated": "Vaccinated", "HPV Coverage %": "Coverage %",
+        })[["Category", "Total Target", "Vaccinated", "Coverage %"]].copy()
+    else:
+        # The existing school-level summary is based on submitted G5 rows;
+        # use only target-eligible entries to keep the coverage numerator valid.
+        summary = _school_summary(_targeted_entries(entries, targets), targets)
+        if summary.empty:
+            return pd.DataFrame(columns=["Category", "Total Target", "Vaccinated", "Coverage %", "Remaining Target", "Above Target"])
+        rows = summary.rename(columns={
+            "School Name": "Category", "G5 Target": "Total Target",
+            "HPV Vaccinated": "Vaccinated", "HPV Coverage %": "Coverage %",
+        })[["Category", "School ID", "Total Target", "Vaccinated", "Coverage %"]].copy()
+        # Prevent two schools with identical names from appearing as one label.
+        ambiguous = rows["Category"].duplicated(keep=False)
+        rows.loc[ambiguous, "Category"] = (
+            rows.loc[ambiguous, "Category"].astype(str)
+            + " [" + rows.loc[ambiguous, "School ID"].astype(str) + "]"
+        )
+        rows = rows.drop(columns=["School ID"])
+
+    rows["Total Target"] = pd.to_numeric(rows["Total Target"], errors="coerce")
+    rows["Vaccinated"] = pd.to_numeric(rows["Vaccinated"], errors="coerce").fillna(0)
+    # 0 is a valid entered G5 target; it still cannot serve as a denominator.
+    has_target = rows["Total Target"].gt(0)
+    rows["Coverage %"] = rows["Vaccinated"].div(rows["Total Target"].where(has_target)).mul(100)
+    rows["Remaining Target"] = (rows["Total Target"] - rows["Vaccinated"]).clip(lower=0).fillna(0)
+    rows["Above Target"] = (rows["Vaccinated"] - rows["Total Target"]).clip(lower=0).fillna(0)
+    rows.loc[~has_target, "Category"] = rows.loc[~has_target, "Category"].astype(str) + " (N/A)"
+    return rows.sort_values(
+        ["Vaccinated", "Coverage %", "Category"],
+        ascending=[False, False, True], na_position="last",
+    ).reset_index(drop=True)
+
+
+def _render_g5_vaccinated_remaining(
+    entries: pd.DataFrame,
+    targets: pd.DataFrame,
+    selected_muni: str | None,
+    start_date: date | None,
+    end_date: date | None,
+) -> None:
+    """DMO-style stacked counts/coverage chart for single-dose Grade 5 HPV."""
+    st.markdown("#### Grade 5 HPV — Vaccinated vs Remaining Target")
+    display_as = st.selectbox(
+        "Display as:",
+        ("Vaccination Count", "Coverage (%)"),
+        key="sbi_g5_remaining_display",
+        help="Compare Grade 5 single-dose HPV vaccinated and remaining target as counts or as percentages.",
+    )
+    rows = _build_g5_remaining_rows(entries, targets, selected_muni)
+    if rows.empty:
+        st.info("No Grade 5 target records are available for this selection.")
+        return
+    missing = rows["Total Target"].isna() | rows["Total Target"].le(0)
+    if missing.any():
+        st.caption(f"{int(missing.sum()):,} municipality/school row(s) lack a positive G5 target and are shown as N/A.")
+    if rows["Above Target"].gt(0).any():
+        st.caption("Actual vaccinated counts can exceed the selected target; remaining target stays at zero.")
+
+    as_pct = display_as == "Coverage (%)"
+    view = rows.copy()
+    if as_pct:
+        view["Vaccinated Plot"] = view["Coverage %"].clip(lower=0).fillna(0)
+        view["Remaining Plot"] = (100.0 - view["Coverage %"]).clip(lower=0).fillna(0)
+        view = view.sort_values(
+            ["Coverage %", "Vaccinated", "Category"],
+            ascending=[False, False, True], na_position="last",
+        ).reset_index(drop=True)
+        legend = ("Vaccinated Coverage (%)", "Remaining Target (%)")
+        axis_label, suffix = "Coverage of G5 target (%)", "_Coverage"
+        explanation = (
+            "Coverage = Vaccinated / G5 Target × 100; "
+            "Remaining (%) = max(100 − Coverage, 0)."
+        )
+    else:
+        view["Vaccinated Plot"] = view["Vaccinated"]
+        view["Remaining Plot"] = view["Remaining Target"]
+        legend = ("Vaccinated", "Remaining Target")
+        axis_label, suffix = "Number of students", "_Count"
+        explanation = "Remaining Target = max(G5 Target − Vaccinated, 0)."
+
+    maximum = float((view["Vaccinated Plot"] + view["Remaining Plot"]).max())
+    axis_max = max(100.0 if as_pct else 1.0, maximum)
+    threshold = axis_max * 0.035
+    ylabels = view["Category"].tolist()
+
+    def num_text(value: float) -> str:
+        return f"{value:.1f}%" if as_pct else f"{value:,.0f}"
+
+    def fmt_int(value: object) -> str:
+        return f"{float(value):,.0f}" if pd.notna(value) else "N/A"
+
+    meta = np.array([
+        [fmt_int(row["Vaccinated"]), fmt_int(row["Remaining Target"]),
+         fmt_int(row["Total Target"]) if pd.notna(row["Total Target"]) and row["Total Target"] > 0 else "N/A",
+         f"{row['Coverage %']:.1f}%" if pd.notna(row["Coverage %"]) else "N/A"]
+        for _, row in view.iterrows()
+    ], dtype=object)
+    fig = go.Figure()
+    for column, label, color in (
+        ("Vaccinated Plot", legend[0], "#17688b"),
+        ("Remaining Plot", legend[1], "#ec722c"),
+    ):
+        fig.add_trace(go.Bar(
+            name=label,
+            x=view[column].to_list(),
+            y=ylabels,
+            orientation="h",
+            marker_color=color,
+            text=[num_text(float(n)) if float(n) > 0 and float(n) >= threshold else ""
+                  for n in view[column]],
+            textposition="inside",
+            insidetextanchor="middle",
+            textfont=dict(size=12, color="white"),
+            customdata=meta,
+            hovertemplate=(
+                "<b>%{y}</b><br>Vaccinated: %{customdata[0]}"
+                "<br>Remaining Target: %{customdata[1]}"
+                "<br>G5 Target: %{customdata[2]}"
+                "<br>Coverage: %{customdata[3]}<extra></extra>"
+            ),
+        ))
+
+    # Small positive values must be visible in the PNG, even next to big targets.
+    for _, row in view.iterrows():
+        vaccinated = float(row["Vaccinated Plot"])
+        remaining = float(row["Remaining Plot"])
+        tiny_vaccinated = 0 < vaccinated < threshold
+        tiny_remaining = 0 < remaining < threshold
+        if tiny_vaccinated and tiny_remaining:
+            callouts = [(
+                vaccinated + remaining,
+                f"<b>Vaccinated: {num_text(vaccinated)} | Remaining: {num_text(remaining)}</b>",
+                "#124b69",
+            )]
+        else:
+            callouts = []
+            if tiny_vaccinated:
+                callouts.append((vaccinated, f"<b>{num_text(vaccinated)}</b>", "#124b69"))
+            if tiny_remaining:
+                callouts.append((vaccinated + remaining, f"<b>{num_text(remaining)}</b>", "#9c3f15"))
+        for xpos, txt, color in callouts:
+            fig.add_annotation(
+                x=xpos, y=str(row["Category"]), xref="x", yref="y",
+                text=txt, showarrow=False, xanchor="left", xshift=5,
+                font=dict(size=12, color=color),
+                bgcolor="rgba(255,255,255,0.97)",
+                bordercolor="rgba(148,163,184,0.6)", borderwidth=1, borderpad=2,
+            )
+
+    if start_date and end_date:
+        reporting_period = f"{start_date:%b %d, %Y} to {end_date:%b %d, %Y}"
+    elif start_date:
+        reporting_period = f"From {start_date:%b %d, %Y}"
+    elif end_date:
+        reporting_period = f"Through {end_date:%b %d, %Y}"
+    else:
+        reporting_period = "All available dates"
+    scope = "All Municipalities (Abra)" if selected_muni is None else f"{selected_muni}, Abra — by School"
+    header = (
+        "<b>Antigen:</b> HPV (Grade 5, single dose) | "
+        f"<b>Display:</b> {escape(display_as)}"
+        "<br><b>Accomplishment source:</b> RHU Workbook (operational/provisional)"
+        "<br><b>Target basis:</b> Actual Targets (Unvaccinated G5 Female)"
+        f"<br><b>Scope:</b> {escape(scope)}"
+        f"<br><b>Reporting period:</b> {escape(reporting_period)}"
+        f"<br>{escape(explanation)} Only G5 HPV Dose 1 is counted; G5 is not in VaccTrack."
+    )
+    fig.update_layout(
+        title=None,
+        barmode="stack",
+        height=max(650, min(1900, len(view) * 40 + 345)),
+        plot_bgcolor="rgba(0,0,0,0)",
+        dragmode=False,
+        xaxis_title=axis_label, yaxis_title="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.025, xanchor="right", x=1),
+        margin=dict(l=15, r=70, t=265, b=60),
+        bargap=0.20,
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=230, xanchor="left", yanchor="top",
+        text="<b>SBI 2026 | Grade 5 HPV Vaccinated vs Remaining Target</b>",
+        font=dict(size=19, color="#172e43"),
+        showarrow=False, align="left",
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=188, xanchor="left", yanchor="top",
+        text=header,
+        font=dict(size=13, color="#334155"),
+        showarrow=False, align="left",
+    )
+    fig.update_yaxes(categoryorder="array", categoryarray=list(reversed(ylabels)), automargin=True)
+    fig.update_xaxes(range=[0, axis_max * 1.09], ticksuffix="%" if as_pct else "")
+
+    st.plotly_chart(
+        fig, width="stretch", key="sbi_g5_vaccinated_remaining",
+        config=plotly_export_config(
+            f"SBI_G5_Vaccinated_vs_Remaining{suffix}",
+            scale=3, width=1450,
+            height=max(860, min(2000, len(view) * 46 + 380)),
+        ),
+    )
+    with st.expander("View and download Grade 5 vaccinated vs remaining figures", expanded=False):
+        table = view[[
+            "Category", "Vaccinated", "Remaining Target", "Total Target", "Coverage %", "Above Target",
+        ]].rename(columns={"Category": "Municipality" if selected_muni is None else "School"})
+        st.dataframe(table, width="stretch", hide_index=True)
+        st.download_button(
+            "Download Grade 5 Vaccinated vs Remaining (CSV)",
+            table.to_csv(index=False).encode("utf-8-sig"),
+            file_name=f"SBI_G5_Vaccinated_vs_Remaining{suffix}.csv",
+            mime="text/csv", key="sbi_g5_remaining_csv",
+        )
+
+
 def render_g5_dashboard(
     entries: pd.DataFrame,
     actual_targets: pd.DataFrame,
@@ -216,6 +448,13 @@ def render_g5_dashboard(
 
     if g5.empty:
         st.info("No Grade 5 RHU workbook accomplishments are available for this selection and reporting period yet.")
+        # Even before the first upload, RHUs can review the remaining G5
+        # target workload from the established Actual Targets roster.
+        if not target_view.empty:
+            st.divider()
+            _render_g5_vaccinated_remaining(
+                g5, target_view, selected_muni, start_date, end_date,
+            )
         return
 
     if target_view.empty:
@@ -300,6 +539,11 @@ def render_g5_dashboard(
         )
     else:
         st.caption("SBI Grade 5 monitoring is school-based. For a specific municipality, performance is shown by school rather than by barangay.")
+
+    st.divider()
+    _render_g5_vaccinated_remaining(
+        g5, target_view, selected_muni, start_date, end_date,
+    )
 
     trend = g5.rename(columns={"activity_date": "Report Date", "hpv_dose1": "HPV Vaccinated"})
     render_daily_trend(
