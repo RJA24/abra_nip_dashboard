@@ -227,14 +227,24 @@ def _render_exec_vaccinated_remaining(
     target_basis: str,
     period_label: str,
 ) -> None:
-    """Render a DMO-requested workload chart, including export metadata."""
+    """Render the DMO-requested stacked chart as counts or target coverage."""
     st.markdown("#### Vaccinated vs Remaining Target")
-    antigen = st.selectbox(
-        "Select antigen:",
-        list(_SBI_REMAINING_ANTIGENS),
-        key="sbi_exec_remaining_antigen",
-        help="Choose combined MR/Td, an individual grade, or Grade 4 single-dose HPV.",
-    )
+    antigen_col, display_col = st.columns([2, 1])
+    with antigen_col:
+        antigen = st.selectbox(
+            "Select antigen:",
+            list(_SBI_REMAINING_ANTIGENS),
+            key="sbi_exec_remaining_antigen",
+            help="Choose combined MR/Td, an individual grade, or Grade 4 single-dose HPV.",
+        )
+    with display_col:
+        display_as = st.selectbox(
+            "Display as:",
+            ("Vaccination Count", "Coverage (%)"),
+            key="sbi_exec_remaining_display",
+            help="Switch between the number vaccinated/remaining and their percentages of the selected target.",
+        )
+
     scope = "All Municipalities (Abra)" if municipality is None else f"{municipality}, Abra — by School"
     frame = _build_exec_remaining_chart_rows(
         targets, {"g1": g1, "g7": g7, "g4": hpv}, antigen,
@@ -244,75 +254,133 @@ def _render_exec_vaccinated_remaining(
         st.info("No school target data are available for this antigen and selection.")
         return
 
-    no_target = int((frame["Total Target"].isna() | frame["Total Target"].le(0)).sum())
+    missing = frame["Total Target"].isna() | frame["Total Target"].le(0)
+    no_target = int(missing.sum())
     if no_target:
         st.caption(
             f"{no_target} row(s) without a positive target are marked N/A. "
-            "Accomplishments from schools without valid selected-basis targets are excluded from this coverage chart."
+            "Accomplishments from schools without valid selected-basis targets are excluded from this chart."
         )
     if frame["Above Target"].gt(0).any():
         st.caption(
-            "A vaccinated count can exceed the selected target; vaccinated figures remain unchanged "
-            "and Remaining Target stays at zero."
+            "A vaccinated count can exceed the selected target. The actual count "
+            "and coverage above 100% are retained; Remaining Target stays at zero."
         )
 
-    max_count = pd.to_numeric(frame[["Total Target", "Vaccinated"]].stack(), errors="coerce").max()
-    max_count = max(float(max_count) if pd.notna(max_count) else 0.0, 1.0)
-    ylabels = frame["Category"].tolist()
+    coverage_view = display_as == "Coverage (%)"
+    view = frame.copy()
+    if coverage_view:
+        # A positive target is required for either percentage. Keep N/A rows
+        # visible, but do not display an invented 0% value or an orange bar.
+        view["Vaccinated Plot"] = np.where(missing, 0.0, view["Coverage %"].clip(lower=0).fillna(0))
+        view["Remaining Plot"] = np.where(
+            missing, 0.0, (100.0 - view["Coverage %"].fillna(0)).clip(lower=0)
+        )
+        view = view.sort_values(
+            ["Coverage %", "Vaccinated", "Category"],
+            ascending=[False, False, True], na_position="last",
+        ).reset_index(drop=True)
+        blue_name, orange_name = "Vaccinated Coverage (%)", "Remaining Target (%)"
+        x_axis_title = "Coverage of selected target (%)"
+        suffix = "_Coverage"
+        display_explanation = (
+            "Coverage (%) = Vaccinated / Total Target × 100; Remaining (%) = "
+            "max(100 − Coverage, 0). Over-target coverage can exceed 100%."
+        )
+    else:
+        view["Vaccinated Plot"] = view["Vaccinated"].fillna(0)
+        view["Remaining Plot"] = view["Remaining Target"].fillna(0)
+        blue_name, orange_name = "Vaccinated", "Remaining Target"
+        x_axis_title = "Number of students"
+        suffix = "_Count"
+        display_explanation = "Remaining Target = max(Total Target − Vaccinated, 0)."
+
+    ylabels = view["Category"].tolist()
+    largest_stack = float(
+        (view["Vaccinated Plot"] + view["Remaining Plot"]).max()
+    ) if not view.empty else 0.0
+    if coverage_view:
+        # Maintain a 100% reference, but expand the axis for >100% coverage.
+        chart_max = max(100.0, largest_stack)
+    else:
+        chart_max = max(1.0, largest_stack)
+    inside_label_threshold = chart_max * 0.035
+
+    def number_text(value: float) -> str:
+        return f"{value:.1f}%" if coverage_view else f"{value:,.0f}"
+
+    # Hover values remain in their original units in either chart mode.
+    def fmt_count(value: object) -> str:
+        return f"{float(value):,.0f}" if pd.notna(value) else "N/A"
+
+    view["Target Hover"] = view["Total Target"].map(
+        lambda value: fmt_count(value) if pd.notna(value) and float(value) > 0 else "N/A"
+    )
+    view["Coverage Hover"] = view["Coverage %"].map(
+        lambda value: f"{float(value):.1f}%" if pd.notna(value) else "N/A"
+    )
+    customdata = np.array([
+        [row["Target Hover"], row["Coverage Hover"],
+         fmt_count(row["Vaccinated"]), fmt_count(row["Remaining Target"])]
+        for _, row in view.iterrows()
+    ], dtype=object)
+
     fig = go.Figure()
-    # Short bar segments cannot hold a readable 12px label. Keep the full
-    # numerical value in the data and add a high-contrast label just outside
-    # the segment; do not silently hide small vaccination accomplishments.
-    inside_label_threshold = max_count * 0.035
-    for col, color in [("Vaccinated", "#17688b"), ("Remaining Target", "#ec722c")]:
-        values = frame[col].tolist()
+    for col, label, color in (
+        ("Vaccinated Plot", blue_name, "#17688b"),
+        ("Remaining Plot", orange_name, "#ec722c"),
+    ):
+        values = view[col].tolist()
         fig.add_trace(go.Bar(
-            name=col,
+            name=label,
             x=values,
             y=ylabels,
             orientation="h",
             marker_color=color,
-            text=[f"{v:,.0f}" if v > 0 and v >= inside_label_threshold else "" for v in values],
+            text=[
+                number_text(float(v))
+                if float(v) > 0 and float(v) >= inside_label_threshold else ""
+                for v in values
+            ],
             textposition="inside",
             insidetextanchor="middle",
             textfont=dict(color="white", size=12),
-            customdata=np.stack([
-                frame["Total Target"].fillna(-1).to_numpy(),
-                frame["Coverage %"].fillna(-1).to_numpy(),
-            ], axis=-1),
+            customdata=customdata,
             hovertemplate=(
-                "<b>%{y}</b><br>" + col + ": %{x:,.0f}<br>"
-                "Total Target: %{customdata[0]:,.0f}<br>"
-                "Coverage: %{customdata[1]:.1f}%<extra></extra>"
+                "<b>%{y}</b><br>Vaccinated: %{customdata[2]}"
+                "<br>Remaining Target: %{customdata[3]}"
+                "<br>Total Target: %{customdata[0]}"
+                "<br>Coverage: %{customdata[1]}<extra></extra>"
             ),
         ))
 
-    # Plotly may suppress text inside thin stacked bars. Annotations are drawn
-    # above the bars, so even a 1-dose accomplishment stays readable in the
-    # dashboard and in the PNG exported from the Plotly toolbar.
-    for _, row in frame.iterrows():
-        vaccinated = float(row["Vaccinated"])
-        remaining = float(row["Remaining Target"])
+    # Draw small positive segments as visible annotations (including PNG),
+    # retaining the legibility fix from the previous dashboard version.
+    for _, row in view.iterrows():
+        vaccinated = float(row["Vaccinated Plot"])
+        remaining = float(row["Remaining Plot"])
         small_vaccinated = 0 < vaccinated < inside_label_threshold
         small_remaining = 0 < remaining < inside_label_threshold
-        # If BOTH segments are tiny, separate labels would collide at the
-        # origin. Put one clearly marked two-value callout after the full bar.
         if small_vaccinated and small_remaining:
-            labels = [(vaccinated + remaining, f"<b>Vaccinated: {vaccinated:,.0f} | Remaining: {remaining:,.0f}</b>", "#124b69", "left", 5)]
+            labels = [
+                (vaccinated + remaining,
+                 f"<b>Vaccinated: {number_text(vaccinated)} | Remaining: {number_text(remaining)}</b>",
+                 "#124b69", 5)
+            ]
         else:
             labels = []
             if small_vaccinated:
-                labels.append((vaccinated, f"<b>{vaccinated:,.0f}</b>", "#124b69", "left", 4))
+                labels.append((vaccinated, f"<b>{number_text(vaccinated)}</b>", "#124b69", 4))
             if small_remaining:
-                labels.append((vaccinated + remaining, f"<b>{remaining:,.0f}</b>", "#9c3f15", "left", 4))
-        for at_x, text, font_color, anchor, xshift in labels:
+                labels.append((vaccinated + remaining, f"<b>{number_text(remaining)}</b>", "#9c3f15", 4))
+        for at_x, label_text, font_color, xshift in labels:
             fig.add_annotation(
                 x=at_x,
                 y=str(row["Category"]),
                 xref="x", yref="y",
-                text=text,
+                text=label_text,
                 showarrow=False,
-                xanchor=anchor,
+                xanchor="left",
                 xshift=xshift,
                 yshift=0,
                 font=dict(size=12, color=font_color),
@@ -321,40 +389,46 @@ def _render_exec_vaccinated_remaining(
                 borderwidth=1,
                 borderpad=2,
             )
+
     filename_antigen = antigen.replace(" ", "_").replace("(", "").replace(")", "").replace("&", "and")
     subtitle = (
-        f"Antigen: {antigen} | Accomplishment source: {source_label} | Target basis: {target_basis}"
+        f"Antigen: {antigen} | Display: {display_as}"
+        f"<br>Accomplishment source: {source_label} | Target basis: {target_basis}"
         f"<br>Scope: {scope} | Reporting period: {period_label}"
-        "<br>Remaining Target = max(Total Target − Vaccinated, 0). "
-        "Grade 5 is monitored separately."
+        f"<br>{display_explanation} Grade 5 is monitored separately."
     )
     fig.update_layout(
-        title=dict(text=f"<b>SBI 2026 | Vaccinated vs Remaining Target</b><br><sup>{subtitle}</sup>", x=0, xanchor="left", font=dict(size=17)),
+        title=dict(
+            text=f"<b>SBI 2026 | Vaccinated vs Remaining Target</b><br><sup>{subtitle}</sup>",
+            x=0, xanchor="left", font=dict(size=17),
+        ),
         barmode="stack",
-        height=max(550, min(1700, len(frame) * 39 + 235)),
+        height=max(550, min(1700, len(view) * 39 + 235)),
         plot_bgcolor="rgba(0,0,0,0)",
         dragmode=False,
-        xaxis_title="Number of students",
+        xaxis_title=x_axis_title,
         yaxis_title="",
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1),
-        margin=dict(l=15, r=50, t=132, b=52),
+        margin=dict(l=15, r=65, t=145, b=52),
         bargap=0.20,
     )
     fig.update_yaxes(categoryorder="array", categoryarray=list(reversed(ylabels)), automargin=True)
-    fig.update_xaxes(range=[0, max_count * 1.04])
+    fig.update_xaxes(range=[0, chart_max * 1.09], ticksuffix="%" if coverage_view else "")
+
     st.plotly_chart(
         fig,
         width="stretch",
         key="sbi_exec_vaccinated_vs_remaining",
         config=plotly_export_config(
-            f"SBI_Vaccinated_vs_Remaining_{filename_antigen}",
-            scale=3,
-            width=1450,
-            height=max(730, min(1800, len(frame) * 45 + 240)),
+            f"SBI_Vaccinated_vs_Remaining_{filename_antigen}{suffix}",
+            scale=3, width=1450,
+            height=max(730, min(1800, len(view) * 45 + 260)),
         ),
     )
     with st.expander("View and download vaccinated vs remaining target figures", expanded=False):
-        table = frame[["Category", "Vaccinated", "Remaining Target", "Total Target", "Coverage %", "Above Target"]].rename(columns={"Category": "Municipality" if municipality is None else "School"})
+        table = view[[
+            "Category", "Vaccinated", "Remaining Target", "Total Target", "Coverage %", "Above Target",
+        ]].rename(columns={"Category": "Municipality" if municipality is None else "School"})
         st.dataframe(table, width="stretch", hide_index=True)
         st.download_button(
             "Download Vaccinated vs Remaining Target (CSV)",
