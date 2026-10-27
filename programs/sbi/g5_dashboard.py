@@ -197,6 +197,12 @@ def _render_g5_vaccinated_remaining(
 ) -> None:
     """DMO-style stacked counts/coverage chart for single-dose Grade 5 HPV."""
     st.markdown("#### Grade 5 HPV — Vaccinated vs Remaining Target")
+    st.markdown(
+        '<div style="font-size:22px;font-weight:800;color:#124f61;'
+        'margin:0.35rem 0 0.7rem 0;line-height:1.3;">'
+        'Antigen: HPV (Grade 5, single dose)</div>',
+        unsafe_allow_html=True,
+    )
     display_as = st.selectbox(
         "Display as:",
         ("Vaccination Count", "Coverage (%)"),
@@ -314,7 +320,6 @@ def _render_g5_vaccinated_remaining(
         reporting_period = "All available dates"
     scope = "All Municipalities (Abra)" if selected_muni is None else f"{selected_muni}, Abra — by School"
     header = (
-        "<b>Antigen:</b> HPV (Grade 5, single dose) | "
         f"<b>Display:</b> {escape(display_as)}"
         "<br><b>Accomplishment source:</b> RHU Workbook (operational/provisional)"
         "<br><b>Target basis:</b> Actual Targets (Unvaccinated G5 Female)"
@@ -330,7 +335,7 @@ def _render_g5_vaccinated_remaining(
         dragmode=False,
         xaxis_title=axis_label, yaxis_title="",
         legend=dict(orientation="h", yanchor="bottom", y=1.025, xanchor="right", x=1),
-        margin=dict(l=15, r=70, t=265, b=60),
+        margin=dict(l=15, r=70, t=275, b=60),
         bargap=0.20,
     )
     fig.add_annotation(
@@ -342,7 +347,14 @@ def _render_g5_vaccinated_remaining(
     )
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
-        yshift=188, xanchor="left", yanchor="top",
+        yshift=199, xanchor="left", yanchor="top",
+        text="<b>Antigen: HPV (Grade 5, single dose)</b>",
+        font=dict(size=22, color="#124f61"),
+        showarrow=False, align="left",
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=164, xanchor="left", yanchor="top",
         text=header,
         font=dict(size=13, color="#334155"),
         showarrow=False, align="left",

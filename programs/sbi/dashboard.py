@@ -229,6 +229,20 @@ def _render_exec_vaccinated_remaining(
 ) -> None:
     """Render the DMO-requested stacked chart as counts or target coverage."""
     st.markdown("#### Vaccinated vs Remaining Target")
+    # Scope CSS to this one selector; other SBI dropdowns remain unchanged.
+    st.markdown("""
+        <style>
+        .st-key-sbi_exec_remaining_antigen [data-baseweb="select"] [role="combobox"],
+        .st-key-sbi_exec_remaining_antigen [data-baseweb="select"] > div {
+            font-size: 19px !important;
+            font-weight: 700 !important;
+        }
+        .st-key-sbi_exec_remaining_antigen label {
+            font-size: 16px !important;
+            font-weight: 700 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     antigen_col, display_col = st.columns([2, 1])
     with antigen_col:
         antigen = st.selectbox(
@@ -244,6 +258,16 @@ def _render_exec_vaccinated_remaining(
             key="sbi_exec_remaining_display",
             help="Switch between the number vaccinated/remaining and their percentages of the selected target.",
         )
+
+    # Show the chosen antigen prominently even if browser CSS overrides the
+    # selectbox styling; this text is independent of any data calculation.
+    from html import escape as _antigen_escape
+    st.markdown(
+        f'<div style="font-size:22px;font-weight:800;color:#124f61;'
+        f'margin:0.4rem 0 0.75rem 0;line-height:1.3;">'
+        f'Antigen: {_antigen_escape(antigen)}</div>',
+        unsafe_allow_html=True,
+    )
 
     scope = "All Municipalities (Abra)" if municipality is None else f"{municipality}, Abra — by School"
     frame = _build_exec_remaining_chart_rows(
@@ -399,7 +423,6 @@ def _render_exec_vaccinated_remaining(
     from html import escape as _html_escape
 
     header_lines = (
-        f"<b>Antigen:</b> {_html_escape(antigen)}  |  "
         f"<b>Display:</b> {_html_escape(display_as)}"
         f"<br><b>Accomplishment source:</b> {_html_escape(source_label)}  |  "
         f"<b>Target basis:</b> {_html_escape(target_basis)}"
@@ -419,8 +442,8 @@ def _render_exec_vaccinated_remaining(
             orientation="h", yanchor="bottom", y=1.025,
             xanchor="right", x=1,
         ),
-        # 250px keeps five lines of context and the legend clear of the bars.
-        margin=dict(l=15, r=65, t=250, b=55),
+        # Reserve room for a large antigen headline, report notes and legend.
+        margin=dict(l=15, r=65, t=260, b=55),
         bargap=0.20,
     )
     fig.add_annotation(
@@ -432,7 +455,14 @@ def _render_exec_vaccinated_remaining(
     )
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
-        yshift=177, xanchor="left", yanchor="top",
+        yshift=186, xanchor="left", yanchor="top",
+        text=f"<b>Antigen: {_html_escape(antigen)}</b>",
+        font=dict(size=22, color="#124f61"),
+        showarrow=False, align="left",
+    )
+    fig.add_annotation(
+        xref="paper", yref="paper", x=0, y=1,
+        yshift=155, xanchor="left", yanchor="top",
         text=header_lines,
         font=dict(size=13, color="#334155"),
         showarrow=False, align="left",
