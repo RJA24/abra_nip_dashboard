@@ -260,6 +260,10 @@ def _render_exec_vaccinated_remaining(
     max_count = max(float(max_count) if pd.notna(max_count) else 0.0, 1.0)
     ylabels = frame["Category"].tolist()
     fig = go.Figure()
+    # Short bar segments cannot hold a readable 12px label. Keep the full
+    # numerical value in the data and add a high-contrast label just outside
+    # the segment; do not silently hide small vaccination accomplishments.
+    inside_label_threshold = max_count * 0.035
     for col, color in [("Vaccinated", "#17688b"), ("Remaining Target", "#ec722c")]:
         values = frame[col].tolist()
         fig.add_trace(go.Bar(
@@ -268,7 +272,7 @@ def _render_exec_vaccinated_remaining(
             y=ylabels,
             orientation="h",
             marker_color=color,
-            text=[f"{v:,.0f}" if v >= max_count * 0.035 else "" for v in values],
+            text=[f"{v:,.0f}" if v > 0 and v >= inside_label_threshold else "" for v in values],
             textposition="inside",
             insidetextanchor="middle",
             textfont=dict(color="white", size=12),
@@ -282,6 +286,41 @@ def _render_exec_vaccinated_remaining(
                 "Coverage: %{customdata[1]:.1f}%<extra></extra>"
             ),
         ))
+
+    # Plotly may suppress text inside thin stacked bars. Annotations are drawn
+    # above the bars, so even a 1-dose accomplishment stays readable in the
+    # dashboard and in the PNG exported from the Plotly toolbar.
+    for _, row in frame.iterrows():
+        vaccinated = float(row["Vaccinated"])
+        remaining = float(row["Remaining Target"])
+        small_vaccinated = 0 < vaccinated < inside_label_threshold
+        small_remaining = 0 < remaining < inside_label_threshold
+        # If BOTH segments are tiny, separate labels would collide at the
+        # origin. Put one clearly marked two-value callout after the full bar.
+        if small_vaccinated and small_remaining:
+            labels = [(vaccinated + remaining, f"<b>Vaccinated: {vaccinated:,.0f} | Remaining: {remaining:,.0f}</b>", "#124b69", "left", 5)]
+        else:
+            labels = []
+            if small_vaccinated:
+                labels.append((vaccinated, f"<b>{vaccinated:,.0f}</b>", "#124b69", "left", 4))
+            if small_remaining:
+                labels.append((vaccinated + remaining, f"<b>{remaining:,.0f}</b>", "#9c3f15", "left", 4))
+        for at_x, text, font_color, anchor, xshift in labels:
+            fig.add_annotation(
+                x=at_x,
+                y=str(row["Category"]),
+                xref="x", yref="y",
+                text=text,
+                showarrow=False,
+                xanchor=anchor,
+                xshift=xshift,
+                yshift=0,
+                font=dict(size=12, color=font_color),
+                bgcolor="rgba(255,255,255,0.96)",
+                bordercolor="rgba(148,163,184,0.6)",
+                borderwidth=1,
+                borderpad=2,
+            )
     filename_antigen = antigen.replace(" ", "_").replace("(", "").replace(")", "").replace("&", "and")
     subtitle = (
         f"Antigen: {antigen} | Accomplishment source: {source_label} | Target basis: {target_basis}"
