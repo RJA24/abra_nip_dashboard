@@ -46,9 +46,9 @@ from programs.sbi.source_dashboard_layout import (
     render_source_kpi_summary,
     render_target_basis_selector,
 )
+from programs.sbi.png_exports import ultra_png_export_config
 from programs.sbi.reporting import (
     add_coverage_export_caption,
-    plotly_export_config,
     render_campaign_burnup,
     render_daily_trend,
     render_municipality_choropleth,
@@ -474,9 +474,9 @@ def _render_exec_vaccinated_remaining(
         fig,
         width="stretch",
         key="sbi_exec_vaccinated_vs_remaining",
-        config=plotly_export_config(
+        config=ultra_png_export_config(
             f"SBI_Vaccinated_vs_Remaining_{filename_antigen}{suffix}",
-            scale=4, width=1450,
+            scale=8, width=1450,
             height=max(830, min(1900, len(view) * 45 + 350)),
         ),
     )
@@ -719,7 +719,7 @@ def render_sbi_dashboard(supabase) -> None:
                 legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
                 legend_title_text='',
             )
-            st.plotly_chart(fig_school, width='stretch', key=f'{key_prefix}_school_chart', config=plotly_export_config(f'{key_prefix}_school_chart', scale=4))
+            st.plotly_chart(fig_school, width='stretch', key=f'{key_prefix}_school_chart', config=ultra_png_export_config(f'{key_prefix}_school_chart', scale=8))
 
         school_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
         st.dataframe(
@@ -821,7 +821,7 @@ def render_sbi_dashboard(supabase) -> None:
                 legend=dict(orientation='h', yanchor='top', y=-0.08, xanchor='center', x=0.5),
                 legend_title_text='',
             )
-            st.plotly_chart(fig_hpv_school, width='stretch', key='sbi_hpv_school_chart', config=plotly_export_config('sbi_hpv_school_chart', scale=4))
+            st.plotly_chart(fig_hpv_school, width='stretch', key='sbi_hpv_school_chart', config=ultra_png_export_config('sbi_hpv_school_chart', scale=8))
 
         hpv_export = school.drop(columns=['School Label'], errors='ignore').sort_values(['Municipality', 'School Name'])
         st.dataframe(
@@ -915,7 +915,7 @@ def render_sbi_dashboard(supabase) -> None:
             )
             fig_geo.update_traces(textposition='outside', cliponaxis=False)
             add_coverage_export_caption(fig_geo, target_basis=vac_target_basis)
-            st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov', config=plotly_export_config(f'{key_prefix}_geo_cov', scale=4))
+            st.plotly_chart(fig_geo, width='stretch', key=f'{key_prefix}_geo_cov', config=ultra_png_export_config(f'{key_prefix}_geo_cov', scale=8))
 
             st.dataframe(
                 geo.sort_values('MR Coverage %', ascending=False),
@@ -1017,7 +1017,7 @@ def render_sbi_dashboard(supabase) -> None:
                 legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
                 legend_title_text='',
             )
-            st.plotly_chart(fig_trend, width='stretch', key=f'{key_prefix}_trend', config=plotly_export_config(f'{key_prefix}_trend', scale=4))
+            st.plotly_chart(fig_trend, width='stretch', key=f'{key_prefix}_trend', config=ultra_png_export_config(f'{key_prefix}_trend', scale=8))
         else:
             st.info("No valid report dates are available for the selected period.")
 
@@ -1169,7 +1169,7 @@ def render_sbi_dashboard(supabase) -> None:
                     }
                 ))
                 fig_gauge_mr.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_mr, width="stretch", key="sbi_exec_gauge_mr", config=plotly_export_config("sbi_exec_gauge_mr", scale=4))
+                st.plotly_chart(fig_gauge_mr, width="stretch", key="sbi_exec_gauge_mr", config=ultra_png_export_config("sbi_exec_gauge_mr", scale=8))
 
             with c2:
                 fig_gauge_td = go.Figure(go.Indicator(
@@ -1184,7 +1184,7 @@ def render_sbi_dashboard(supabase) -> None:
                     }
                 ))
                 fig_gauge_td.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_td, width="stretch", key="sbi_exec_gauge_td", config=plotly_export_config("sbi_exec_gauge_td", scale=4))
+                st.plotly_chart(fig_gauge_td, width="stretch", key="sbi_exec_gauge_td", config=ultra_png_export_config("sbi_exec_gauge_td", scale=8))
 
             with c3:
                 fig_gauge_hpv = go.Figure(go.Indicator(
@@ -1199,7 +1199,7 @@ def render_sbi_dashboard(supabase) -> None:
                     }
                 ))
                 fig_gauge_hpv.update_layout(height=250, margin=dict(l=10, r=10, t=40, b=10))
-                st.plotly_chart(fig_gauge_hpv, width="stretch", key="sbi_exec_gauge_hpv", config=plotly_export_config("sbi_exec_gauge_hpv", scale=4))
+                st.plotly_chart(fig_gauge_hpv, width="stretch", key="sbi_exec_gauge_hpv", config=ultra_png_export_config("sbi_exec_gauge_hpv", scale=8))
 
             st.divider()
 
@@ -1308,7 +1308,7 @@ def render_sbi_dashboard(supabase) -> None:
                 add_coverage_export_caption(
                     fig_exec_geo, target_basis=exec_target_basis, data_source=exec_data_source
                 )
-                st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage', config=plotly_export_config('sbi_exec_geo_coverage', scale=4))
+                st.plotly_chart(fig_exec_geo, width='stretch', key='sbi_exec_geo_coverage', config=ultra_png_export_config('sbi_exec_geo_coverage', scale=8))
 
                 with st.expander('View full municipality coverage table', expanded=False):
                     st.dataframe(exec_geo.sort_values('MR Coverage %', ascending=False), width='stretch', hide_index=True)
@@ -1442,7 +1442,7 @@ def render_sbi_dashboard(supabase) -> None:
                         legend=dict(orientation='h', yanchor='top', y=-0.10, xanchor='center', x=0.5),
                         legend_title_text='',
                     )
-                    st.plotly_chart(fig_exec_school, width='stretch', key='sbi_exec_school_coverage', config=plotly_export_config('sbi_exec_school_coverage', scale=4))
+                    st.plotly_chart(fig_exec_school, width='stretch', key='sbi_exec_school_coverage', config=ultra_png_export_config('sbi_exec_school_coverage', scale=8))
 
                 school_export = exec_school.drop(columns=['MR School Name', 'HPV School Name'], errors='ignore').sort_values('School Name')
                 with st.expander('View full school coverage table', expanded=False):
@@ -1563,7 +1563,7 @@ def render_sbi_dashboard(supabase) -> None:
                     legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                     legend_title_text=""
                 )
-                st.plotly_chart(fig_tgt_geo, width="stretch", key="sbi_tgt_geo_bar", config=plotly_export_config("sbi_tgt_geo_bar", scale=4))
+                st.plotly_chart(fig_tgt_geo, width="stretch", key="sbi_tgt_geo_bar", config=ultra_png_export_config("sbi_tgt_geo_bar", scale=8))
 
                 if view_mode == "All Municipalities (Abra)":
                     st.divider()
@@ -1666,7 +1666,7 @@ def render_sbi_dashboard(supabase) -> None:
                     fig_tgt_school,
                     width="stretch",
                     key="sbi_tgt_school_bar",
-                    config=plotly_export_config(f"SBI_School_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_chart_plot) * 55))
+                    config=ultra_png_export_config(f"SBI_School_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_chart_plot) * 55))
                 )
 
                 st.divider()
@@ -1902,7 +1902,7 @@ def render_sbi_dashboard(supabase) -> None:
                     fig_actual_status,
                     width="stretch",
                     key='sbi_actual_reporting_status_chart'
-                , config=plotly_export_config('sbi_actual_reporting_status_chart', scale=4))
+                , config=ultra_png_export_config('sbi_actual_reporting_status_chart', scale=8))
 
                 st.divider()
 
@@ -1939,7 +1939,7 @@ def render_sbi_dashboard(supabase) -> None:
                     fig_actual_geo,
                     width="stretch",
                     key='sbi_actual_geo_chart'
-                , config=plotly_export_config('sbi_actual_geo_chart', scale=4))
+                , config=ultra_png_export_config('sbi_actual_geo_chart', scale=8))
 
                 if view_mode == "All Municipalities (Abra)":
                     st.divider()
@@ -2042,7 +2042,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_actual_school,
                         width="stretch",
                         key='sbi_actual_school_chart',
-                        config=plotly_export_config(f"SBI_Actual_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_actual_school_plot) * 55))
+                        config=ultra_png_export_config(f"SBI_Actual_Targets_{location_label.replace(', ', '_')}", height=max(1200, len(df_actual_school_plot) * 55))
                     )
 
                 st.divider()
@@ -2292,7 +2292,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_target_compare,
                         width="stretch",
                         key='sbi_compare_grade_chart'
-                    , config=plotly_export_config('sbi_compare_grade_chart', scale=4))
+                    , config=ultra_png_export_config('sbi_compare_grade_chart', scale=8))
 
                     st.divider()
 
@@ -2412,7 +2412,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_geo_compare,
                         width="stretch",
                         key='sbi_compare_geo_chart'
-                    , config=plotly_export_config('sbi_compare_geo_chart', scale=4))
+                    , config=ultra_png_export_config('sbi_compare_geo_chart', scale=8))
 
                     st.divider()
 
@@ -2538,7 +2538,7 @@ def render_sbi_dashboard(supabase) -> None:
                         fig_school_compare,
                         width="stretch",
                         key='sbi_compare_school_chart',
-                        config=plotly_export_config(f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_compare_plot) * 58))
+                        config=ultra_png_export_config(f"SBI_Baseline_vs_Actual_{location_label.replace(', ', '_')}", height=max(1200, len(df_school_compare_plot) * 58))
                     )
 
                     st.divider()
@@ -2812,7 +2812,7 @@ def render_sbi_dashboard(supabase) -> None:
                     )
                     fig_hpv_geo.update_traces(textposition='outside', cliponaxis=False)
                     add_coverage_export_caption(fig_hpv_geo, target_basis=vac_target_basis)
-                    st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo', config=plotly_export_config('sbi_hpv_geo', scale=4))
+                    st.plotly_chart(fig_hpv_geo, width='stretch', key='sbi_hpv_geo', config=ultra_png_export_config('sbi_hpv_geo', scale=8))
 
                     st.dataframe(
                         hpv_geo.sort_values('1st Dose Coverage %', ascending=False),
@@ -2911,7 +2911,7 @@ def render_sbi_dashboard(supabase) -> None:
                         legend=dict(orientation='h', yanchor='top', y=-0.15, xanchor='center', x=0.5),
                         legend_title_text=''
                     )
-                    st.plotly_chart(fig_hpv_trend, width='stretch', key='sbi_hpv_trend', config=plotly_export_config('sbi_hpv_trend', scale=4))
+                    st.plotly_chart(fig_hpv_trend, width='stretch', key='sbi_hpv_trend', config=ultra_png_export_config('sbi_hpv_trend', scale=8))
 
                 st.divider()
                 render_tally_tabs(
@@ -3004,7 +3004,7 @@ def render_sbi_dashboard(supabase) -> None:
                 legend_title_text=''
             )
             fig_missed.update_traces(textposition='outside', cliponaxis=False)
-            st.plotly_chart(fig_missed, width='stretch', key='sbi_def_ref_summary', config=plotly_export_config('sbi_def_ref_summary', scale=4))
+            st.plotly_chart(fig_missed, width='stretch', key='sbi_def_ref_summary', config=ultra_png_export_config('sbi_def_ref_summary', scale=8))
 
             st.divider()
 
@@ -3069,7 +3069,7 @@ def render_sbi_dashboard(supabase) -> None:
                     showlegend=False
                 )
                 fig_reasons.update_traces(textposition='outside', cliponaxis=False)
-                st.plotly_chart(fig_reasons, width='stretch', key='sbi_def_ref_reasons', config=plotly_export_config('sbi_def_ref_reasons', scale=4))
+                st.plotly_chart(fig_reasons, width='stretch', key='sbi_def_ref_reasons', config=ultra_png_export_config('sbi_def_ref_reasons', scale=8))
 
             st.divider()
 
@@ -3128,7 +3128,7 @@ def render_sbi_dashboard(supabase) -> None:
                     legend_title_text=''
                 )
                 fig_geo_missed.update_traces(textposition='outside', cliponaxis=False)
-                st.plotly_chart(fig_geo_missed, width='stretch', key='sbi_def_ref_geo', config=plotly_export_config('sbi_def_ref_geo', scale=4))
+                st.plotly_chart(fig_geo_missed, width='stretch', key='sbi_def_ref_geo', config=ultra_png_export_config('sbi_def_ref_geo', scale=8))
 
                 st.dataframe(
                     geo_missed.sort_values('Total Missed', ascending=False),

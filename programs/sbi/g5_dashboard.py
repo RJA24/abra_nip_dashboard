@@ -20,7 +20,8 @@ import streamlit as st
 from core.config import ABRA_MUNIS
 from core.map_labels import canonical_municipality_name, normalize_municipality_key
 from programs.sbi.aggregate_workbook import REASON_LABELS
-from programs.sbi.reporting import plotly_export_config, render_daily_trend, render_municipality_choropleth
+from programs.sbi.png_exports import ultra_png_export_config
+from programs.sbi.reporting import render_daily_trend, render_municipality_choropleth
 from programs.sbi.workbook_dashboard import prepare_workbook_entries
 
 
@@ -364,9 +365,9 @@ def _render_g5_vaccinated_remaining(
 
     st.plotly_chart(
         fig, width="stretch", key="sbi_g5_vaccinated_remaining",
-        config=plotly_export_config(
+        config=ultra_png_export_config(
             f"SBI_G5_Vaccinated_vs_Remaining{suffix}",
-            scale=4, width=1450,
+            scale=8, width=1450,
             height=max(860, min(2000, len(view) * 46 + 380)),
         ),
     )
@@ -547,7 +548,7 @@ def render_g5_dashboard(
             fig_muni,
             width="stretch",
             key="sbi_g5_coverage_by_municipality",
-            config=plotly_export_config("sbi_g5_coverage_by_municipality", height=max(1200, len(chart_rows) * 55)),
+            config=ultra_png_export_config("sbi_g5_coverage_by_municipality", height=max(1200, len(chart_rows) * 55)),
         )
     else:
         st.caption("SBI Grade 5 monitoring is school-based. For a specific municipality, performance is shown by school rather than by barangay.")
@@ -590,7 +591,7 @@ def render_g5_dashboard(
             fig,
             width="stretch",
             key="sbi_g5_cumulative",
-            config=plotly_export_config("sbi_g5_cumulative", height=1200),
+            config=ultra_png_export_config("sbi_g5_cumulative", height=1200),
         )
 
     st.divider()
