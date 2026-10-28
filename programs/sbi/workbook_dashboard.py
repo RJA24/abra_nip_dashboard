@@ -32,6 +32,7 @@ from programs.sbi.source_dashboard_layout import (
 from programs.sbi.reporting import (
     add_coverage_export_caption,
     render_daily_trend,
+    plotly_export_config,
     render_municipality_choropleth,
     render_raw_export,
     render_tally_tabs,
@@ -489,7 +490,7 @@ def render_workbook_dashboard(
                 legend=dict(orientation="h", yanchor="top", y=-0.08, xanchor="center", x=0.5),
                 legend_title_text="",
             )
-            st.plotly_chart(fig_school, width="stretch", key=f"{key_prefix}_school_chart")
+            st.plotly_chart(fig_school, width="stretch", key=f"{key_prefix}_school_chart", config=plotly_export_config(f"{key_prefix}_school_chart", scale=4))
 
         school_export = school.drop(columns=["School Label"], errors="ignore").sort_values(["Municipality", "School Name"])
         st.dataframe(
@@ -592,7 +593,7 @@ def render_workbook_dashboard(
                 legend=dict(orientation="h", yanchor="top", y=-0.08, xanchor="center", x=0.5),
                 legend_title_text="",
             )
-            st.plotly_chart(fig_hpv_school, width="stretch", key=f"{key_prefix}_school_chart")
+            st.plotly_chart(fig_hpv_school, width="stretch", key=f"{key_prefix}_school_chart", config=plotly_export_config(f"{key_prefix}_school_chart", scale=4))
 
         hpv_export = school.drop(columns=["School Label"], errors="ignore").sort_values(["Municipality", "School Name"])
         st.dataframe(
@@ -696,7 +697,7 @@ def render_workbook_dashboard(
             )
             fig_geo.update_traces(textposition="outside", cliponaxis=False)
             add_coverage_export_caption(fig_geo, target_basis=target_basis)
-            st.plotly_chart(fig_geo, width="stretch", key=f"{key_prefix}_geo_cov")
+            st.plotly_chart(fig_geo, width="stretch", key=f"{key_prefix}_geo_cov", config=plotly_export_config(f"{key_prefix}_geo_cov", scale=4))
 
             st.dataframe(
                 geo.sort_values("MR Coverage %", ascending=False),
@@ -798,7 +799,7 @@ def render_workbook_dashboard(
                 legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                 legend_title_text="",
             )
-            st.plotly_chart(fig_trend, width="stretch", key=f"{key_prefix}_trend")
+            st.plotly_chart(fig_trend, width="stretch", key=f"{key_prefix}_trend", config=plotly_export_config(f"{key_prefix}_trend", scale=4))
         else:
             st.info("No valid activity dates are available for the selected period.")
 
@@ -927,7 +928,7 @@ def render_workbook_dashboard(
                 )
                 fig_hpv_geo.update_traces(textposition="outside", cliponaxis=False)
                 add_coverage_export_caption(fig_hpv_geo, target_basis=target_basis)
-                st.plotly_chart(fig_hpv_geo, width="stretch", key="sbi_workbook_hpv_geo")
+                st.plotly_chart(fig_hpv_geo, width="stretch", key="sbi_workbook_hpv_geo", config=plotly_export_config("sbi_workbook_hpv_geo", scale=4))
 
                 st.dataframe(
                     hpv_geo.sort_values("1st Dose Coverage %", ascending=False),
@@ -1029,7 +1030,7 @@ def render_workbook_dashboard(
                     legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
                     legend_title_text="",
                 )
-                st.plotly_chart(fig_hpv_trend, width="stretch", key="sbi_workbook_hpv_trend")
+                st.plotly_chart(fig_hpv_trend, width="stretch", key="sbi_workbook_hpv_trend", config=plotly_export_config("sbi_workbook_hpv_trend", scale=4))
             else:
                 st.info("No valid activity dates are available for the selected period.")
 
@@ -1126,7 +1127,7 @@ def render_workbook_dashboard(
             legend_title_text="",
         )
         fig_missed.update_traces(textposition="outside", cliponaxis=False)
-        st.plotly_chart(fig_missed, width="stretch", key="sbi_workbook_def_ref_summary")
+        st.plotly_chart(fig_missed, width="stretch", key="sbi_workbook_def_ref_summary", config=plotly_export_config("sbi_workbook_def_ref_summary", scale=4))
 
         st.divider()
         outcome_frames = []
@@ -1189,7 +1190,7 @@ def render_workbook_dashboard(
                 showlegend=False,
             )
             fig_reasons.update_traces(textposition="outside", cliponaxis=False)
-            st.plotly_chart(fig_reasons, width="stretch", key="sbi_workbook_def_ref_reasons")
+            st.plotly_chart(fig_reasons, width="stretch", key="sbi_workbook_def_ref_reasons", config=plotly_export_config("sbi_workbook_def_ref_reasons", scale=4))
 
         st.divider()
         geo_col_def = "Municipality" if all_municipalities else "Barangay"
@@ -1247,7 +1248,7 @@ def render_workbook_dashboard(
                 legend_title_text="",
             )
             fig_geo_missed.update_traces(textposition="outside", cliponaxis=False)
-            st.plotly_chart(fig_geo_missed, width="stretch", key="sbi_workbook_def_ref_geo")
+            st.plotly_chart(fig_geo_missed, width="stretch", key="sbi_workbook_def_ref_geo", config=plotly_export_config("sbi_workbook_def_ref_geo", scale=4))
             st.dataframe(
                 geo_missed.sort_values("Total Missed", ascending=False),
                 width="stretch",

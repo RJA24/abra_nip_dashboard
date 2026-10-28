@@ -200,14 +200,14 @@ def _render_g5_vaccinated_remaining(
     st.markdown(
         '<div style="font-size:22px;font-weight:800;color:#124f61;'
         'margin:0.35rem 0 0.7rem 0;line-height:1.3;">'
-        'Antigen: HPV (Grade 5, single dose)</div>',
+        'Antigen: HPV (Grade 5)</div>',
         unsafe_allow_html=True,
     )
     display_as = st.selectbox(
         "Display as:",
         ("Vaccination Count", "Coverage (%)"),
         key="sbi_g5_remaining_display",
-        help="Compare Grade 5 single-dose HPV vaccinated and remaining target as counts or as percentages.",
+        help="Compare Grade 5 HPV vaccinated and remaining target as counts or as percentages.",
     )
     rows = _build_g5_remaining_rows(entries, targets, selected_muni)
     if rows.empty:
@@ -348,7 +348,7 @@ def _render_g5_vaccinated_remaining(
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
         yshift=199, xanchor="left", yanchor="top",
-        text="<b>Antigen: HPV (Grade 5, single dose)</b>",
+        text="<b>Antigen: HPV (Grade 5)</b>",
         font=dict(size=22, color="#124f61"),
         showarrow=False, align="left",
     )
@@ -366,7 +366,7 @@ def _render_g5_vaccinated_remaining(
         fig, width="stretch", key="sbi_g5_vaccinated_remaining",
         config=plotly_export_config(
             f"SBI_G5_Vaccinated_vs_Remaining{suffix}",
-            scale=3, width=1450,
+            scale=4, width=1450,
             height=max(860, min(2000, len(view) * 46 + 380)),
         ),
     )
@@ -396,7 +396,7 @@ def render_g5_dashboard(
         "Operational Grade 5 accomplishments from RHU workbooks. The denominator is "
         "Unvaccinated G5 Female from Actual Targets. Grade 5 is intentionally excluded "
         "from VaccTrack G1/G4/G7 sheets and VaccTrack reconciliation. "
-        "Under the current single-dose G5 guidance, encode G5 HPV vaccinations under "
+        "Under the current G5 guidance, encode G5 HPV vaccinations under "
         "**HPV Dose 1** in the shared workbook. This is the **HPV1** value submitted to "
         "the Central Office G5 Google reporting platform; do not use the HPV Dose 2 fields for G5."
     )
@@ -444,13 +444,13 @@ def render_g5_dashboard(
         st.warning(
             f"G5 has {legacy_hpv2:,} legacy HPV Dose 2 vaccination(s) and {legacy_missed:,} "
             "legacy HPV2 deferred/refused count(s). These are NOT included in current "
-            "single-dose HPV coverage and were not reassigned to HPV Dose 1. "
+            "HPV coverage and were not reassigned to HPV Dose 1. "
             "Please review and correct the RHU workbook if these were encoded in the wrong field."
         )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Unvaccinated G5 Female Target", f"{int(target_total):,}")
-    c2.metric("HPV Vaccinated (Single Dose)", f"{all_vaccinated:,}", help="Grade 5 HPV1 / HPV Dose 1 accomplishments; does not include the legacy HPV Dose 2 field.")
+    c2.metric("HPV Vaccinated", f"{all_vaccinated:,}", help="Grade 5 HPV1 / HPV Dose 1 accomplishments; does not include the legacy HPV Dose 2 field.")
     c3.metric("HPV Coverage", "N/A" if pd.isna(_safe_pct(eligible_vaccinated, target_total)) else f"{_safe_pct(eligible_vaccinated, target_total):.1f}%")
     c4.metric("Remaining", f"{int(max(target_total - eligible_vaccinated, 0)):,}")
 
@@ -490,7 +490,7 @@ def render_g5_dashboard(
         render_municipality_choropleth(
             muni,
             coverage_col="HPV Coverage %",
-            title="Grade 5 Single-Dose HPV Coverage by Municipality",
+            title="Grade 5 HPV Coverage by Municipality",
             key="sbi_g5_map_single_dose_hpv",
             target_col="G5 Target",
             vaccinated_col="HPV Vaccinated",
