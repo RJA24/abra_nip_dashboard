@@ -80,15 +80,68 @@ def _prepare_g5_targets(actual_targets: pd.DataFrame, municipality: str | None) 
 
 
 def _targeted_entries(entries: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+    """Count HPV1 toward target coverage only for this RHU's positive-target schools."""
     if entries is None or entries.empty or targets is None or targets.empty:
         return pd.DataFrame(columns=entries.columns if isinstance(entries, pd.DataFrame) else None)
-    positive = pd.to_numeric(targets.get("G5 Target", 0), errors="coerce").fillna(0).gt(0)
-    ids = set(targets.loc[targets["School ID"].ne("") & positive, "School ID"].astype(str))
-    return entries.loc[entries["school_id"].astype(str).isin(ids)].copy()
+    t = targets.copy()
+    t["_key"] = (
+        t["Municipality"].map(normalize_municipality_key).astype(str)
+        + "|" + t["School ID"].map(_clean_school_id).astype(str)
+    )
+    positive = pd.to_numeric(t["G5 Target"], errors="coerce").gt(0)
+    matched_keys = set(t.loc[positive, "_key"])
+    e_key = (
+        entries["municipality"].map(normalize_municipality_key).astype(str)
+        + "|" + entries["school_id"].map(_clean_school_id).astype(str)
+    )
+    return entries.loc[e_key.isin(matched_keys)].copy()
+
+
+def _g5_unmatched_school_details(entries: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
+    """Identify genuine HPV1 doses not eligible for school target-based coverage."""
+    columns = ["Municipality", "School ID", "School Name", "HPV Vaccinated",
+               "G5 Target", "Target Status"]
+    if entries is None or entries.empty:
+        return pd.DataFrame(columns=columns)
+    eligible = _targeted_entries(entries, targets)
+    unmatched = entries.loc[~entries.index.isin(eligible.index)].copy()
+    if unmatched.empty:
+        return pd.DataFrame(columns=columns)
+    unmatched["hpv_dose1"] = pd.to_numeric(unmatched["hpv_dose1"], errors="coerce").fillna(0)
+    unmatched = unmatched.loc[unmatched["hpv_dose1"].gt(0)].copy()
+    if unmatched.empty:
+        return pd.DataFrame(columns=columns)
+    unmatched["school_id"] = unmatched["school_id"].map(_clean_school_id)
+    detail = (
+        unmatched.groupby(["municipality", "school_id", "school_name"], dropna=False,
+                          as_index=False)["hpv_dose1"].sum()
+        .rename(columns={"municipality": "Municipality", "school_id": "School ID",
+                         "school_name": "School Name", "hpv_dose1": "HPV Vaccinated"})
+    )
+    if targets is not None and not targets.empty:
+        reference = targets[["Municipality", "School ID", "G5 Target"]].copy()
+        reference["School ID"] = reference["School ID"].map(_clean_school_id)
+        reference["_municipality_key"] = reference["Municipality"].map(normalize_municipality_key)
+        reference = reference.drop_duplicates(["_municipality_key", "School ID"])
+        detail["_municipality_key"] = detail["Municipality"].map(normalize_municipality_key)
+        detail = detail.merge(
+            reference[["_municipality_key", "School ID", "G5 Target"]],
+            on=["_municipality_key", "School ID"], how="left",
+        ).drop(columns="_municipality_key")
+    else:
+        detail["G5 Target"] = np.nan
+    detail["Target Status"] = np.where(
+        detail["G5 Target"].isna(), "Missing/unreported G5 target",
+        "Entered target is 0 (verify against RHU)",
+    )
+    return detail[columns].sort_values(
+        ["Municipality", "HPV Vaccinated", "School Name"],
+        ascending=[True, False, True],
+    ).reset_index(drop=True)
 
 
 def _municipality_summary(entries: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
-    """G5 HPV1 is the single-dose reporting field; never combine it with legacy HPV2."""
+    """Distinguish raw reported HPV1 from target-matched HPV1 for all 27 RHUs."""
     rows: list[dict] = []
     for muni in ABRA_MUNIS:
         key = normalize_municipality_key(muni)
@@ -97,35 +150,68 @@ def _municipality_summary(entries: pd.DataFrame, targets: pd.DataFrame) -> pd.Da
         ec = _targeted_entries(e, t)
         target = float(pd.to_numeric(t.get("G5 Target", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
         vaccinated = float(pd.to_numeric(ec.get("hpv_dose1", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
+        reported = float(pd.to_numeric(e.get("hpv_dose1", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
         rows.append({
             "Municipality": muni,
             "G5 Target": target,
-            "HPV Vaccinated": vaccinated,
+            "HPV Vaccinated": vaccinated,  # Coverage-eligible; legacy map contract.
+            "Total Vaccinated": reported,
+            "Unmatched Vaccinations": max(reported - vaccinated, 0),
             "HPV Coverage %": _safe_pct(vaccinated, target),
             "Remaining": max(target - vaccinated, 0),
             "Schools Reporting": int(e["school_id"].replace("", pd.NA).dropna().nunique()) if not e.empty else 0,
         })
     return pd.DataFrame(rows)
 
+
 def _school_summary(entries: pd.DataFrame, targets: pd.DataFrame) -> pd.DataFrame:
-    if targets is None or targets.empty:
-        return pd.DataFrame()
-    grouped = targets.copy()
-    if entries is None or entries.empty:
-        grouped["HPV Vaccinated"] = 0
+    """Show targeted and untargeted schools, retaining the raw HPV1 accomplishments."""
+    target_columns = ["Municipality", "Barangay", "School ID", "School Name", "G5 Target"]
+    grouped = (targets[target_columns].copy() if targets is not None and not targets.empty
+               else pd.DataFrame(columns=target_columns))
+    if entries is not None and not entries.empty:
+        e = entries.copy()
+        e["school_id"] = e["school_id"].map(_clean_school_id)
+        for column in ("school_name", "barangay"):
+            if column not in e.columns:
+                e[column] = ""
+        e["hpv_dose1"] = pd.to_numeric(e["hpv_dose1"], errors="coerce").fillna(0)
+        counts = (e.groupby(["municipality", "school_id"], dropna=False, as_index=False)
+                  ["hpv_dose1"].sum()
+                  .rename(columns={"municipality": "Municipality", "school_id": "School ID",
+                                   "hpv_dose1": "Total Vaccinated"}))
+        school_labels = (e.groupby(["municipality", "school_id"], dropna=False, as_index=False)
+                         .agg({"school_name": "first", "barangay": "first"})
+                         .rename(columns={"municipality": "Municipality", "school_id": "School ID",
+                                          "school_name": "Reported School Name", "barangay": "Reported Barangay"}))
+        counts = counts.merge(school_labels, on=["Municipality", "School ID"], how="left")
+        # Merge on both municipality and school ID; the same numeric ID must
+        # never make another RHU's vaccinations eligible for coverage.
+        grouped = grouped.merge(counts, on=["Municipality", "School ID"], how="outer")
+        for label, backup in (("School Name", "Reported School Name"),
+                              ("Barangay", "Reported Barangay")):
+            grouped[label] = grouped[label].fillna(grouped[backup])
+        grouped = grouped.drop(columns=["Reported School Name", "Reported Barangay"])
     else:
-        values = (
-            entries.groupby("school_id", as_index=False)
-            .agg({"hpv_dose1": "sum"})
-            .rename(columns={"school_id": "School ID", "hpv_dose1": "HPV Vaccinated"})
-        )
-        grouped = grouped.merge(values, on="School ID", how="left")
-        grouped["HPV Vaccinated"] = grouped["HPV Vaccinated"].fillna(0)
-    grouped["HPV Coverage %"] = np.where(
-        grouped["G5 Target"].gt(0), grouped["HPV Vaccinated"] / grouped["G5 Target"] * 100, np.nan
+        grouped["Total Vaccinated"] = 0
+    if grouped.empty:
+        return grouped
+    grouped["Total Vaccinated"] = pd.to_numeric(grouped["Total Vaccinated"], errors="coerce").fillna(0)
+    grouped["G5 Target"] = pd.to_numeric(grouped["G5 Target"], errors="coerce")
+    valid = grouped["G5 Target"].gt(0)
+    grouped["HPV Vaccinated"] = grouped["Total Vaccinated"].where(valid, 0)
+    grouped["Unmatched Vaccinations"] = grouped["Total Vaccinated"].where(~valid, 0)
+    grouped["HPV Coverage %"] = grouped["HPV Vaccinated"].div(grouped["G5 Target"].where(valid)).mul(100)
+    grouped["Remaining"] = (grouped["G5 Target"] - grouped["HPV Vaccinated"]).clip(lower=0)
+    grouped["Target Status"] = np.select(
+        [grouped["G5 Target"].isna(), grouped["G5 Target"].eq(0)],
+        ["Missing/unreported G5 target", "Entered target is 0"],
+        default="Positive G5 target",
     )
-    grouped["Remaining"] = np.maximum(grouped["G5 Target"] - grouped["HPV Vaccinated"], 0)
-    return grouped.sort_values(["HPV Coverage %", "School Name"], ascending=[True, True], na_position="last").reset_index(drop=True)
+    return grouped.sort_values(
+        ["HPV Coverage %", "Total Vaccinated", "School Name"],
+        ascending=[False, False, True], na_position="last",
+    ).reset_index(drop=True)
 
 def _reason_summary(entries: pd.DataFrame) -> pd.DataFrame:
     counts = {code: 0 for code in REASON_LABELS}
@@ -156,17 +242,19 @@ def _build_g5_remaining_rows(
         rows = summary.rename(columns={
             "Municipality": "Category", "G5 Target": "Total Target",
             "HPV Vaccinated": "Vaccinated", "HPV Coverage %": "Coverage %",
-        })[["Category", "Total Target", "Vaccinated", "Coverage %"]].copy()
+        })[["Category", "Total Target", "Vaccinated", "Coverage %",
+            "Total Vaccinated", "Unmatched Vaccinations"]].copy()
     else:
-        # The existing school-level summary is based on submitted G5 rows;
-        # use only target-eligible entries to keep the coverage numerator valid.
-        summary = _school_summary(_targeted_entries(entries, targets), targets)
+        # Include schools without positive targets so unmatched recorded
+        # vaccinations stay visible without being counted in coverage.
+        summary = _school_summary(entries, targets)
         if summary.empty:
             return pd.DataFrame(columns=["Category", "Total Target", "Vaccinated", "Coverage %", "Remaining Target", "Above Target"])
         rows = summary.rename(columns={
             "School Name": "Category", "G5 Target": "Total Target",
             "HPV Vaccinated": "Vaccinated", "HPV Coverage %": "Coverage %",
-        })[["Category", "School ID", "Total Target", "Vaccinated", "Coverage %"]].copy()
+        })[["Category", "School ID", "Total Target", "Vaccinated", "Coverage %",
+            "Total Vaccinated", "Unmatched Vaccinations"]].copy()
         # Prevent two schools with identical names from appearing as one label.
         ambiguous = rows["Category"].duplicated(keep=False)
         rows.loc[ambiguous, "Category"] = (
@@ -177,6 +265,8 @@ def _build_g5_remaining_rows(
 
     rows["Total Target"] = pd.to_numeric(rows["Total Target"], errors="coerce")
     rows["Vaccinated"] = pd.to_numeric(rows["Vaccinated"], errors="coerce").fillna(0)
+    rows["Total Vaccinated"] = pd.to_numeric(rows["Total Vaccinated"], errors="coerce").fillna(0)
+    rows["Unmatched Vaccinations"] = pd.to_numeric(rows["Unmatched Vaccinations"], errors="coerce").fillna(0)
     # 0 is a valid entered G5 target; it still cannot serve as a denominator.
     has_target = rows["Total Target"].gt(0)
     rows["Coverage %"] = rows["Vaccinated"].div(rows["Total Target"].where(has_target)).mul(100)
@@ -184,7 +274,7 @@ def _build_g5_remaining_rows(
     rows["Above Target"] = (rows["Vaccinated"] - rows["Total Target"]).clip(lower=0).fillna(0)
     rows.loc[~has_target, "Category"] = rows.loc[~has_target, "Category"].astype(str) + " (N/A)"
     return rows.sort_values(
-        ["Vaccinated", "Coverage %", "Category"],
+        ["Total Vaccinated", "Coverage %", "Category"],
         ascending=[False, False, True], na_position="last",
     ).reset_index(drop=True)
 
@@ -217,8 +307,15 @@ def _render_g5_vaccinated_remaining(
     missing = rows["Total Target"].isna() | rows["Total Target"].le(0)
     if missing.any():
         st.caption(f"{int(missing.sum()):,} municipality/school row(s) lack a positive G5 target and are shown as N/A.")
+    unmatched_total = int(rows["Unmatched Vaccinations"].sum())
+    if unmatched_total:
+        st.warning(
+            f"{unmatched_total:,} reported G5 HPV vaccination(s) do not match a school with a "
+            "positive G5 target. They appear separately in the chart and review table, "
+            "but are NOT counted toward coverage until the school targets are verified."
+        )
     if rows["Above Target"].gt(0).any():
-        st.caption("Actual vaccinated counts can exceed the selected target; remaining target stays at zero.")
+        st.caption("Target-matched vaccinated counts can exceed the selected target; remaining target stays at zero.")
 
     as_pct = display_as == "Coverage (%)"
     view = rows.copy()
@@ -229,7 +326,7 @@ def _render_g5_vaccinated_remaining(
             ["Coverage %", "Vaccinated", "Category"],
             ascending=[False, False, True], na_position="last",
         ).reset_index(drop=True)
-        legend = ("Vaccinated Coverage (%)", "Remaining Target (%)")
+        legend = ("Target-matched Coverage (%)", "Remaining Target (%)")
         axis_label, suffix = "Coverage of G5 target (%)", "_Coverage"
         explanation = (
             "Coverage = Vaccinated / G5 Target × 100; "
@@ -238,11 +335,14 @@ def _render_g5_vaccinated_remaining(
     else:
         view["Vaccinated Plot"] = view["Vaccinated"]
         view["Remaining Plot"] = view["Remaining Target"]
-        legend = ("Vaccinated", "Remaining Target")
+        legend = ("Vaccinated (matched to target)", "Remaining Target")
         axis_label, suffix = "Number of students", "_Count"
-        explanation = "Remaining Target = max(G5 Target − Vaccinated, 0)."
+        explanation = "Remaining Target = max(G5 Target − matched vaccinations, 0)."
 
-    maximum = float((view["Vaccinated Plot"] + view["Remaining Plot"]).max())
+    # Unmatched counts are a distinct grey segment beyond the selected target
+    # in Count mode; never insert counts into the percentage denominator.
+    maximum = float((view["Vaccinated Plot"] + view["Remaining Plot"]
+                     + (0 if as_pct else view["Unmatched Vaccinations"])).max())
     axis_max = max(100.0 if as_pct else 1.0, maximum)
     threshold = axis_max * 0.035
     ylabels = view["Category"].tolist()
@@ -256,7 +356,8 @@ def _render_g5_vaccinated_remaining(
     meta = np.array([
         [fmt_int(row["Vaccinated"]), fmt_int(row["Remaining Target"]),
          fmt_int(row["Total Target"]) if pd.notna(row["Total Target"]) and row["Total Target"] > 0 else "N/A",
-         f"{row['Coverage %']:.1f}%" if pd.notna(row["Coverage %"]) else "N/A"]
+         f"{row['Coverage %']:.1f}%" if pd.notna(row["Coverage %"]) else "N/A",
+         fmt_int(row["Total Vaccinated"]), fmt_int(row["Unmatched Vaccinations"])]
         for _, row in view.iterrows()
     ], dtype=object)
     fig = go.Figure()
@@ -277,10 +378,30 @@ def _render_g5_vaccinated_remaining(
             textfont=dict(size=12, color="white"),
             customdata=meta,
             hovertemplate=(
-                "<b>%{y}</b><br>Vaccinated: %{customdata[0]}"
+                "<b>%{y}</b><br>Reported vaccinated: %{customdata[4]}"
+                "<br>Target-matched vaccinated: %{customdata[0]}"
+                "<br>Unmatched (needs target review): %{customdata[5]}"
                 "<br>Remaining Target: %{customdata[1]}"
                 "<br>G5 Target: %{customdata[2]}"
-                "<br>Coverage: %{customdata[3]}<extra></extra>"
+                "<br>Target-based coverage: %{customdata[3]}<extra></extra>"
+            ),
+        ))
+
+    if not as_pct:
+        fig.add_trace(go.Bar(
+            name="Unmatched vaccinations (not in coverage)",
+            x=view["Unmatched Vaccinations"].tolist(),
+            y=ylabels, orientation="h", marker_color="#8065a8",
+            text=[fmt_int(v) if float(v) >= threshold and float(v) > 0 else ""
+                  for v in view["Unmatched Vaccinations"]],
+            textposition="inside", insidetextanchor="middle",
+            textfont=dict(size=12, color="white"),
+            customdata=meta,
+            hovertemplate=(
+                "<b>%{y}</b><br>Unmatched vaccinations: %{customdata[5]}"
+                "<br>Reported vaccinations: %{customdata[4]}"
+                "<br>Matched to positive targets: %{customdata[0]}"
+                "<br>Target-based coverage: %{customdata[3]}<extra></extra>"
             ),
         ))
 
@@ -302,6 +423,20 @@ def _render_g5_vaccinated_remaining(
                 callouts.append((vaccinated, f"<b>{num_text(vaccinated)}</b>", "#124b69"))
             if tiny_remaining:
                 callouts.append((vaccinated + remaining, f"<b>{num_text(remaining)}</b>", "#9c3f15"))
+        if as_pct and float(row["Unmatched Vaccinations"]) > 0:
+            # Percentage is still 0..100 target-based; display unmatched as a
+            # count next to the bar, not as an invalid percentage segment.
+            callouts.append((
+                max(vaccinated + remaining, 100.0),
+                f"<b>+{fmt_int(row['Unmatched Vaccinations'])} unmatched</b>",
+                "#69448b",
+            ))
+        elif not as_pct and 0 < float(row["Unmatched Vaccinations"]) < threshold:
+            callouts.append((
+                vaccinated + remaining + float(row["Unmatched Vaccinations"]),
+                f"<b>+{fmt_int(row['Unmatched Vaccinations'])} unmatched</b>",
+                "#69448b",
+            ))
         for xpos, txt, color in callouts:
             fig.add_annotation(
                 x=xpos, y=str(row["Category"]), xref="x", yref="y",
@@ -326,7 +461,8 @@ def _render_g5_vaccinated_remaining(
         "<br><b>Target basis:</b> Actual Targets (Unvaccinated G5 Female)"
         f"<br><b>Scope:</b> {escape(scope)}"
         f"<br><b>Reporting period:</b> {escape(reporting_period)}"
-        f"<br>{escape(explanation)} Only G5 HPV Dose 1 is counted; G5 is not in VaccTrack."
+        f"<br>{escape(explanation)} Unmatched HPV1 doses are reported separately, not included in coverage."
+        "<br>Grade 5 accomplishments come from RHU workbooks, not VaccTrack."
     )
     fig.update_layout(
         title=None,
@@ -336,32 +472,32 @@ def _render_g5_vaccinated_remaining(
         dragmode=False,
         xaxis_title=axis_label, yaxis_title="",
         legend=dict(orientation="h", yanchor="bottom", y=1.025, xanchor="right", x=1),
-        margin=dict(l=15, r=70, t=275, b=60),
+        margin=dict(l=15, r=140 if as_pct else 95, t=300, b=60),
         bargap=0.20,
     )
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
-        yshift=230, xanchor="left", yanchor="top",
+        yshift=255, xanchor="left", yanchor="top",
         text="<b>SBI 2026 | Grade 5 HPV Vaccinated vs Remaining Target</b>",
         font=dict(size=19, color="#172e43"),
         showarrow=False, align="left",
     )
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
-        yshift=199, xanchor="left", yanchor="top",
+        yshift=222, xanchor="left", yanchor="top",
         text="<b>Antigen: HPV (Grade 5)</b>",
         font=dict(size=22, color="#124f61"),
         showarrow=False, align="left",
     )
     fig.add_annotation(
         xref="paper", yref="paper", x=0, y=1,
-        yshift=164, xanchor="left", yanchor="top",
+        yshift=185, xanchor="left", yanchor="top",
         text=header,
         font=dict(size=13, color="#334155"),
         showarrow=False, align="left",
     )
     fig.update_yaxes(categoryorder="array", categoryarray=list(reversed(ylabels)), automargin=True)
-    fig.update_xaxes(range=[0, axis_max * 1.09], ticksuffix="%" if as_pct else "")
+    fig.update_xaxes(range=[0, axis_max * (1.24 if as_pct else 1.15)], ticksuffix="%" if as_pct else "")
 
     st.plotly_chart(
         fig, width="stretch", key="sbi_g5_vaccinated_remaining",
@@ -373,9 +509,10 @@ def _render_g5_vaccinated_remaining(
     )
     with st.expander("View and download Grade 5 vaccinated vs remaining figures", expanded=False):
         table = view[[
-            "Category", "Vaccinated", "Remaining Target", "Total Target", "Coverage %", "Above Target",
+            "Category", "Total Vaccinated", "Vaccinated", "Unmatched Vaccinations",
+            "Remaining Target", "Total Target", "Coverage %", "Above Target",
         ]].rename(columns={"Category": "Municipality" if selected_muni is None else "School"})
-        st.dataframe(table, width="stretch", hide_index=True)
+        st.dataframe(table.rename(columns={"Vaccinated": "Target-matched Vaccinated"}), width="stretch", hide_index=True)
         st.download_button(
             "Download Grade 5 Vaccinated vs Remaining (CSV)",
             table.to_csv(index=False).encode("utf-8-sig"),
@@ -431,16 +568,31 @@ def render_g5_dashboard(
     legacy_hpv2 = int(pd.to_numeric(g5.get("hpv_dose2", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
     legacy_missed = int(sum(pd.to_numeric(g5.get(col, pd.Series(dtype=float)), errors="coerce").fillna(0).sum() for col in ["hpv2_deferred", "hpv2_refused"]))
 
-    positive_target_ids = set(
-        target_view.loc[pd.to_numeric(target_view.get("G5 Target", 0), errors="coerce").fillna(0).gt(0), "School ID"].astype(str)
-    ) if not target_view.empty else set()
-    unmatched = g5.loc[~g5["school_id"].astype(str).isin(positive_target_ids)].copy() if not g5.empty else pd.DataFrame()
+    # Use the same municipality + school eligibility result as the chart,
+    # including when different RHUs happen to share a school identifier.
+    unmatched = (g5.loc[~g5.index.isin(coverage_entries.index)].copy()
+                 if not g5.empty else pd.DataFrame())
     unmatched_doses = int(pd.to_numeric(unmatched.get("hpv_dose1", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
     if unmatched_doses > 0:
         st.warning(
-            "Some G5 HPV vaccinations belong to schools without a positive entered Unvaccinated G5 Female target. "
-            "They remain visible in raw accomplishment totals but are excluded from G5 coverage percentages."
+            f"{unmatched_doses:,} reported G5 HPV vaccination(s) need target verification. "
+            "These records are preserved and shown in the chart, but are excluded "
+            "from coverage until their schools have positive G5 targets in Actual Targets."
         )
+        detail = _g5_unmatched_school_details(g5, target_view)
+        with st.expander(f"Review {unmatched_doses:,} G5 vaccinations needing target verification", expanded=False):
+            st.caption(
+                "Check the Unvaccinated G5 Female target for each listed school in Actual Targets. "
+                "Do not change a verified zero just to increase coverage; investigate whether "
+                "the target or vaccination record needs correction."
+            )
+            st.dataframe(detail, width="stretch", hide_index=True)
+            st.download_button(
+                "Download G5 Target Verification List (CSV)",
+                data=detail.to_csv(index=False).encode("utf-8-sig"),
+                file_name="SBI_G5_Target_Verification.csv", mime="text/csv",
+                key="sbi_g5_unmatched_export",
+            )
     if legacy_hpv2 or legacy_missed:
         st.warning(
             f"G5 has {legacy_hpv2:,} legacy HPV Dose 2 vaccination(s) and {legacy_missed:,} "
@@ -455,9 +607,13 @@ def render_g5_dashboard(
     c3.metric("HPV Coverage", "N/A" if pd.isna(_safe_pct(eligible_vaccinated, target_total)) else f"{_safe_pct(eligible_vaccinated, target_total):.1f}%")
     c4.metric("Remaining", f"{int(max(target_total - eligible_vaccinated, 0)):,}")
 
-    s1, s2 = st.columns(2)
-    s1.metric("Schools Reporting", f"{int(g5['school_id'].replace('', pd.NA).dropna().nunique()) if not g5.empty else 0:,}")
-    s2.metric("RHU(s) Reporting", f"{int(g5['municipality'].nunique()) if not g5.empty else 0:,}")
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Matched to G5 Targets", f"{int(eligible_vaccinated):,}",
+              help="Only vaccinations at schools with a positive G5 target are included in coverage.")
+    s2.metric("Needs Target Verification", f"{unmatched_doses:,}",
+              help="Reported vaccinations at schools with zero or missing G5 targets; not included in coverage.")
+    s3.metric("Schools Reporting", f"{int(g5['school_id'].replace('', pd.NA).dropna().nunique()) if not g5.empty else 0:,}")
+    s4.metric("RHU(s) Reporting", f"{int(g5['municipality'].nunique()) if not g5.empty else 0:,}")
 
     if g5.empty:
         st.info("No Grade 5 RHU workbook accomplishments are available for this selection and reporting period yet.")
@@ -483,7 +639,9 @@ def render_g5_dashboard(
             muni, width="stretch", hide_index=True,
             column_config={
                 "G5 Target": st.column_config.NumberColumn(format="%d"),
-                "HPV Vaccinated": st.column_config.NumberColumn(format="%d"),
+                "HPV Vaccinated": st.column_config.NumberColumn("Target-matched Vaccinated", format="%d"),
+                "Total Vaccinated": st.column_config.NumberColumn("Total Reported Vaccinated", format="%d"),
+                "Unmatched Vaccinations": st.column_config.NumberColumn("Needs Target Verification", format="%d"),
                 "HPV Coverage %": st.column_config.NumberColumn(format="%.1f%%"),
                 "Remaining": st.column_config.NumberColumn(format="%d"),
             },
@@ -601,12 +759,16 @@ def render_g5_dashboard(
         st.info("No school-level G5 target rows are available for this selection.")
     else:
         st.dataframe(
-            schools[["Municipality", "Barangay", "School ID", "School Name", "G5 Target", "HPV Vaccinated", "HPV Coverage %", "Remaining"]],
+            schools[["Municipality", "Barangay", "School ID", "School Name", "G5 Target",
+                     "Total Vaccinated", "HPV Vaccinated", "Unmatched Vaccinations",
+                     "HPV Coverage %", "Remaining", "Target Status"]],
             width="stretch",
             hide_index=True,
             column_config={
                 "G5 Target": st.column_config.NumberColumn(format="%d"),
-                "HPV Vaccinated": st.column_config.NumberColumn(format="%d"),
+                "HPV Vaccinated": st.column_config.NumberColumn("Target-matched Vaccinated", format="%d"),
+                "Total Vaccinated": st.column_config.NumberColumn("Total Reported Vaccinated", format="%d"),
+                "Unmatched Vaccinations": st.column_config.NumberColumn("Needs Target Verification", format="%d"),
                 "HPV Coverage %": st.column_config.NumberColumn(format="%.1f%%"),
                 "Remaining": st.column_config.NumberColumn(format="%d"),
             },
