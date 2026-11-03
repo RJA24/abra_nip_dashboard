@@ -1,9 +1,8 @@
-"""One-click, server-generated nine-PNG SBI reporting pack.
+"""Custom SBI PNG reporting pack, including all visible plot-exportable SBI figures.
 
-Unlike Plotly's browser-side camera button, this creates a single ZIP on the
-Streamlit server. The tables come from the same helper functions as the live
-G1/G4/G7, Grade 5, and reconciliation dashboards; no screenshot scraping or
-Kaleido/Chrome installation is required.
+The nine established reporting PNGs use the established server-side renderers.
+Additional reports are captured directly from the data plotted by the existing
+SBI dashboard tabs and rendered with Pillow; no Chrome or Kaleido is required.
 """
 from __future__ import annotations
 
@@ -254,46 +253,123 @@ def _make_coverage_png(frame: pd.DataFrame, *,
     return out.getvalue()
 
 
-@st.cache_data(ttl=300, show_spinner="Preparing all 9 high-resolution SBI PNG reports...")
-def _zip_nine_reports(
-    recon: pd.DataFrame,
-    recon_context: dict,
-    g1_mr: pd.DataFrame,
-    g7_mr: pd.DataFrame,
-    g4_hpv: pd.DataFrame,
-    g5_hpv: pd.DataFrame,
+# The order is the user's established reporting routine. Keys stay stable so
+# checkbox states persist across Streamlit reruns.
+_REPORT_OPTIONS = (
+    ("reconciliation", "Municipality Reconciliation", "Municipality Reconciliation"),
+    ("g5_coverage", "Coverage (%)", "Grade 5 HPV"),
+    ("g5_count", "Vaccination Count", "Grade 5 HPV"),
+    ("g7_coverage", "Coverage (%)", "Grade 7 MR"),
+    ("g7_count", "Vaccination Count", "Grade 7 MR"),
+    ("g4_count", "Vaccination Count", "Grade 4 HPV"),
+    ("g4_coverage", "Coverage (%)", "Grade 4 HPV"),
+    ("g1_coverage", "Coverage (%)", "Grade 1 MR"),
+    ("g1_count", "Vaccination Count", "Grade 1 MR"),
+)
+
+_REPORT_SPECS = {
+    "g5_coverage": ("SBI_G5_Vaccinated_vs_Remaining_Coverage.png", "g5", "HPV (Grade 5)", True, "Coverage"),
+    "g5_count": ("SBI_G5_Vaccinated_vs_Remaining_Count.png", "g5", "HPV (Grade 5)", True, "Count"),
+    "g7_coverage": ("SBI_Vaccinated_vs_Remaining_MR_Grade_7_Coverage.png", "g7", "MR (Grade 7)", False, "Coverage"),
+    "g7_count": ("SBI_Vaccinated_vs_Remaining_MR_Grade_7_Count.png", "g7", "MR (Grade 7)", False, "Count"),
+    "g4_count": ("SBI_Vaccinated_vs_Remaining_HPV_Grade_4_Count.png", "g4", "HPV (Grade 4)", False, "Count"),
+    "g4_coverage": ("SBI_Vaccinated_vs_Remaining_HPV_Grade_4_Coverage.png", "g4", "HPV (Grade 4)", False, "Coverage"),
+    "g1_coverage": ("SBI_Vaccinated_vs_Remaining_MR_Grade_1_Coverage.png", "g1", "MR (Grade 1)", False, "Coverage"),
+    "g1_count": ("SBI_Vaccinated_vs_Remaining_MR_Grade_1_Count.png", "g1", "MR (Grade 1)", False, "Count"),
+}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _zip_selected_reports(
+    selected: tuple[str, ...],
+    recon: pd.DataFrame | None,
+    recon_context: dict | None,
+    g1_mr: pd.DataFrame | None,
+    g7_mr: pd.DataFrame | None,
+    g4_hpv: pd.DataFrame | None,
+    g5_hpv: pd.DataFrame | None,
     source: str,
     target_basis: str,
     scope: str,
     period: str,
     start_date: date | None,
     end_date: date | None,
+    scope_municipality: str | None,
+    extra_pngs: dict[str, bytes] | None = None,
 ) -> bytes:
+    """Create exactly the selected images. Unselected reports are not rendered."""
+    if not selected:
+        raise ValueError("At least one reporting image must be selected.")
+    frames = {"g1": g1_mr, "g7": g7_mr, "g4": g4_hpv, "g5": g5_hpv}
     archive = BytesIO()
     with ZipFile(archive, mode="w", compression=ZIP_DEFLATED, compresslevel=5) as zipfile:
-        zipfile.writestr(
-            "SBI_Municipality_Reconciliation_Abra.png",
-            _grouped_reconciliation_png(recon, recon_context, start_date, end_date),
-        )
-        reports = [
-            ("SBI_G5_Vaccinated_vs_Remaining_Coverage.png", g5_hpv, "HPV (Grade 5)", True, "Coverage"),
-            ("SBI_G5_Vaccinated_vs_Remaining_Count.png", g5_hpv, "HPV (Grade 5)", True, "Count"),
-            ("SBI_Vaccinated_vs_Remaining_MR_Grade_7_Coverage.png", g7_mr, "MR (Grade 7)", False, "Coverage"),
-            ("SBI_Vaccinated_vs_Remaining_MR_Grade_7_Count.png", g7_mr, "MR (Grade 7)", False, "Count"),
-            ("SBI_Vaccinated_vs_Remaining_HPV_Grade_4_Count.png", g4_hpv, "HPV (Grade 4)", False, "Count"),
-            ("SBI_Vaccinated_vs_Remaining_HPV_Grade_4_Coverage.png", g4_hpv, "HPV (Grade 4)", False, "Coverage"),
-            ("SBI_Vaccinated_vs_Remaining_MR_Grade_1_Coverage.png", g1_mr, "MR (Grade 1)", False, "Coverage"),
-            ("SBI_Vaccinated_vs_Remaining_MR_Grade_1_Count.png", g1_mr, "MR (Grade 1)", False, "Count"),
-        ]
-        for name, frame, antigen, is_g5, mode in reports:
-            data = _make_coverage_png(
+        for key in selected:
+            if key.startswith("chart:"):
+                chart_key = key.split(":", 1)[1]
+                if not extra_pngs or chart_key not in extra_pngs:
+                    raise ValueError(f"Selected SBI chart is not currently available: {chart_key}")
+                clean_name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in chart_key).strip("_")
+                zipfile.writestr(f"SBI_Extra_{clean_name}.png", extra_pngs[chart_key])
+                continue
+            if key == "reconciliation":
+                if recon is None or recon_context is None:
+                    raise ValueError("Reconciliation data are unavailable.")
+                suffix = "Abra" if scope_municipality is None else scope_municipality.replace(" ", "_")
+                zipfile.writestr(
+                    f"SBI_Municipality_Reconciliation_{suffix}.png",
+                    _grouped_reconciliation_png(recon, recon_context, start_date, end_date),
+                )
+                continue
+            if key not in _REPORT_SPECS:
+                raise ValueError(f"Unknown report selection: {key}")
+            filename, frame_key, antigen, is_g5, mode = _REPORT_SPECS[key]
+            frame = frames[frame_key]
+            if frame is None or frame.empty:
+                raise ValueError(f"No data are available to create {filename}.")
+            png = _make_coverage_png(
                 frame, antigen=antigen, is_g5=is_g5, mode=mode,
                 source="RHU Workbook (operational/provisional)" if is_g5 else source,
                 target_basis="Actual Targets (Unvaccinated G5 Female)" if is_g5 else target_basis,
                 scope=scope, period=period,
             )
-            zipfile.writestr(name, data)
+            zipfile.writestr(filename, png)
     return archive.getvalue()
+
+
+def _all_report_options(captured: dict) -> list[tuple[str, str, str]]:
+    """All current SBI charts beyond the default nine; optional by default."""
+    excluded = {"sbi_exec_vaccinated_vs_remaining", "sbi_g5_vaccinated_remaining"}
+    options = list(_REPORT_OPTIONS)
+    for chart_key, record in sorted(captured.items()):
+        if chart_key in excluded:
+            continue  # These are already represented by the original nine options.
+        key = f"chart:{chart_key}"
+        label = record.get("label") or chart_key.replace("_", " ")
+        if chart_key.startswith(("sbi_exec_",)):
+            group = "Executive Summary — Other Charts"
+        elif chart_key.startswith(("sbi_tgt_", "sbi_actual_", "sbi_compare_")) or any(
+            word in chart_key.lower() for word in ("target", "baseline")
+        ):
+            group = "Targets Overview — Other Charts"
+        elif chart_key.startswith("sbi_g5_"):
+            group = "G5 Dashboard — Other Charts"
+        elif chart_key.startswith("sbi_workbook_"):
+            group = "Workbook Dashboard — Other Charts"
+        elif chart_key.startswith("sbi_"):
+            group = "VaccTrack Dashboard — Other Charts"
+        else:
+            group = "Additional SBI Charts"
+        options.append((key, label, group))
+    return options
+
+
+def _current_selection(options: list[tuple[str, str, str]]) -> tuple[str, ...]:
+    """Read checkbox widgets in stable order, nine default on; others default off."""
+    original_keys = {key for key, _, _ in _REPORT_OPTIONS}
+    return tuple(
+        key for key, _label, _group in options
+        if bool(st.session_state.get(f"sbi_pack_report_{key}", key in original_keys))
+    )
 
 
 def render_reporting_bundle_download(
@@ -314,76 +390,175 @@ def render_reporting_bundle_download(
     g4_vacctrack: pd.DataFrame,
     build_exec_rows,
 ) -> None:
-    """Show a single ready-to-download ZIP button in the Executive Summary."""
-    st.markdown("#### One-click SBI Reporting Pack")
-    st.caption(
-        "Download the 9 PNGs usually prepared for reporting: municipality reconciliation; "
-        "Grade 5 HPV count + coverage; and Grade 1 MR, Grade 7 MR, and Grade 4 HPV count + coverage. "
-        "The reporting period and Executive Summary source/target selections are applied automatically."
-    )
-    try:
-        # Fetch once for all nine images. Reconciliation ALWAYS uses workbook
-        # against VaccTrack; G5 ALWAYS uses workbook vs its own actual targets.
-        workbook = fetch_workbook_dashboard_entries(supabase)
-        g5_all, _ = prepare_workbook_entries(
-            workbook, start_date=start_date, end_date=end_date,
-            municipality=scope_municipality,
-        )
-        g5_only = (
-            g5_all.loc[g5_all["grade_level"].eq("G5")].copy()
-            if isinstance(g5_all, pd.DataFrame) and not g5_all.empty
-            else pd.DataFrame()
-        )
-        for col in ("hpv_dose1", "hpv_dose2"):
-            if col not in g5_only.columns:
-                g5_only[col] = 0
-            g5_only[col] = pd.to_numeric(g5_only[col], errors="coerce").fillna(0)
-        g5_targets, _ = _prepare_g5_targets(actual_targets, scope_municipality)
-        g5_figures = _build_g5_remaining_rows(g5_only, g5_targets, scope_municipality)
+    """Choose, prepare and download PNGs for any current SBI dashboard figure."""
+    from programs.sbi.chart_capture import get_captured_reports
+    captured = get_captured_reports()
+    options = _all_report_options(captured)
+    original_keys = {key for key, _, _ in _REPORT_OPTIONS}
+    extra_count = len(options) - len(_REPORT_OPTIONS)
 
-        antigen_frames = {}
-        for antigen in ("MR (Grade 1)", "MR (Grade 7)", "HPV (Grade 4)"):
-            antigen_frames[antigen] = build_exec_rows(
-                selected_targets,
-                {"g1": g1_source, "g7": g7_source, "g4": g4_source},
-                antigen,
-                municipality=scope_municipality,
+    st.markdown("#### Choose reports to include")
+    st.caption(
+        "The original nine reports are checked by default. All other currently "
+        "available SBI PNG charts are listed below and initially unchecked. "
+        "Only selected reports will be generated."
+    )
+    st.caption(f"{extra_count} additional SBI chart(s) found in this dashboard view.")
+
+    # Controls precede checkboxes; Streamlit prohibits modifying instantiated
+    # widget keys later in the same run.
+    a,b,c,d = st.columns([1,1,1,2])
+    with a:
+        select_all = st.button("Select All",key="sbi_pack_select_all",width="stretch")
+    with b:
+        select_original = st.button("Original Nine",key="sbi_pack_original_nine",width="stretch")
+    with c:
+        clear_all = st.button("Clear All",key="sbi_pack_clear_all",width="stretch")
+    if select_all or select_original or clear_all:
+        for key, _label, _group in options:
+            st.session_state[f"sbi_pack_report_{key}"] = (
+                bool(select_all) or (bool(select_original) and key in original_keys)
             )
-        if not all(not f.empty for f in antigen_frames.values()):
-            st.warning("Reporting pack requires target data for the three G1/G7/G4 charts.")
-            return
-        municipalities = [scope_municipality] if scope_municipality else ABRA_MUNIS
-        recon, recon_context = _grouped_reconciliation_rows(
-            workbook, g1_vacctrack, g7_vacctrack, g4_vacctrack,
-            municipalities, start_date, end_date,
-        )
-        recon, recon_context = _with_reconciliation_total(recon, recon_context)
-        scope = (
-            "All Municipalities (Abra)" if scope_municipality is None
-            else f"{scope_municipality}, Abra (by School for charts)"
-        )
-        zip_bytes = _zip_nine_reports(
-            recon, recon_context,
-            antigen_frames["MR (Grade 1)"],
-            antigen_frames["MR (Grade 7)"],
-            antigen_frames["HPV (Grade 4)"],
-            g5_figures,
-            source_label, target_basis, scope, period,
-            start_date, end_date,
-        )
+
+    from collections import OrderedDict
+    grouped = OrderedDict()
+    group_order = [
+        "Municipality Reconciliation", "Grade 1 MR", "Grade 7 MR",
+        "Grade 4 HPV", "Grade 5 HPV",
+        "Executive Summary — Other Charts", "Targets Overview — Other Charts",
+        "Workbook Dashboard — Other Charts", "G5 Dashboard — Other Charts",
+        "VaccTrack Dashboard — Other Charts", "Additional SBI Charts",
+    ]
+    for group in group_order:
+        grouped[group] = []
+    for item in options:
+        grouped.setdefault(item[2], []).append(item)
+    for group, entries in grouped.items():
+        if not entries:
+            continue
+        with st.expander(f"{group} ({len(entries)})", expanded=group in {
+            "Municipality Reconciliation", "Grade 1 MR", "Grade 7 MR", "Grade 4 HPV", "Grade 5 HPV",
+        }):
+            cols = st.columns(2)
+            for i,(key,label,_group) in enumerate(entries):
+                with cols[i%2]:
+                    widget_key=f"sbi_pack_report_{key}"
+                    if widget_key not in st.session_state:
+                        st.session_state[widget_key] = key in original_keys
+                    st.checkbox(label,key=widget_key)
+    selected = _current_selection(options)
+    with d:
+        st.metric("Reports selected", f"{len(selected)} / {len(options)}")
+    st.caption(
+        "G5 always uses RHU workbook accomplishments and Actual G5 targets. "
+        "Municipality Reconciliation always compares RHU workbooks against VaccTrack. "
+        "The source and target basis above apply to Grade 1, Grade 7 and Grade 4 charts."
+    )
+    if not selected:
+        st.info("Select at least one report to prepare a ZIP.")
+        return
+
+    # Cache a prepared bundle for repeated downloads, but invalidate it when
+    # selection or reporting context changes. We deliberately do not build
+    # eight large PNGs on every unrelated dashboard rerun.
+    signature = (
+        selected, str(scope_municipality), str(period), str(start_date), str(end_date),
+        str(source_label), str(target_basis),
+    )
+    prepare = st.button(
+        f"Prepare {len(selected)} Selected Report{'s' if len(selected) != 1 else ''}",
+        key="sbi_pack_prepare", type="primary", width="stretch",
+    )
+    if prepare:
+        try:
+            with st.spinner("Generating selected high-resolution PNG reports..."):
+                from programs.sbi.chart_capture import render_captured_png
+                extra_pngs = {}
+                scope = (
+                    "All Municipalities (Abra)" if scope_municipality is None
+                    else f"{scope_municipality}, Abra (by School for charts)"
+                )
+                for key in selected:
+                    if key.startswith("chart:"):
+                        chart_key = key.split(":",1)[1]
+                        if chart_key not in captured:
+                            raise ValueError(f"Chart {chart_key} is not available with the current filters.")
+                        extra_pngs[chart_key] = render_captured_png(captured[chart_key],scope,period)
+
+                needs_g5 = any(key.startswith("g5_") for key in selected)
+                needs_recon = "reconciliation" in selected
+                workbook = (
+                    fetch_workbook_dashboard_entries(supabase)
+                    if needs_g5 or needs_recon else pd.DataFrame()
+                )
+                g5_figures = None
+                if needs_g5:
+                    g5_all, _ = prepare_workbook_entries(
+                        workbook, start_date=start_date, end_date=end_date,
+                        municipality=scope_municipality,
+                    )
+                    g5_only = (
+                        g5_all.loc[g5_all["grade_level"].eq("G5")].copy()
+                        if isinstance(g5_all, pd.DataFrame) and not g5_all.empty
+                        else pd.DataFrame()
+                    )
+                    for col in ("hpv_dose1", "hpv_dose2"):
+                        if col not in g5_only.columns:
+                            g5_only[col] = 0
+                        g5_only[col] = pd.to_numeric(g5_only[col], errors="coerce").fillna(0)
+                    g5_targets, _ = _prepare_g5_targets(actual_targets, scope_municipality)
+                    g5_figures = _build_g5_remaining_rows(g5_only, g5_targets, scope_municipality)
+
+                frames = {"g1": None, "g7": None, "g4": None}
+                for grade, antigen in (
+                    ("g1", "MR (Grade 1)"),
+                    ("g7", "MR (Grade 7)"),
+                    ("g4", "HPV (Grade 4)"),
+                ):
+                    if any(_REPORT_SPECS.get(key, (None, None))[1] == grade for key in selected):
+                        frames[grade] = build_exec_rows(
+                            selected_targets,
+                            {"g1": g1_source, "g7": g7_source, "g4": g4_source},
+                            antigen,
+                            municipality=scope_municipality,
+                        )
+
+                recon = recon_context = None
+                if needs_recon:
+                    municipalities = [scope_municipality] if scope_municipality else ABRA_MUNIS
+                    recon, recon_context = _grouped_reconciliation_rows(
+                        workbook, g1_vacctrack, g7_vacctrack, g4_vacctrack,
+                        municipalities, start_date, end_date,
+                    )
+                    recon, recon_context = _with_reconciliation_total(recon, recon_context)
+
+                scope = (
+                    "All Municipalities (Abra)" if scope_municipality is None
+                    else f"{scope_municipality}, Abra (by School for charts)"
+                )
+                payload = _zip_selected_reports(
+                    selected, recon, recon_context,
+                    frames["g1"], frames["g7"], frames["g4"], g5_figures,
+                    source_label, target_basis, scope, period,
+                    start_date, end_date, scope_municipality,
+                    extra_pngs=extra_pngs,
+                )
+                st.session_state["sbi_pack_prepared"] = {"signature": signature, "data": payload}
+        except Exception as exc:
+            st.session_state.pop("sbi_pack_prepared", None)
+            st.error(f"Unable to prepare selected SBI reports: {exc}")
+
+    prepared = st.session_state.get("sbi_pack_prepared")
+    if isinstance(prepared, dict) and prepared.get("signature") == signature:
         safe_period = (
             f"{start_date:%Y%m%d}_{end_date:%Y%m%d}"
             if start_date and end_date else "Selected_Period"
         )
         st.download_button(
-            "Download All 9 Reporting PNGs (ZIP)",
-            data=zip_bytes,
-            file_name=f"SBI_2026_Reporting_Pack_{safe_period}.zip",
-            mime="application/zip",
-            type="primary",
-            key="sbi_reporting_pack_zip",
-            width="stretch",
-            help="One ZIP containing 9 high-resolution PNGs generated from the dashboard's current data.",
+            f"Download {len(selected)} Selected PNG{'s' if len(selected) != 1 else ''} (ZIP)",
+            data=prepared["data"],
+            file_name=f"SBI_2026_Reporting_Pack_{safe_period}_{len(selected)}_PNGs.zip",
+            mime="application/zip", type="primary",
+            key="sbi_reporting_pack_zip", width="stretch",
         )
-    except Exception as exc:
-        st.error(f"Unable to prepare the SBI reporting pack: {exc}")
+        st.caption("Prepared ZIP is ready. To include newer uploaded data, click Prepare again.")

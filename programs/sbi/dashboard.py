@@ -42,6 +42,7 @@ from programs.sbi.workbook_dashboard import (
 )
 from programs.sbi.g5_dashboard import render_g5_dashboard
 from programs.sbi.reporting_bundle import render_reporting_bundle_download
+from programs.sbi.chart_capture import capture_sbi_charts
 from programs.sbi.source_dashboard_layout import (
     render_actual_target_gap_notice,
     render_source_kpi_summary,
@@ -495,6 +496,7 @@ def _render_exec_vaccinated_remaining(
         )
 
 
+@capture_sbi_charts
 def render_sbi_dashboard(supabase) -> None:
     st.title("Abra School-Based Immunization (SBI) 2026")
     
@@ -1051,6 +1053,7 @@ def render_sbi_dashboard(supabase) -> None:
         "G5 Dashboard",
         "VaccTrack Dashboard",
         "VaccTrack vs Workbook",
+        "Reporting Center",
     ])
     (
         tab_sbi_exec,
@@ -1060,6 +1063,7 @@ def render_sbi_dashboard(supabase) -> None:
         tab_sbi_g5,
         tab_sbi_vacctrack,
         tab_sbi_reconciliation,
+        tab_sbi_reports,
     ) = sbi_tabs
 
     # 1. EXECUTIVE SUMMARY
@@ -1113,29 +1117,6 @@ def render_sbi_dashboard(supabase) -> None:
         g1_exec_cov = filter_events_to_target_schools(g1_exec_source, exec_target_view)
         g7_exec_cov = filter_events_to_target_schools(g7_exec_source, exec_target_view)
         hpv_exec_cov = filter_events_to_target_schools(hpv_exec_source, exec_target_view)
-
-        # The nine regularly downloaded reporting PNGs, prepared together from
-        # the same source/target filters as the Executive Summary. Reconciliation
-        # and G5 retain their own established workbook/actual-target semantics.
-        render_reporting_bundle_download(
-            supabase=supabase,
-            actual_targets=df_sbi_actual_targets,
-            selected_targets=exec_target_view,
-            source_label=exec_data_source,
-            target_basis=exec_target_basis,
-            scope_municipality=selected_muni_filter,
-            period=period_label,
-            start_date=report_start,
-            end_date=report_end,
-            g1_source=g1_exec_source,
-            g7_source=g7_exec_source,
-            g4_source=hpv_exec_source,
-            g1_vacctrack=g1_events,
-            g7_vacctrack=g7_events,
-            g4_vacctrack=hpv_events,
-            build_exec_rows=_build_exec_remaining_chart_rows,
-        )
-        st.divider()
 
         if exec_target_view.empty:
             st.warning("Target data is unavailable. Sync the target database first.")
@@ -3173,3 +3154,63 @@ def render_sbi_dashboard(supabase) -> None:
                 )
             else:
                 st.info("No deferral or refusal records are available for this selection.")
+
+    # REPORTING CENTER — select exactly which existing PNG reports go into the ZIP.
+    # Sidebar geographic and reporting-period filters continue to apply. This tab
+    # has its own source/target controls so reporting requires no tab-hopping.
+    with tab_sbi_reports:
+        st.markdown("### SBI Reporting Center")
+        st.caption(
+            "Choose the PNG reports to include in one ZIP. The reporting period "
+            "and geographic scope come from Dashboard Filters in the sidebar."
+        )
+        report_source_col, report_target_col = st.columns(2)
+        with report_source_col:
+            report_source = st.selectbox(
+                "G1 / G7 / G4 accomplishment source:",
+                ["VaccTrack Data", "Workbook Data"],
+                index=["VaccTrack Data", "Workbook Data"].index(exec_data_source),
+                key="sbi_reports_data_source",
+                help="G5 always uses RHU workbook data. Reconciliation always compares RHU workbooks with VaccTrack.",
+            )
+        with report_target_col:
+            report_target_basis = render_target_basis_selector(key="sbi_reports_target_basis")
+        report_target_all = actual_target_all if report_target_basis == "Actual Targets" else baseline_target_all
+        report_target_view = filter_location(report_target_all, selected_muni_filter)
+
+        if report_source == "Workbook Data":
+            try:
+                report_workbook_raw = fetch_workbook_dashboard_entries(supabase)
+                report_workbook_rows, _ = prepare_workbook_entries(
+                    report_workbook_raw,
+                    start_date=report_start,
+                    end_date=report_end,
+                    municipality=selected_muni_filter,
+                )
+                report_g1, report_g7, report_g4 = build_workbook_event_frames(report_workbook_rows)
+            except Exception as exc:
+                st.error(f"Unable to load workbook accomplishments for the Reporting Center: {exc}")
+                report_g1 = pd.DataFrame()
+                report_g7 = pd.DataFrame()
+                report_g4 = pd.DataFrame()
+        else:
+            report_g1, report_g7, report_g4 = g1_view, g7_view, hpv_view
+
+        render_reporting_bundle_download(
+            supabase=supabase,
+            actual_targets=df_sbi_actual_targets,
+            selected_targets=report_target_view,
+            source_label=report_source,
+            target_basis=report_target_basis,
+            scope_municipality=selected_muni_filter,
+            period=period_label,
+            start_date=report_start,
+            end_date=report_end,
+            g1_source=report_g1,
+            g7_source=report_g7,
+            g4_source=report_g4,
+            g1_vacctrack=g1_events,
+            g7_vacctrack=g7_events,
+            g4_vacctrack=hpv_events,
+            build_exec_rows=_build_exec_remaining_chart_rows,
+        )
