@@ -41,6 +41,7 @@ from programs.sbi.workbook_dashboard import (
     render_workbook_dashboard,
 )
 from programs.sbi.g5_dashboard import render_g5_dashboard
+from programs.sbi.reporting_bundle import render_reporting_bundle_download
 from programs.sbi.source_dashboard_layout import (
     render_actual_target_gap_notice,
     render_source_kpi_summary,
@@ -1112,6 +1113,29 @@ def render_sbi_dashboard(supabase) -> None:
         g1_exec_cov = filter_events_to_target_schools(g1_exec_source, exec_target_view)
         g7_exec_cov = filter_events_to_target_schools(g7_exec_source, exec_target_view)
         hpv_exec_cov = filter_events_to_target_schools(hpv_exec_source, exec_target_view)
+
+        # The nine regularly downloaded reporting PNGs, prepared together from
+        # the same source/target filters as the Executive Summary. Reconciliation
+        # and G5 retain their own established workbook/actual-target semantics.
+        render_reporting_bundle_download(
+            supabase=supabase,
+            actual_targets=df_sbi_actual_targets,
+            selected_targets=exec_target_view,
+            source_label=exec_data_source,
+            target_basis=exec_target_basis,
+            scope_municipality=selected_muni_filter,
+            period=period_label,
+            start_date=report_start,
+            end_date=report_end,
+            g1_source=g1_exec_source,
+            g7_source=g7_exec_source,
+            g4_source=hpv_exec_source,
+            g1_vacctrack=g1_events,
+            g7_vacctrack=g7_events,
+            g4_vacctrack=hpv_events,
+            build_exec_rows=_build_exec_remaining_chart_rows,
+        )
+        st.divider()
 
         if exec_target_view.empty:
             st.warning("Target data is unavailable. Sync the target database first.")
